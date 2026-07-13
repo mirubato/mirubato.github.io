@@ -1,0 +1,186 @@
+<!--
+  ミルバト社会・地理 先生用 管理ページ
+  ・生徒の一覧（ニックネーム・校舎・番号・今週スコア・状態）を確認
+  ・ニックネームの変更 / アカウントの停止・再開
+  ・管理パスワードで保護（サーバ側でbcrypt照合）。番号(平文)はこのページでのみ見える。
+  ・番号↔氏名は塾のスプレッドシートで管理。番号を照らし合わせて誰かを特定する。
+  設定：下の SUPABASE_URL / SUPABASE_ANON_KEY を chiri_app.html と同じ値にする。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト社会・地理｜先生用 管理ページ</title>
+<style>
+  :root{--paper:#f7f4ec;--ink:#2a2723;--ink-soft:#6b6457;--line:#e2dccc;--green:#4f9d69;
+    --orange:#e08a3c;--wrong:#d9534f;--card:#fffdf8;--shadow:0 2px 0 rgba(42,39,35,.08),0 10px 24px -12px rgba(42,39,35,.35)}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;background:var(--paper);
+    color:var(--ink);padding:20px;max-width:900px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--ink-soft);font-size:13px;margin-bottom:18px}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);margin-bottom:16px}
+  label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px}
+  input,select{width:100%;padding:11px 13px;border:2px solid var(--line);border-radius:10px;font-size:15px;
+    font-family:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:none;border-color:var(--green)}
+  .btn{border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:700;font-family:inherit;
+    cursor:pointer;color:#fff;background:var(--green)}
+  .btn:active{opacity:.85}
+  .btn.sec{background:#fff;color:var(--ink);border:2px solid var(--line)}
+  .btn.warn{background:var(--wrong)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .msg{min-height:18px;font-size:13px;margin-top:8px}
+  .msg.err{color:var(--wrong)} .msg.ok{color:var(--green)}
+  .row-controls{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px}
+  .row-controls .f{flex:1;min-width:160px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--ink-soft);letter-spacing:.03em}
+  td.nick{font-weight:700}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#eef2ee;color:var(--ink-soft)}
+  .tag.stop{background:#fbe6e5;color:var(--wrong);font-weight:700}
+  .tag.ok{background:#eef7f0;color:var(--green);font-weight:700}
+  .actions{display:flex;gap:6px}
+  .bango{font-variant-numeric:tabular-nums;letter-spacing:.05em}
+  .tablewrap{overflow-x:auto}
+  .hide{display:none}
+  .foot{font-size:11px;color:var(--ink-soft);margin-top:10px;line-height:1.6}
+</style>
+
+<h1>🗾 ミルバト社会・地理 先生用 管理ページ</h1>
+<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます</div>
+
+<!-- ログイン -->
+<div class="card" id="loginCard">
+  <label>管理パスワード</label>
+  <div style="display:flex;gap:8px">
+    <input id="pw" type="password" placeholder="先生用パスワード" style="flex:1">
+    <button class="btn" id="loginBtn">ログイン</button>
+  </div>
+  <div class="msg" id="loginMsg"></div>
+  <div class="foot" id="cfgWarn"></div>
+</div>
+
+<!-- 管理 -->
+<div class="card hide" id="adminCard">
+  <div class="row-controls">
+    <div class="f">
+      <label>校舎でしぼる</label>
+      <select id="campusFilter">
+        <option value="">全て</option>
+        <option value="麻布">麻布</option><option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option><option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select>
+    </div>
+    <button class="btn sec" id="reloadBtn">🔄 最新にする</button>
+    <button class="btn sec" id="logoutBtn">ログアウト</button>
+  </div>
+  <div class="msg" id="adminMsg"></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週(点)</th><th>状態</th><th>そうさ</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="foot">
+    ・「番号」を塾のスプレッドシート（番号↔氏名）と照らし合わせて、誰のアカウントか確認できます。<br>
+    ・ニックネームがふさわしくないときは「名前変更」で直せます。<br>
+    ・「停止」するとその生徒はログイン・スコア送信ができなくなります（「再開」で戻せます）。
+  </div>
+</div>
+
+<script>
+/* chiri_app.html と同じ値を入れる */
+const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
+
+const $=id=>document.getElementById(id);
+let ADMIN_PW="";
+
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("HTTP "+res.status);
+  return res.json();
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+if(!SUPABASE_URL||!SUPABASE_ANON_KEY){
+  $('cfgWarn').textContent="※ このページの SUPABASE_URL / SUPABASE_ANON_KEY がまだ設定されていません。chiri_app.html と同じ値を入れてください。";
+}
+
+$('loginBtn').onclick=async()=>{
+  const pw=$('pw').value;
+  $('loginMsg').className="msg"; $('loginMsg').textContent="確認中…";
+  if(!SUPABASE_URL||!SUPABASE_ANON_KEY){$('loginMsg').className="msg err";$('loginMsg').textContent="設定が未完了です";return;}
+  try{
+    const r=await rpc('admin_auth',{p_pw:pw});
+    if(!r.ok){$('loginMsg').className="msg err";$('loginMsg').textContent="パスワードが違います";return;}
+    ADMIN_PW=pw;
+    $('loginCard').classList.add('hide'); $('adminCard').classList.remove('hide');
+    load();
+  }catch(e){$('loginMsg').className="msg err";$('loginMsg').textContent="通信エラー："+e.message;}
+};
+$('logoutBtn').onclick=()=>{ADMIN_PW="";$('pw').value="";$('adminCard').classList.add('hide');$('loginCard').classList.remove('hide');$('loginMsg').textContent="";};
+$('reloadBtn').onclick=()=>load();
+$('campusFilter').onchange=()=>load();
+
+async function load(){
+  $('adminMsg').className="msg"; $('adminMsg').textContent="読み込み中…";
+  try{
+    const r=await rpc('admin_list',{p_pw:ADMIN_PW,p_campus:$('campusFilter').value||null});
+    if(!r.ok){$('adminMsg').className="msg err";$('adminMsg').textContent="読み込めませんでした（再ログインしてください）";return;}
+    render(r.players||[]);
+    $('adminMsg').textContent = r.players.length ? (r.players.length+"人") : "まだ登録がありません";
+  }catch(e){$('adminMsg').className="msg err";$('adminMsg').textContent="通信エラー："+e.message;}
+}
+
+function render(list){
+  $('rows').innerHTML = list.map(p=>{
+    const stop=p.suspended;
+    return `<tr data-id="${p.id}">
+      <td class="nick">${esc(p.nick)}</td>
+      <td><span class="tag">${esc(p.campus)}</span></td>
+      <td class="bango">${esc(p.bango)}</td>
+      <td>${p.week_score}点</td>
+      <td>${stop?'<span class="tag stop">停止中</span>':'<span class="tag ok">通常</span>'}</td>
+      <td><div class="actions">
+        <button class="btn sec sm act-rename">名前変更</button>
+        <button class="btn sm ${stop?'sec':'warn'} act-toggle">${stop?'再開':'停止'}</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+  $('rows').querySelectorAll('tr').forEach(tr=>{
+    const id=tr.dataset.id, nick=tr.querySelector('.nick').textContent;
+    tr.querySelector('.act-rename').onclick=()=>doRename(id,nick);
+    tr.querySelector('.act-toggle').onclick=()=>doToggle(id,nick,tr.querySelector('.tag.stop')!=null);
+  });
+}
+
+async function doRename(id,cur){
+  const v=prompt(`「${cur}」の新しいニックネーム（12文字まで）`,cur);
+  if(v==null)return;
+  const nv=v.trim();
+  if(!nv){alert("空にはできません");return;}
+  try{
+    const r=await rpc('admin_rename',{p_pw:ADMIN_PW,p_player:id,p_new_nick:nv});
+    if(!r.ok){alert(r.reason==='nick_taken'?"その名前は既に使われています":r.reason==='bad_nick'?"1〜12文字で入れてください":"変更できませんでした");return;}
+    load();
+  }catch(e){alert("通信エラー："+e.message);}
+}
+async function doToggle(id,nick,isStopped){
+  const willStop=!isStopped;
+  if(!confirm(`「${nick}」を${willStop?'停止':'再開'}しますか？${willStop?'\n（ログイン・スコア送信ができなくなります）':''}`))return;
+  try{
+    const r=await rpc('admin_set_suspended',{p_pw:ADMIN_PW,p_player:id,p_val:willStop});
+    if(!r.ok){alert("変更できませんでした");return;}
+    load();
+  }catch(e){alert("通信エラー："+e.message);}
+}
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click();});
+</script>

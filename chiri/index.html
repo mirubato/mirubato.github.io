@@ -1,0 +1,1500 @@
+<!--
+  ミルバト社会・地理編 v3 — 中学受験 社会・地理 暗記アプリ（旧ちずたん）
+  ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
+  ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
+  Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト社会｜地理編</title>
+<style>
+  :root{
+    --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
+    --green:#4f9d69; --blue:#3f7cc4; --orange:#e08a3c; --gold:#d8a93a;
+    --wrong:#d9534f; --ok:#4f9d69; --card:#fffdf8;
+    --shadow:0 2px 0 rgba(42,39,35,.08), 0 10px 24px -12px rgba(42,39,35,.35); --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    background:radial-gradient(circle at 20% -10%, #fffaf0 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #eef5ee 0%, transparent 45%), var(--paper);
+    color:var(--ink);min-height:100%;display:flex;justify-content:center}
+  #app{width:100%;max-width:460px;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  .screen{flex:1;display:none;flex-direction:column;padding:20px 18px 28px}
+  .screen.active{display:flex;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:30px;margin:0;letter-spacing:.04em}
+  .brandsub{color:var(--ink-soft);font-size:13px;margin-top:2px;letter-spacing:.12em}
+  #login{justify-content:center;gap:18px;text-align:center}
+  .logo{font-size:64px;line-height:1}
+  .field{text-align:left;margin-top:6px}
+  .field label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px;letter-spacing:.05em}
+  .field input{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:18px;background:var(--card);font-family:inherit;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--green)}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:700;font-family:inherit;
+    cursor:pointer;width:100%;color:#fff;background:var(--green);box-shadow:0 3px 0 #3c7d52;
+    transition:transform .05s, box-shadow .05s;letter-spacing:.05em}
+  .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
+  .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
+  .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .btn[disabled]{opacity:.5}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .greet{font-size:14px;color:var(--ink-soft)}
+  .greet b{color:var(--ink);font-size:18px}
+  .streak{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid var(--line);
+    border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px}
+  .streak .fire{font-size:17px}
+  .map-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:16px 14px 8px;margin-bottom:16px;position:relative;overflow:hidden}
+  .map-wrap h2{margin:0 0 2px;font-size:15px;letter-spacing:.05em}
+  .map-wrap .sub{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+  svg.jpmap{width:100%;height:auto;display:block}
+  .mapnote{font-size:11px;color:var(--ink-soft);text-align:center;padding:6px 0 2px}
+  .stat-row{display:flex;gap:10px;margin-bottom:16px}
+  .stat{flex:1;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px;text-align:center}
+  .stat .num{font-size:24px;font-weight:800}
+  .stat .lbl{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+  .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .goal .gt{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+  .bar{height:12px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .5s}
+  .deck-pick{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .deck{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);
+    border-radius:16px;padding:14px;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .deck:active{transform:scale(.99)}
+  .deck .dot{width:14px;height:14px;border-radius:5px;flex:none}
+  .deck .dn{font-weight:700;font-size:16px}
+  .deck .dd{font-size:12px;color:var(--ink-soft)}
+  .deck .due{margin-left:auto;font-size:12px;background:#fbeede;color:var(--orange);
+    border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+  .deck .due.zero{background:#eef2ee;color:var(--ink-soft)}
+  .toolrow{display:flex;gap:8px;margin-top:12px}
+  .toolrow .btn{padding:11px;font-size:13px}
+  #quiz{padding-top:14px}
+  .qtop{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .qtop button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-soft);padding:4px}
+  .qbar{flex:1;height:10px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .qbar > i{display:block;height:100%;width:0;background:var(--green);transition:width .3s}
+  .qcount{font-size:13px;color:var(--ink-soft);font-weight:700}
+  .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:4px 10px;border-radius:999px;background:#eef2ee;color:var(--ink-soft);margin-bottom:10px}
+  .qcard{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px}
+  .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    padding:4px 10px;border-radius:999px;margin-bottom:10px;color:#fff}
+  .qpref{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+  .qtext{font-size:21px;font-weight:700;line-height:1.5}
+  .qmulti-hint{margin-top:8px;font-size:12px;color:var(--orange);font-weight:700}
+  .choices{display:flex;flex-direction:column;gap:10px}
+  .choice{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:15px 16px;
+    font-size:17px;font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;color:var(--ink);transition:.12s}
+  .choice:active{transform:scale(.99)}
+  .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choice.sel{border-color:var(--blue);background:#eef4fb}
+  .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
+  .choice.correct{border-color:var(--ok);background:#eef7f0}
+  .choice.correct .mk{background:var(--ok);border-color:var(--ok)}
+  .choice.wrong{border-color:var(--wrong);background:#fcefee}
+  .choice.wrong .mk{background:var(--wrong);border-color:var(--wrong)}
+  .choice[disabled]{cursor:default}
+  /* 文字を選ぶ・入力 */
+  .answer-slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:54px;
+    padding:12px;border:2px dashed var(--line);border-radius:14px;margin-bottom:14px;background:#fff}
+  .slot{min-width:44px;height:44px;border-radius:10px;background:#eef4fb;border:2px solid var(--blue);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;cursor:pointer}
+  .slot.empty{background:#f3eee2;border:2px dashed var(--line);cursor:default}
+  .tiles{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tile{min-width:44px;height:48px;padding:0 10px;border-radius:12px;background:var(--card);
+    border:2px solid var(--line);font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+  .tile:active{transform:scale(.96)}
+  .tile.used{opacity:.25;pointer-events:none}
+  .text-input{width:100%;padding:16px;border:2px solid var(--line);border-radius:14px;font-size:24px;
+    font-family:inherit;text-align:center;color:var(--ink);background:#fff}
+  .text-input:focus{outline:none;border-color:var(--green)}
+  .input-help{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .feedback{border-radius:var(--r);padding:16px;margin-top:16px;display:none}
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.good{background:#eef7f0;border:2px solid var(--ok)}
+  .feedback.bad{background:#fcefee;border:2px solid var(--wrong)}
+  .feedback .ft{font-weight:800;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .feedback.good .ft{color:var(--ok)}
+  .feedback.bad .ft{color:var(--wrong)}
+  .feedback .fn{font-size:14px;color:var(--ink);line-height:1.6}
+  .qfoot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px}
+  .linkbtn{background:none;border:none;color:var(--ink-soft);font-size:13px;font-family:inherit;
+    cursor:pointer;text-decoration:underline;padding:4px}
+  #done{justify-content:center;text-align:center;gap:14px}
+  #done .big{font-size:72px;line-height:1}
+  #done h2{font-size:26px;margin:0}
+  #done .reward{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;display:flex;justify-content:space-around}
+  #done .reward div{font-size:13px;color:var(--ink-soft)}
+  #done .reward b{display:block;font-size:26px;color:var(--ink);margin-top:2px}
+  .xp-pop{color:var(--gold);font-weight:800}
+  /* 取り込み画面 */
+  #import{gap:14px}
+  #import h2{margin:0;font-size:22px}
+  #import textarea{width:100%;height:200px;border:2px solid var(--line);border-radius:14px;
+    padding:12px;font-family:monospace;font-size:12px;background:#fff;color:var(--ink)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--ink-soft);font-size:14px;background:#fff}
+  .ok-msg{color:var(--ok);font-weight:700;font-size:14px}
+  .err-msg{color:var(--wrong);font-weight:700;font-size:14px}
+  /* 称号画面 */
+  #badges{gap:0}
+  #badges .qtop{margin-bottom:6px}
+  #badges h2{margin:0;font-size:22px}
+  .badge-sum{font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;text-align:center;
+    box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .badge.locked{opacity:.55;filter:grayscale(.8)}
+  .badge .bemoji{font-size:34px;line-height:1}
+  .badge .bname{font-size:13px;font-weight:700;line-height:1.3}
+  .badge .bbar{width:100%;height:8px;border-radius:999px;background:#ece6d8;overflow:hidden;margin-top:4px}
+  .badge .bbar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--blue))}
+  .badge .bmeta{font-size:11px;color:var(--ink-soft)}
+  .badge.earned{border-color:var(--green)}
+  .badge.earned .bmeta{color:var(--green);font-weight:700}
+  .badge.final{grid-column:1 / -1;background:linear-gradient(135deg,#fff8e8,#fef0d8);border-color:var(--gold)}
+  .badge.final.locked{filter:grayscale(.7)}
+  .badge.final .bemoji{font-size:42px}
+  .badge.final .bname{font-size:16px}
+  footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 称号コレクション（ホーム上部） */
+  .collection{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 14px 16px;margin-bottom:16px}
+  .collection-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .collection-head h2{margin:0}
+  .coll-count{font-size:12px;color:var(--ink-soft)}
+  .coll-count b{color:var(--green);font-size:16px}
+  .hbadge-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .hbadge{border:none;background:none;font-family:inherit;cursor:pointer;padding:6px 2px;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .1s}
+  .hbadge:active{transform:scale(.92)}
+  .hbadge .hb-emoji{font-size:26px;line-height:1.1;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .hbadge .hb-name{font-size:9px;color:var(--ink-soft);text-align:center;line-height:1.15}
+  .hbadge.earned .hb-emoji{background:radial-gradient(circle at 50% 35%, #fff6df, #ffe9b8);
+    box-shadow:0 0 0 2px var(--gold), 0 2px 8px rgba(216,169,58,.5)}
+  .hbadge.earned .hb-name{color:var(--ink);font-weight:700}
+  .hbadge.locked{filter:grayscale(1);opacity:.4}
+  .hbadge.locked .hb-emoji{background:#eee7d8}
+  .hbadge.final .hb-emoji{font-size:30px;width:48px;height:48px}
+  .hbadge.final.earned .hb-emoji{box-shadow:0 0 0 3px var(--gold),0 2px 12px rgba(216,169,58,.7)}
+  /* 3モード入口 */
+  .mode-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+  .mode-card{display:flex;align-items:center;gap:14px;background:var(--card);border:2px solid var(--line);
+    border-radius:var(--r);box-shadow:var(--shadow);padding:16px;cursor:pointer;font-family:inherit;text-align:left}
+  .mode-card:active{transform:translateY(2px)}
+  .mode-card .mc-emoji{font-size:32px;flex-shrink:0}
+  .mode-card .mc-title{display:block;font-size:17px;font-weight:800;color:var(--ink)}
+  .mode-card .mc-desc{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
+  #modeDaily{border-color:var(--green)}
+  #modeDaily.done{border-color:var(--line);opacity:.7}
+  #modeReview{border-color:var(--orange)}
+  .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
+  /* 画像つきカード */
+  .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
+  .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
+  /* 称号獲得のお祝い（音なし） */
+  .celebrate{position:fixed;inset:0;z-index:99;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .celebrate.out{opacity:0;transition:opacity .25s}
+  @keyframes cel-in{from{opacity:0}to{opacity:1}}
+  .celebrate .conf{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .celebrate .conf i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;opacity:.9;animation:conf-fall linear infinite}
+  @keyframes conf-fall{0%{transform:translateY(-6vh) rotate(0deg)}100%{transform:translateY(108vh) rotate(720deg)}}
+  .celebrate .cbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:28px 40px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:80%}
+  @keyframes cel-pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  .celebrate .cemoji{font-size:62px;line-height:1.2;animation:cel-bounce 1.2s ease-in-out infinite}
+  @keyframes cel-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .celebrate .ctitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .celebrate .cname{font-size:22px;font-weight:800;margin-top:2px}
+  .celebrate .cget{color:var(--orange);font-weight:800;font-size:16px;margin-top:6px}
+  .celebrate .chint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  .celebrate.doctor .cemoji{font-size:76px}
+  .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* 選んで学習 */
+  .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
+    border-radius:12px;padding:10px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 2px 0 rgba(42,39,35,.06)}
+  .pick-btn:active{transform:translateY(2px);box-shadow:none}
+  .pick-btn .pe{font-size:22px;flex-shrink:0}
+  .pick-btn .pn{font-weight:700;font-size:13px;display:block;color:var(--ink)}
+  .pick-btn .pp{font-size:10px;color:var(--ink-soft)}
+  .pick-btn.done{border-color:var(--green);background:#eef7f0}
+  .pick-btn.done .pp{color:var(--green);font-weight:700}
+  /* ランキング */
+  .online-only{display:none} /* Supabase接続時のみ表示（初期化でonにする） */
+  .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
+  .field select:focus{outline:none;border-color:var(--green)}
+  .rank-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .rtab{flex:1 1 30%;padding:9px 2px;border:1.5px solid var(--line);border-radius:10px;background:#fff;
+    font-size:12px;font-weight:700;color:var(--ink-soft);font-family:inherit;cursor:pointer;white-space:nowrap}
+  .rtab.active{border-color:var(--green);color:var(--green);background:#eef7f0}
+  .rank-note{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:4px}
+  .rank-me{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 14px;
+    margin:10px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .rank-me b{color:var(--green);font-size:18px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff}
+  .rank-row.me{border-color:var(--green);background:#eef7f0}
+  .rank-row .rno{width:40px;text-align:center;font-weight:800;font-size:15px;flex-shrink:0}
+  .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
+  .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
+  .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+  .star{font-size:14px;line-height:1}
+  .star.gold{color:#d8a93a}
+  .star.silver{color:#9aa0a6}
+  .rnick .stx{font-size:10px;color:var(--ink-soft);font-weight:700}
+  .rnick .me-tag{font-size:10px;background:var(--green);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
+  .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
+</style>
+
+<div id="app">
+  <!-- ログイン -->
+  <section id="login" class="screen active">
+    <div class="logo">🗾</div>
+    <div><h1>ミルバト社会</h1><div class="brandsub">地理編（中学受験）</div></div>
+    <div class="field"><label>ニックネーム</label>
+      <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
+      <div class="hint">本名は使わず、好きな名前にしてね。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
+    <div class="field"><label>番号（塾からもらった数字）</label>
+      <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
+      <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div></div>
+    <div class="field online-only" id="campusField"><label>校舎（初めての人だけ選んでね）</label>
+      <select id="campusSel">
+        <option value="">選んでね</option>
+        <option value="麻布">麻布</option>
+        <option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option>
+        <option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select></div>
+    <button class="btn" id="loginBtn">始める / 続きから</button>
+    <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="home" class="screen">
+    <div class="topbar">
+      <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
+    </div>
+    <div class="collection">
+      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">19</span></span></div>
+      <div class="hbadge-grid" id="homeBadgeGrid"></div>
+    </div>
+    <div class="mode-list">
+      <button class="mode-card" id="modeBadge">
+        <span class="mc-emoji">🏅</span>
+        <span class="mc-body"><span class="mc-title">称号モード</span><span class="mc-desc">地方・分野をえらんで、まだマスターしていない問題に挑戦</span></span>
+      </button>
+      <button class="mode-card" id="modeDaily">
+        <span class="mc-emoji" id="modeDailyEmoji">📅</span>
+        <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
+      </button>
+      <button class="mode-card" id="modeReview" style="display:none">
+        <span class="mc-emoji">🔁</span>
+        <span class="mc-body"><span class="mc-title">復習モード <span id="reviewCount" class="rev-badge"></span></span><span class="mc-desc">今日の30問でまちがえた問題。正解すると消えるよ</span></span>
+      </button>
+      <button class="mode-card" id="modeRank">
+        <span class="mc-emoji">🏆</span>
+        <span class="mc-body"><span class="mc-title">ランキング</span><span class="mc-desc">週間・月間の塾内ポイント対戦</span></span>
+      </button>
+    </div>
+    <div class="toolrow">
+      <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- クイズ -->
+  <section id="quiz" class="screen">
+    <div class="qtop">
+      <button id="quitBtn">✕</button>
+      <div class="qbar"><i id="qProg"></i></div>
+      <div class="qcount" id="qCount">1/10</div>
+    </div>
+    <div class="stage-pill" id="stagePill">ステップ1・4択から選ぶ</div>
+    <div class="qcard">
+      <span class="qtag" id="qTag">県別編</span>
+      <img id="qImg" class="qimg" style="display:none" alt="">
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像が開けないよ（先生にお知らせしてね）</div>
+      <div class="qtext" id="qText">問題文</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを 全部 選んでね</div>
+    </div>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback">
+      <div class="ft" id="fTitle"></div>
+      <div class="fn" id="fNote"></div>
+    </div>
+    <div class="qfoot">
+      <button class="btn" id="checkBtn" disabled>答え合わせ</button>
+      <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="done" class="screen">
+    <div class="big">🎉</div>
+    <h2>今日の分 クリア！</h2>
+    <div class="reward">
+      <div>解いた問題<b id="dCards">10</b></div>
+      <div>正解<b id="dCorrect">8</b></div>
+      <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
+    </div>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 連続記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへ戻る</button>
+    <button class="btn secondary" id="againBtn">もう一セットやる</button>
+  </section>
+
+  <!-- 取り込み -->
+  <section id="import" class="screen">
+    <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
+    <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,都道府県,…）のままでOK。</p>
+    <label class="dz" for="csvFile">📄 CSVファイルを選ぶ
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
+    <p class="hint" style="text-align:center">または下に貼り付け</p>
+    <textarea id="csvText" placeholder="id,編,都道府県,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
+    <div id="impMsg" style="min-height:18px"></div>
+    <button class="btn" id="doImport">この内容で問題を入れ替える</button>
+    <button class="linkbtn" id="resetCards">最初のサンプル問題に戻す</button>
+  </section>
+
+  <!-- 選んで学習（地方・分野べつ） -->
+  <section id="pick" class="screen">
+    <div class="qtop"><button id="pickBack">✕</button><h2>🏅 称号モード</h2></div>
+    <p class="hint" style="margin:2px 0 4px">地方・分野を選んで、まだマスターしていない問題に挑戦！</p>
+    <h3 class="pick-h">🗾 地方で選ぶ</h3>
+    <div class="pick-grid" id="pickRegion"></div>
+    <h3 class="pick-h">🏅 分野で選ぶ</h3>
+    <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- ランキング -->
+  <section id="ranking" class="screen">
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 ランキング</h2></div>
+    <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
+    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankPeriodTabs">
+      <button class="rtab active" data-period="week">今週</button>
+      <button class="rtab" data-period="month">今月</button>
+    </div>
+    <div class="rank-tabs" id="rankTabs">
+      <button class="rtab active" data-campus="">全員</button>
+      <button class="rtab" data-campus="麻布">麻布</button>
+      <button class="rtab" data-campus="渋谷">渋谷</button>
+      <button class="rtab" data-campus="四谷">四谷</button>
+      <button class="rtab" data-campus="新宿">新宿</button>
+      <button class="rtab" data-campus="自由が丘">自由が丘</button>
+    </div>
+    <div id="rankList"></div>
+    <div class="rank-legend"><span class="star gold">★</span> 月間チャンピオン　<span class="star silver">★</span> 週間チャンピオン</div>
+    <button class="btn secondary" id="rankReload">🔄 最新にする</button>
+  </section>
+
+  <!-- 称号 -->
+  <section id="badges" class="screen">
+    <div class="qtop"><button id="badgesBack">✕</button><h2>🏅 称号</h2></div>
+    <div class="badge-sum" id="badgeSum"></div>
+    <div class="badge-grid" id="badgeGrid"></div>
+  </section>
+
+  <footer>ミルバト社会・地理編 v3 ・ 進捗はこの端末に保存されます</footer>
+</div>
+
+<script>
+/* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
+const COLOR = { "県別編":"var(--green)", "自然編":"var(--blue)", "産業編":"var(--orange)" };
+const DEFAULT_CARDS = [
+  {"id": "hokkaido-capital", "comp": "県別編", "pref": "北海道", "cat": "道庁所在地", "type": "single", "q": "北海道の道庁所在地は？", "a": ["札幌市"], "choices": ["函館市", "旭川市", "釧路市", "札幌市"], "note": "政令指定都市。道内で一番人口が多い。漢字に注意！", "region": "北海道", "badgeCat": "県庁所在地"},
+  {"id": "iwate-capital", "comp": "県別編", "pref": "岩手県", "cat": "県庁所在地", "type": "single", "q": "岩手県の県庁所在地は？", "a": ["盛岡市"], "choices": ["仙台市", "秋田市", "青森市", "盛岡市"], "note": "南部鉄器・盛岡冷麺で有名。県名と異なる。", "region": "東北", "badgeCat": "県庁所在地"},
+  {"id": "miyagi-capital", "comp": "県別編", "pref": "宮城県", "cat": "県庁所在地", "type": "single", "q": "宮城県の県庁所在地は？", "a": ["仙台市"], "choices": ["盛岡市", "福島市", "山形市", "仙台市"], "note": "政令指定都市。仙台七夕まつり。県名と異なる。", "region": "東北", "badgeCat": "県庁所在地"},
+  {"id": "ibaraki-capital", "comp": "県別編", "pref": "茨城県", "cat": "県庁所在地", "type": "single", "q": "茨城県の県庁所在地は？", "a": ["水戸市"], "choices": ["つくば市", "日立市", "宇都宮市", "水戸市"], "note": "偕楽園(日本三名園)。水戸納豆。県名と異なる。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "tochigi-capital", "comp": "県別編", "pref": "栃木県", "cat": "県庁所在地", "type": "single", "q": "栃木県の県庁所在地は？", "a": ["宇都宮市"], "choices": ["日光市", "前橋市", "水戸市", "宇都宮市"], "note": "宇都宮餃子。いちご(とちおとめ)。県名と異なる。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "gunma-capital", "comp": "県別編", "pref": "群馬県", "cat": "県庁所在地", "type": "single", "q": "群馬県の県庁所在地は？", "a": ["前橋市"], "choices": ["高崎市", "水戸市", "宇都宮市", "前橋市"], "note": "県内最大人口は高崎市(所在地と異なる)。県名と異なる。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "saitama-capital", "comp": "県別編", "pref": "埼玉県", "cat": "県庁所在地", "type": "single", "q": "埼玉県の県庁所在地は？", "a": ["さいたま市"], "choices": ["川越市", "川口市", "千葉市", "さいたま市"], "note": "ひらがな表記に注意！大宮・浦和・与野が合併。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "kanagawa-capital", "comp": "県別編", "pref": "神奈川県", "cat": "県庁所在地", "type": "single", "q": "神奈川県の県庁所在地は？", "a": ["横浜市"], "choices": ["川崎市", "相模原市", "千葉市", "横浜市"], "note": "人口300万人以上の政令指定都市。県名と異なる。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "ishikawa-capital", "comp": "県別編", "pref": "石川県", "cat": "県庁所在地", "type": "single", "q": "石川県の県庁所在地は？", "a": ["金沢市"], "choices": ["富山市", "福井市", "新潟市", "金沢市"], "note": "兼六園(日本三名園)。県名と異なる。", "region": "中部", "badgeCat": "県庁所在地"},
+  {"id": "yamanashi-capital", "comp": "県別編", "pref": "山梨県", "cat": "県庁所在地", "type": "single", "q": "山梨県の県庁所在地は？", "a": ["甲府市"], "choices": ["富士市", "松本市", "長野市", "甲府市"], "note": "甲府盆地でぶどう・もも。県名と異なる。", "region": "中部", "badgeCat": "県庁所在地"},
+  {"id": "aichi-capital", "comp": "県別編", "pref": "愛知県", "cat": "県庁所在地", "type": "single", "q": "愛知県の県庁所在地は？", "a": ["名古屋市"], "choices": ["豊田市", "岡崎市", "岐阜市", "名古屋市"], "note": "人口200万人以上の政令指定都市。", "region": "中部", "badgeCat": "県庁所在地"},
+  {"id": "mie-capital", "comp": "県別編", "pref": "三重県", "cat": "県庁所在地", "type": "single", "q": "三重県の県庁所在地は？", "a": ["津市"], "choices": ["四日市市", "伊勢市", "大津市", "津市"], "note": "唯一の一文字県庁所在地。県内最大は四日市市。県名と異なる。", "region": "近畿", "badgeCat": "県庁所在地"},
+  {"id": "shiga-capital", "comp": "県別編", "pref": "滋賀県", "cat": "県庁所在地", "type": "single", "q": "滋賀県の県庁所在地は？", "a": ["大津市"], "choices": ["彦根市", "近江八幡市", "津市", "大津市"], "note": "津市と区別！琵琶湖の南西岸。県名と異なる。", "region": "近畿", "badgeCat": "県庁所在地"},
+  {"id": "hyogo-capital", "comp": "県別編", "pref": "兵庫県", "cat": "県庁所在地", "type": "single", "q": "兵庫県の県庁所在地は？", "a": ["神戸市"], "choices": ["姫路市", "西宮市", "大阪市", "神戸市"], "note": "夜景の観光地。県名と異なる。", "region": "近畿", "badgeCat": "県庁所在地"},
+  {"id": "shimane-capital", "comp": "県別編", "pref": "島根県", "cat": "県庁所在地", "type": "single", "q": "島根県の県庁所在地は？", "a": ["松江市"], "choices": ["出雲市", "浜田市", "鳥取市", "松江市"], "note": "宍道湖のしじみ、出雲大社。県名と異なる。", "region": "中国四国", "badgeCat": "県庁所在地"},
+  {"id": "kagawa-capital", "comp": "県別編", "pref": "香川県", "cat": "県庁所在地", "type": "single", "q": "香川県の県庁所在地は？", "a": ["高松市"], "choices": ["丸亀市", "坂出市", "松山市", "高松市"], "note": "「松」のつく3都市(高松・松山・松江)を区別！讃岐平野。県名と異なる。", "region": "中国四国", "badgeCat": "県庁所在地"},
+  {"id": "ehime-capital", "comp": "県別編", "pref": "愛媛県", "cat": "県庁所在地", "type": "single", "q": "愛媛県の県庁所在地は？", "a": ["松山市"], "choices": ["今治市", "新居浜市", "高松市", "松山市"], "note": "『坊っちゃん』の舞台。道後温泉。県名と異なる。", "region": "中国四国", "badgeCat": "県庁所在地"},
+  {"id": "okinawa-capital", "comp": "県別編", "pref": "沖縄県", "cat": "県庁所在地", "type": "single", "q": "沖縄県の県庁所在地は？", "a": ["那覇市"], "choices": ["名護市", "沖縄市", "石垣市", "那覇市"], "note": "漢字に注意。首里城跡。県名と異なる。", "region": "九州沖縄", "badgeCat": "県庁所在地"},
+  {"id": "seirei-kanto", "comp": "県別編", "pref": "関東", "cat": "政令指定都市", "type": "single", "q": "関東地方(東京23区を除く)で一番人口が多い都市は？", "a": ["横浜市"], "choices": ["川崎市", "さいたま市", "千葉市", "横浜市"], "note": "神奈川県には政令指定都市が3つ(横浜・川崎・相模原)。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "kanagawa-3seirei", "comp": "県別編", "pref": "神奈川県", "cat": "政令指定都市", "type": "multi", "q": "神奈川県にある政令指定都市を 全部 選んでね", "a": ["横浜市", "川崎市", "相模原市"], "choices": ["横浜市", "川崎市", "相模原市", "藤沢市"], "note": "全国で唯一、政令指定都市が3つある県。", "region": "関東", "badgeCat": "県庁所在地"},
+  {"id": "nihonsankei", "comp": "県別編", "pref": "全国", "cat": "日本三景", "type": "multi", "q": "日本三景を 全部 選んでね", "a": ["松島", "天橋立", "宮島"], "choices": ["松島", "天橋立", "宮島", "後楽園"], "note": "松島(宮城)・天橋立(京都)・宮島(広島)。後楽園は日本三名園。", "region": "全国", "badgeCat": "その他"},
+  {"id": "sanmeien", "comp": "県別編", "pref": "全国", "cat": "日本三名園", "type": "multi", "q": "日本三名園を 全部 選んでね", "a": ["兼六園", "偕楽園", "後楽園"], "choices": ["兼六園", "偕楽園", "後楽園", "松島"], "note": "兼六園(石川)・偕楽園(茨城)・後楽園(岡山)。", "region": "全国", "badgeCat": "その他"},
+  {"id": "river-shinano", "comp": "自然編", "pref": "新潟県", "cat": "河川", "type": "single", "q": "日本で一番 長い 川は？", "a": ["信濃川"], "choices": ["利根川", "石狩川", "最上川", "信濃川"], "note": "長野→新潟。下流の越後平野は米どころ。", "region": "中部", "badgeCat": "陸"},
+  {"id": "river-tone", "comp": "自然編", "pref": "千葉県", "cat": "河川", "type": "single", "q": "流域面積が日本一 の川は？", "a": ["利根川"], "choices": ["信濃川", "石狩川", "筑後川", "利根川"], "note": "長さは2番目、流域面積は1番。「坂東太郎」。", "region": "関東", "badgeCat": "陸"},
+  {"id": "river-ishikari", "comp": "自然編", "pref": "北海道", "cat": "河川", "type": "single", "q": "日本で3番目に長く、三日月湖が多い川は？", "a": ["石狩川"], "choices": ["信濃川", "利根川", "北上川", "石狩川"], "note": "石狩平野を流れる。曲がりくねった川。", "region": "北海道", "badgeCat": "陸"},
+  {"id": "river-kitakami", "comp": "自然編", "pref": "岩手県", "cat": "河川", "type": "single", "q": "東北地方で一番長い川は？", "a": ["北上川"], "choices": ["最上川", "信濃川", "阿賀野川", "北上川"], "note": "岩手→宮城。", "region": "東北", "badgeCat": "陸"},
+  {"id": "river-mogami", "comp": "自然編", "pref": "山形県", "cat": "河川", "type": "single", "q": "山形県を流れる日本三大急流の一つは？", "a": ["最上川"], "choices": ["利根川", "信濃川", "球磨川", "最上川"], "note": "庄内平野で稲作。芭蕉の句。", "region": "東北", "badgeCat": "陸"},
+  {"id": "river-agano", "comp": "自然編", "pref": "新潟県", "cat": "河川", "type": "single", "q": "新潟水俣病(第二水俣病)が発生した川は？", "a": ["阿賀野川"], "choices": ["神通川", "信濃川", "利根川", "阿賀野川"], "note": "有害物質はメチル(有機)水銀。", "region": "中部", "badgeCat": "陸"},
+  {"id": "river-jintsu", "comp": "自然編", "pref": "富山県", "cat": "河川", "type": "single", "q": "イタイイタイ病が発生した富山県の川は？", "a": ["神通川"], "choices": ["阿賀野川", "信濃川", "黒部川", "神通川"], "note": "有害物質はカドミウム。", "region": "中部", "badgeCat": "陸"},
+  {"id": "river-fuji", "comp": "自然編", "pref": "山梨県", "cat": "河川", "type": "single", "q": "日本三大急流の一つで、河口で製紙パルプ工業がさかんな川は？", "a": ["富士川"], "choices": ["最上川", "球磨川", "天竜川", "富士川"], "note": "山梨→静岡。富士市。", "region": "中部", "badgeCat": "陸"},
+  {"id": "river-kuma", "comp": "自然編", "pref": "熊本県", "cat": "河川", "type": "single", "q": "日本三大急流の一つで、八代平野を流れる川は？", "a": ["球磨川"], "choices": ["最上川", "富士川", "筑後川", "球磨川"], "note": "2020年に氾濫。", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "river-yoshino", "comp": "自然編", "pref": "徳島県", "cat": "河川", "type": "single", "q": "「四国三郎」と呼ばれ、香川用水の水源になる川は？", "a": ["吉野川"], "choices": ["筑後川", "利根川", "四万十川", "吉野川"], "note": "四国を流れる。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "river-chikugo", "comp": "自然編", "pref": "福岡県", "cat": "河川", "type": "single", "q": "「筑紫次郎」と呼ばれ、クリークで有名な川は？", "a": ["筑後川"], "choices": ["吉野川", "利根川", "信濃川", "筑後川"], "note": "筑紫平野。有明海に注ぐ。", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "river-shimanto", "comp": "自然編", "pref": "高知県", "cat": "河川", "type": "single", "q": "「最後の清流」と呼ばれる高知県の川は？", "a": ["四万十川"], "choices": ["吉野川", "球磨川", "仁淀川", "四万十川"], "note": "きれいな川。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "river-3kyuryu", "comp": "自然編", "pref": "全国", "cat": "河川", "type": "multi", "q": "日本三大急流を 全部 選んでね", "a": ["最上川", "富士川", "球磨川"], "choices": ["最上川", "富士川", "球磨川", "信濃川"], "note": "最上川(山形)・富士川(山梨静岡)・球磨川(熊本)。", "region": "全国", "badgeCat": "陸"},
+  {"id": "lake-biwa", "comp": "自然編", "pref": "滋賀県", "cat": "湖", "type": "single", "q": "日本で一番 大きい 湖は？", "a": ["琵琶湖"], "choices": ["霞ヶ浦", "サロマ湖", "猪苗代湖", "琵琶湖"], "note": "滋賀県の面積の6分の1。ラムサール条約。", "region": "近畿", "badgeCat": "陸"},
+  {"id": "lake-kasumi", "comp": "自然編", "pref": "茨城県", "cat": "湖", "type": "single", "q": "日本で2番目に大きい湖は？", "a": ["霞ヶ浦"], "choices": ["琵琶湖", "サロマ湖", "宍道湖", "霞ヶ浦"], "note": "水郷地帯。", "region": "関東", "badgeCat": "陸"},
+  {"id": "lake-saroma", "comp": "自然編", "pref": "北海道", "cat": "湖", "type": "single", "q": "日本で3番目に大きく、ほたて養殖がさかんな湖は？", "a": ["サロマ湖"], "choices": ["琵琶湖", "霞ヶ浦", "田沢湖", "サロマ湖"], "note": "北海道。", "region": "北海道", "badgeCat": "陸"},
+  {"id": "lake-inawashiro", "comp": "自然編", "pref": "福島県", "cat": "湖", "type": "single", "q": "日本で4番目に大きい湖は？", "a": ["猪苗代湖"], "choices": ["琵琶湖", "霞ヶ浦", "田沢湖", "猪苗代湖"], "note": "福島県の中央付近。", "region": "東北", "badgeCat": "陸"},
+  {"id": "lake-tazawa", "comp": "自然編", "pref": "秋田県", "cat": "湖", "type": "single", "q": "日本で一番 深い 湖は？", "a": ["田沢湖"], "choices": ["琵琶湖", "宍道湖", "浜名湖", "田沢湖"], "note": "秋田県。", "region": "東北", "badgeCat": "陸"},
+  {"id": "lake-suwa", "comp": "自然編", "pref": "長野県", "cat": "湖", "type": "single", "q": "周辺で精密機械工業がさかんな長野県の湖は？", "a": ["諏訪湖"], "choices": ["浜名湖", "琵琶湖", "宍道湖", "諏訪湖"], "note": "セイコーエプソン。", "region": "中部", "badgeCat": "陸"},
+  {"id": "lake-hamana", "comp": "自然編", "pref": "静岡県", "cat": "湖", "type": "single", "q": "うなぎの養殖がさかんな静岡県の湖は？", "a": ["浜名湖"], "choices": ["諏訪湖", "琵琶湖", "宍道湖", "浜名湖"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "lake-shinji", "comp": "自然編", "pref": "島根県", "cat": "湖", "type": "single", "q": "しじみの養殖がさかんな汽水湖は？", "a": ["宍道湖"], "choices": ["浜名湖", "琵琶湖", "サロマ湖", "宍道湖"], "note": "塩水を含む汽水湖。松江市の西。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "mt-ou", "comp": "自然編", "pref": "東北", "cat": "山地・山脈", "type": "single", "q": "日本最大 の山脈は？", "a": ["奥羽山脈"], "choices": ["越後山脈", "飛驒山脈", "木曽山脈", "奥羽山脈"], "note": "東北を南北に走る。", "region": "東北", "badgeCat": "陸"},
+  {"id": "mt-hida", "comp": "自然編", "pref": "中部", "cat": "山地・山脈", "type": "single", "q": "北アルプスとも呼ばれる山脈は？", "a": ["飛驒山脈"], "choices": ["木曽山脈", "赤石山脈", "奥羽山脈", "飛驒山脈"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "mt-kiso", "comp": "自然編", "pref": "中部", "cat": "山地・山脈", "type": "single", "q": "中央アルプスとも呼ばれる山脈は？", "a": ["木曽山脈"], "choices": ["飛驒山脈", "赤石山脈", "越後山脈", "木曽山脈"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "mt-akaishi", "comp": "自然編", "pref": "中部", "cat": "山地・山脈", "type": "single", "q": "南アルプスとも呼ばれる山脈は？", "a": ["赤石山脈"], "choices": ["飛驒山脈", "木曽山脈", "奥羽山脈", "赤石山脈"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "mt-kii", "comp": "自然編", "pref": "近畿", "cat": "山地・山脈", "type": "single", "q": "霊場や参詣道が世界遺産に登録されている山地は？", "a": ["紀伊山地"], "choices": ["中国山地", "四国山地", "紀伊山脈", "紀伊山地"], "note": "熊野古道・高野山。", "region": "近畿", "badgeCat": "陸"},
+  {"id": "peak-asama", "comp": "自然編", "pref": "群馬県", "cat": "山・台地・盆地", "type": "single", "q": "ふもとの嬬恋村でキャベツ栽培がさかんな山は？", "a": ["浅間山"], "choices": ["八ヶ岳", "羊蹄山", "阿蘇山", "浅間山"], "note": "群馬と長野の境。", "region": "関東", "badgeCat": "陸"},
+  {"id": "peak-yatsu", "comp": "自然編", "pref": "長野県", "cat": "山・台地・盆地", "type": "single", "q": "ふもとの野辺山原でレタス栽培がさかんな山は？", "a": ["八ヶ岳"], "choices": ["浅間山", "富士山", "羊蹄山", "八ヶ岳"], "note": "山梨と長野の境。", "region": "中部", "badgeCat": "陸"},
+  {"id": "peak-fujisan", "comp": "自然編", "pref": "静岡県", "cat": "山・台地・盆地", "type": "single", "q": "日本一の標高をほこり、世界文化遺産の山は？", "a": ["富士山"], "choices": ["阿蘇山", "桜島", "浅間山", "富士山"], "note": "山梨と静岡の境。", "region": "中部", "badgeCat": "陸"},
+  {"id": "peak-aso", "comp": "自然編", "pref": "熊本県", "cat": "山・台地・盆地", "type": "single", "q": "世界最大級のカルデラで知られる山は？", "a": ["阿蘇山"], "choices": ["桜島", "富士山", "浅間山", "阿蘇山"], "note": "カルデラの中に人が住む。", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "peak-sakurajima", "comp": "自然編", "pref": "鹿児島県", "cat": "山・台地・盆地", "type": "single", "q": "鹿児島県を代表する活発な活火山は？", "a": ["桜島"], "choices": ["阿蘇山", "浅間山", "羊蹄山", "桜島"], "note": "", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "peak-konsen", "comp": "自然編", "pref": "北海道", "cat": "山・台地・盆地", "type": "single", "q": "大規模な酪農が行われる北海道の台地は？", "a": ["根釧台地"], "choices": ["武蔵野台地", "笠野原", "シラス台地", "根釧台地"], "note": "パイロットファーム。", "region": "北海道", "badgeCat": "陸"},
+  {"id": "peak-musashino", "comp": "自然編", "pref": "東京都", "cat": "山・台地・盆地", "type": "single", "q": "関東ローム層が広がる、東京・埼玉の台地は？", "a": ["武蔵野台地"], "choices": ["根釧台地", "笠野原", "牧ノ原", "武蔵野台地"], "note": "ねぎ・ほうれんそう。", "region": "関東", "badgeCat": "陸"},
+  {"id": "peak-kofu", "comp": "自然編", "pref": "山梨県", "cat": "山・台地・盆地", "type": "single", "q": "ぶどう・ももの栽培がさかんな扇状地の盆地は？", "a": ["甲府盆地"], "choices": ["長野盆地", "山形盆地", "近江盆地", "甲府盆地"], "note": "水はけがよい。", "region": "中部", "badgeCat": "陸"},
+  {"id": "peak-makinohara", "comp": "自然編", "pref": "静岡県", "cat": "山・台地・盆地", "type": "single", "q": "茶の生産がさかんな静岡県の台地は？", "a": ["牧ノ原"], "choices": ["笠野原", "武蔵野台地", "根釧台地", "牧ノ原"], "note": "温暖で水はけがよい。", "region": "中部", "badgeCat": "陸"},
+  {"id": "peak-kasanohara", "comp": "自然編", "pref": "鹿児島県", "cat": "山・台地・盆地", "type": "single", "q": "火山灰が積もったシラス台地は？", "a": ["笠野原"], "choices": ["牧ノ原", "武蔵野台地", "根釧台地", "笠野原"], "note": "水はけがよく稲作に不向き。さつまいも・茶。", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "cur-nihon", "comp": "自然編", "pref": "太平洋", "cat": "海流", "type": "single", "q": "太平洋側を流れる暖流で「黒潮」とも呼ばれるのは？", "a": ["日本海流"], "choices": ["千島海流", "対馬海流", "リマン海流", "日本海流"], "note": "生物が少なく黒く見える。", "region": "全国", "badgeCat": "海"},
+  {"id": "cur-chishima", "comp": "自然編", "pref": "太平洋", "cat": "海流", "type": "single", "q": "太平洋側を流れる寒流で「親潮」とも呼ばれるのは？", "a": ["千島海流"], "choices": ["日本海流", "対馬海流", "リマン海流", "千島海流"], "note": "栄養豊富で魚がよく育つ。", "region": "全国", "badgeCat": "海"},
+  {"id": "cur-tsushima", "comp": "自然編", "pref": "日本海", "cat": "海流", "type": "single", "q": "日本海側を流れる暖流は？", "a": ["対馬海流"], "choices": ["リマン海流", "日本海流", "千島海流", "対馬海流"], "note": "", "region": "全国", "badgeCat": "海"},
+  {"id": "cur-liman", "comp": "自然編", "pref": "日本海", "cat": "海流", "type": "single", "q": "日本海側を流れる寒流は？", "a": ["リマン海流"], "choices": ["対馬海流", "千島海流", "日本海流", "リマン海流"], "note": "", "region": "全国", "badgeCat": "海"},
+  {"id": "pen-shiretoko", "comp": "自然編", "pref": "北海道", "cat": "半島", "type": "single", "q": "流氷が見られ、世界自然遺産に登録されている半島は？", "a": ["知床半島"], "choices": ["根室半島", "津軽半島", "下北半島", "知床半島"], "note": "", "region": "北海道", "badgeCat": "海"},
+  {"id": "pen-tsugaru", "comp": "自然編", "pref": "青森県", "cat": "半島", "type": "single", "q": "青函トンネルで北海道と結ばれ、りんご栽培で有名な半島は？", "a": ["津軽半島"], "choices": ["下北半島", "能登半島", "房総半島", "津軽半島"], "note": "", "region": "東北", "badgeCat": "海"},
+  {"id": "pen-noto", "comp": "自然編", "pref": "石川県", "cat": "半島", "type": "single", "q": "輪島塗で有名、日本海側で最大の半島は？", "a": ["能登半島"], "choices": ["津軽半島", "房総半島", "紀伊半島", "能登半島"], "note": "2024年に能登半島地震。", "region": "中部", "badgeCat": "海"},
+  {"id": "pen-boso", "comp": "自然編", "pref": "千葉県", "cat": "半島", "type": "single", "q": "南部で花の栽培、東京湾側で京葉工業地帯がある半島は？", "a": ["房総半島"], "choices": ["三浦半島", "伊豆半島", "知多半島", "房総半島"], "note": "", "region": "関東", "badgeCat": "海"},
+  {"id": "pen-izu", "comp": "自然編", "pref": "静岡県", "cat": "半島", "type": "single", "q": "美しい海と温泉、みかん栽培で有名な半島は？", "a": ["伊豆半島"], "choices": ["房総半島", "渥美半島", "紀伊半島", "伊豆半島"], "note": "", "region": "中部", "badgeCat": "海"},
+  {"id": "pen-atsumi", "comp": "自然編", "pref": "愛知県", "cat": "半島", "type": "single", "q": "電照菊やメロンの栽培がさかんな半島は？", "a": ["渥美半島"], "choices": ["知多半島", "伊豆半島", "房総半島", "渥美半島"], "note": "温室利用。", "region": "中部", "badgeCat": "海"},
+  {"id": "pen-chita", "comp": "自然編", "pref": "愛知県", "cat": "半島", "type": "single", "q": "沖合に中部国際空港がある半島は？", "a": ["知多半島"], "choices": ["渥美半島", "紀伊半島", "志摩半島", "知多半島"], "note": "セントレア。", "region": "中部", "badgeCat": "海"},
+  {"id": "pen-shima", "comp": "自然編", "pref": "三重県", "cat": "半島", "type": "single", "q": "リアス海岸があり真珠の養殖がさかんな半島は？", "a": ["志摩半島"], "choices": ["紀伊半島", "渥美半島", "薩摩半島", "志摩半島"], "note": "英虞湾。伊勢神宮。", "region": "近畿", "badgeCat": "海"},
+  {"id": "pen-kii", "comp": "自然編", "pref": "和歌山県", "cat": "半島", "type": "single", "q": "吉野すぎの産地があり、日本最大の半島は？", "a": ["紀伊半島"], "choices": ["志摩半島", "房総半島", "薩摩半島", "紀伊半島"], "note": "潮岬は本州最南端。", "region": "近畿", "badgeCat": "海"},
+  {"id": "pen-osumi", "comp": "自然編", "pref": "鹿児島県", "cat": "半島", "type": "single", "q": "活火山の桜島があり、茶の産地でもある半島は？", "a": ["大隅半島"], "choices": ["薩摩半島", "紀伊半島", "知多半島", "大隅半島"], "note": "", "region": "九州沖縄", "badgeCat": "海"},
+  {"id": "pen-satsuma", "comp": "自然編", "pref": "鹿児島県", "cat": "半島", "type": "single", "q": "ザビエルが来航した、鹿児島県西側の半島は？", "a": ["薩摩半島"], "choices": ["大隅半島", "紀伊半島", "志摩半島", "薩摩半島"], "note": "", "region": "九州沖縄", "badgeCat": "海"},
+  {"id": "coast-sanriku", "comp": "自然編", "pref": "岩手県", "cat": "海岸", "type": "single", "q": "わかめ・こんぶの養殖がさかんなリアス海岸は？", "a": ["三陸海岸"], "choices": ["九十九里浜", "若狭湾", "宇和海", "三陸海岸"], "note": "東日本大震災で津波被害。", "region": "東北", "badgeCat": "海"},
+  {"id": "coast-kujukuri", "comp": "自然編", "pref": "千葉県", "cat": "海岸", "type": "single", "q": "約66km続く砂浜海岸は？", "a": ["九十九里浜"], "choices": ["三陸海岸", "若狭湾", "有明海", "九十九里浜"], "note": "房総半島の東側。", "region": "関東", "badgeCat": "海"},
+  {"id": "bay-wakasa", "comp": "自然編", "pref": "福井県", "cat": "湾", "type": "single", "q": "リアス海岸で「原発銀座」とも呼ばれる湾は？", "a": ["若狭湾"], "choices": ["陸奥湾", "有明海", "英虞湾", "若狭湾"], "note": "原子力発電所が多い。", "region": "中部", "badgeCat": "海"},
+  {"id": "bay-mutsu", "comp": "自然編", "pref": "青森県", "cat": "湾", "type": "single", "q": "ほたての養殖がさかんな、青森県の湾は？", "a": ["陸奥湾"], "choices": ["若狭湾", "有明海", "大村湾", "陸奥湾"], "note": "津軽半島と下北半島に囲まれる。", "region": "東北", "badgeCat": "海"},
+  {"id": "farm-rice", "comp": "産業編", "pref": "新潟県", "cat": "特産品", "type": "single", "q": "米の生産量が全国一の都道府県は？", "a": ["新潟県"], "choices": ["北海道", "秋田県", "山形県", "新潟県"], "note": "2位北海道、3位秋田。東北地方が最多。", "region": "中部", "badgeCat": "農業"},
+  {"id": "farm-wheat", "comp": "産業編", "pref": "北海道", "cat": "特産品", "type": "single", "q": "北海道が生産量日本一で、パンやうどんの原料になる作物は？", "a": ["小麦"], "choices": ["小麦", "みかん", "ピーマン", "茶"], "note": "パン・うどん・ラーメンの原料。", "region": "北海道", "badgeCat": "農業"},
+  {"id": "farm-potato", "comp": "産業編", "pref": "北海道", "cat": "特産品", "type": "single", "q": "北海道が生産量日本一で、カレーやポテトチップスに使ういもは？", "a": ["じゃがいも"], "choices": ["じゃがいも", "さつまいも", "キャベツ", "みかん"], "note": "男爵いも・メークイン。", "region": "北海道", "badgeCat": "農業"},
+  {"id": "farm-onion", "comp": "産業編", "pref": "北海道", "cat": "特産品", "type": "single", "q": "北海道が生産量日本一で、佐賀県や兵庫県の淡路島も産地として有名な野菜は？", "a": ["たまねぎ"], "choices": ["たまねぎ", "なす", "トマト", "ピーマン"], "note": "1位北海道（約6割）。2位は年により佐賀県と兵庫県（淡路島）が入れ替わる。", "region": "北海道", "badgeCat": "農業"},
+  {"id": "farm-cabbage", "comp": "産業編", "pref": "群馬県", "cat": "特産品", "type": "single", "q": "キャベツの生産量が全国一の都道府県は？", "a": ["群馬県"], "choices": ["愛知県", "千葉県", "北海道", "群馬県"], "note": "嬬恋村。2位愛知とは僅差。", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-lettuce", "comp": "産業編", "pref": "長野県", "cat": "特産品", "type": "single", "q": "レタスの生産量が全国一の都道府県は？", "a": ["長野県"], "choices": ["茨城県", "群馬県", "北海道", "長野県"], "note": "野辺山原の高冷地農業。", "region": "中部", "badgeCat": "農業"},
+  {"id": "farm-tomato", "comp": "産業編", "pref": "熊本県", "cat": "特産品", "type": "single", "q": "トマトの生産量が全国一の都道府県は？", "a": ["熊本県"], "choices": ["北海道", "愛知県", "千葉県", "熊本県"], "note": "くまモンの赤いほっぺ。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-watermelon", "comp": "産業編", "pref": "熊本県", "cat": "特産品", "type": "single", "q": "すいかの生産量が全国一の都道府県は？", "a": ["熊本県"], "choices": ["千葉県", "山形県", "鳥取県", "熊本県"], "note": "くまモンのほっぺ(もう片方)。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-nasu", "comp": "産業編", "pref": "高知県", "cat": "特産品", "type": "single", "q": "なすの生産量が全国一の都道府県は？", "a": ["高知県"], "choices": ["熊本県", "福岡県", "群馬県", "高知県"], "note": "高知平野の促成栽培。", "region": "中国四国", "badgeCat": "農業"},
+  {"id": "farm-apple", "comp": "産業編", "pref": "青森県", "cat": "特産品", "type": "single", "q": "りんごの生産量が全国一の都道府県は？", "a": ["青森県"], "choices": ["長野県", "岩手県", "山形県", "青森県"], "note": "津軽平野。2位長野。", "region": "東北", "badgeCat": "農業"},
+  {"id": "farm-mikan", "comp": "産業編", "pref": "和歌山県", "cat": "特産品", "type": "single", "q": "みかんの生産量が全国一の都道府県は？", "a": ["和歌山県"], "choices": ["愛媛県", "静岡県", "熊本県", "和歌山県"], "note": "有田川沿い。2位愛媛、3位静岡。", "region": "近畿", "badgeCat": "農業"},
+  {"id": "farm-grape", "comp": "産業編", "pref": "山梨県", "cat": "特産品", "type": "single", "q": "ぶどうの生産量が全国一の都道府県は？", "a": ["山梨県"], "choices": ["長野県", "岡山県", "山形県", "山梨県"], "note": "甲府盆地。2位長野。", "region": "中部", "badgeCat": "農業"},
+  {"id": "farm-peach", "comp": "産業編", "pref": "山梨県", "cat": "特産品", "type": "single", "q": "ももの生産量が全国一の都道府県は？", "a": ["山梨県"], "choices": ["福島県", "長野県", "岡山県", "山梨県"], "note": "甲府盆地。2位福島。", "region": "中部", "badgeCat": "農業"},
+  {"id": "farm-ume", "comp": "産業編", "pref": "和歌山県", "cat": "特産品", "type": "single", "q": "うめの生産量が全国一の都道府県は？", "a": ["和歌山県"], "choices": ["群馬県", "三重県", "奈良県", "和歌山県"], "note": "", "region": "近畿", "badgeCat": "農業"},
+  {"id": "farm-kaki", "comp": "産業編", "pref": "和歌山県", "cat": "特産品", "type": "single", "q": "かきの生産量が全国一の都道府県は？", "a": ["和歌山県"], "choices": ["奈良県", "福岡県", "岐阜県", "和歌山県"], "note": "", "region": "近畿", "badgeCat": "農業"},
+  {"id": "farm-cherry", "comp": "産業編", "pref": "山形県", "cat": "特産品", "type": "single", "q": "おうとう(さくらんぼ)の生産量が全国一の都道府県は？", "a": ["山形県"], "choices": ["北海道", "青森県", "福島県", "山形県"], "note": "山形盆地。", "region": "東北", "badgeCat": "農業"},
+  {"id": "farm-pear20", "comp": "産業編", "pref": "鳥取県", "cat": "特産品", "type": "single", "q": "「二十世紀なし」で有名、日本なしの産地の県は？", "a": ["鳥取県"], "choices": ["千葉県", "茨城県", "福島県", "鳥取県"], "note": "鳥取砂丘。", "region": "中国四国", "badgeCat": "農業"},
+  {"id": "farm-biwa", "comp": "産業編", "pref": "長崎県", "cat": "特産品", "type": "single", "q": "びわの生産量が全国一の都道府県は？", "a": ["長崎県"], "choices": ["千葉県", "鹿児島県", "愛媛県", "長崎県"], "note": "", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-strawberry", "comp": "産業編", "pref": "栃木県", "cat": "特産品", "type": "single", "q": "いちごの生産量が全国一の都道府県は？", "a": ["栃木県"], "choices": ["福岡県", "熊本県", "静岡県", "栃木県"], "note": "とちおとめ。2位福岡(あまおう)。", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-rakkyo", "comp": "産業編", "pref": "鳥取県", "cat": "特産品", "type": "single", "q": "らっきょうの生産量が全国一の都道府県は？", "a": ["鳥取県"], "choices": ["福井県", "鹿児島県", "宮崎県", "鳥取県"], "note": "鳥取砂丘。", "region": "中国四国", "badgeCat": "農業"},
+  {"id": "farm-peanut", "comp": "産業編", "pref": "千葉県", "cat": "特産品", "type": "single", "q": "らっかせいの生産量が全国一の都道府県は？", "a": ["千葉県"], "choices": ["茨城県", "神奈川県", "静岡県", "千葉県"], "note": "", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-pepper", "comp": "産業編", "pref": "茨城県", "cat": "特産品", "type": "single", "q": "ピーマンの生産量が全国一の都道府県は？", "a": ["茨城県"], "choices": ["宮崎県", "高知県", "鹿児島県", "茨城県"], "note": "2位宮崎。", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-melon", "comp": "産業編", "pref": "茨城県", "cat": "特産品", "type": "single", "q": "メロンの生産量が全国一の都道府県は？", "a": ["茨城県"], "choices": ["熊本県", "北海道", "山形県", "茨城県"], "note": "", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-tea", "comp": "産業編", "pref": "静岡県", "cat": "特産品", "type": "single", "q": "茶の生産量で鹿児島と1位を争う都道府県は？", "a": ["静岡県"], "choices": ["三重県", "京都府", "埼玉県", "静岡県"], "note": "「お茶はしずかに3杯」。", "region": "中部", "badgeCat": "農業"},
+  {"id": "farm-igusa", "comp": "産業編", "pref": "熊本県", "cat": "特産品", "type": "single", "q": "い草(たたみ表の原料)の生産量が全国一の都道府県は？", "a": ["熊本県"], "choices": ["岡山県", "広島県", "福岡県", "熊本県"], "note": "八代平野。全国の9割。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-sugarcane", "comp": "産業編", "pref": "沖縄県", "cat": "特産品", "type": "single", "q": "さとうきびの生産量が全国一の都道府県は？", "a": ["沖縄県"], "choices": ["鹿児島県", "宮崎県", "高知県", "沖縄県"], "note": "", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-pineapple", "comp": "産業編", "pref": "沖縄県", "cat": "特産品", "type": "single", "q": "パイナップルの生産量が全国一の都道府県は？", "a": ["沖縄県"], "choices": ["鹿児島県", "宮崎県", "和歌山県", "沖縄県"], "note": "", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "farm-beet", "comp": "産業編", "pref": "北海道", "cat": "特産品", "type": "single", "q": "北海道でだけ作られる、さとうの原料になる作物は？", "a": ["てんさい"], "choices": ["てんさい", "さとうきび", "い草", "こんにゃくいも"], "note": "ビートともいう。さとうきびは沖縄・鹿児島。", "region": "北海道", "badgeCat": "農業"},
+  {"id": "farm-konnyaku", "comp": "産業編", "pref": "群馬県", "cat": "特産品", "type": "single", "q": "こんにゃくいもの生産量が全国一の都道府県は？", "a": ["群馬県"], "choices": ["栃木県", "茨城県", "福島県", "群馬県"], "note": "", "region": "関東", "badgeCat": "農業"},
+  {"id": "farm-kanpyo", "comp": "産業編", "pref": "栃木県", "cat": "特産品", "type": "single", "q": "かんぴょうの生産量が全国一の都道府県は？", "a": ["栃木県"], "choices": ["群馬県", "茨城県", "埼玉県", "栃木県"], "note": "ゆうがおの実から作る。", "region": "関東", "badgeCat": "農業"},
+  {"id": "prod-hokkaido", "comp": "産業編", "pref": "北海道", "cat": "特産品", "type": "multi", "q": "北海道が生産量 全国一 の農産物を 全部 選んでね", "a": ["たまねぎ", "じゃがいも", "てんさい", "小麦"], "choices": ["たまねぎ", "じゃがいも", "てんさい", "小麦", "みかん"], "note": "「カレーの具材は北海道」。みかんは和歌山。", "region": "北海道", "badgeCat": "農業"},
+  {"id": "prod-yamagata", "comp": "産業編", "pref": "山形県", "cat": "特産品", "type": "multi", "q": "山形県が生産量 全国一 の果物を 全部 選んでね", "a": ["さくらんぼ", "西洋なし"], "choices": ["さくらんぼ", "西洋なし", "みかん", "りんご"], "note": "おうとう(さくらんぼ)とラ・フランス。", "region": "東北", "badgeCat": "農業"},
+  {"id": "prod-wakayama", "comp": "産業編", "pref": "和歌山県", "cat": "特産品", "type": "multi", "q": "和歌山県が生産量 全国一 の果物を 全部 選んでね", "a": ["みかん", "うめ", "かき"], "choices": ["みかん", "うめ", "かき", "さくらんぼ"], "note": "「お年寄りに好かれる和歌山県」。", "region": "近畿", "badgeCat": "農業"},
+  {"id": "prod-okinawa", "comp": "産業編", "pref": "沖縄県", "cat": "特産品", "type": "multi", "q": "沖縄県が生産量 全国一 の作物を 全部 選んでね", "a": ["さとうきび", "パイナップル"], "choices": ["さとうきび", "パイナップル", "てんさい", "りんご"], "note": "あたたかい気候。てんさいは北海道。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "live-beef", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "肉牛の飼育頭数が北海道に次いで2位の、九州の県は？", "a": ["鹿児島県"], "choices": ["鹿児島県", "宮崎県", "沖縄県", "福岡県"], "note": "1位は北海道、2位は鹿児島。畜産がさかん。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "live-milk", "comp": "産業編", "pref": "栃木県", "cat": "畜産", "type": "single", "q": "乳牛（乳用牛）の飼育頭数が北海道に次いで2位の、関東の県は？", "a": ["栃木県"], "choices": ["栃木県", "群馬県", "茨城県", "岩手県"], "note": "1位は北海道、2位は栃木。", "region": "関東", "badgeCat": "農業"},
+  {"id": "live-pig", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "豚の飼育頭数が全国一の都道府県は？", "a": ["鹿児島県"], "choices": ["北海道", "宮崎県", "千葉県", "鹿児島県"], "note": "2位北海道。「肉は鹿児島」。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "live-broiler", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "にわとり(ブロイラー)の飼育数で宮崎と1位を争う県は？", "a": ["鹿児島県"], "choices": ["宮崎県", "岩手県", "青森県", "鹿児島県"], "note": "宮崎とは僅差。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "live-egg", "comp": "産業編", "pref": "茨城県", "cat": "畜産", "type": "single", "q": "にわとり(卵)の飼育数が全国一の都道府県は？", "a": ["茨城県"], "choices": ["鹿児島県", "千葉県", "岡山県", "茨城県"], "note": "卵は消費期限が短く大都市の近くで生産。", "region": "関東", "badgeCat": "農業"},
+  {"id": "craft-nanbu", "comp": "産業編", "pref": "岩手県", "cat": "伝統的工芸品", "type": "single", "q": "岩手県の伝統的工芸品は次のうちどれ？", "a": ["南部鉄器"], "choices": ["輪島塗", "西陣織", "備前焼", "南部鉄器"], "note": "盛岡市。", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "craft-oodate", "comp": "産業編", "pref": "秋田県", "cat": "伝統的工芸品", "type": "single", "q": "秋田県の伝統的工芸品は次のうちどれ？", "a": ["大館曲げわっぱ"], "choices": ["南部鉄器", "天童将棋駒", "会津塗", "大館曲げわっぱ"], "note": "秋田すぎを使う。", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "craft-tendo", "comp": "産業編", "pref": "山形県", "cat": "伝統的工芸品", "type": "single", "q": "山形県の伝統的工芸品は次のうちどれ？", "a": ["天童将棋駒"], "choices": ["南部鉄器", "加賀友禅", "益子焼", "天童将棋駒"], "note": "天童市。", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "craft-aizu", "comp": "産業編", "pref": "福島県", "cat": "伝統的工芸品", "type": "single", "q": "福島県の伝統的工芸品は次のうちどれ？", "a": ["会津塗"], "choices": ["輪島塗", "加賀友禅", "九谷焼", "会津塗"], "note": "会津藩。", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "craft-mashiko", "comp": "産業編", "pref": "栃木県", "cat": "伝統的工芸品", "type": "single", "q": "栃木県の伝統的工芸品は次のうちどれ？", "a": ["益子焼"], "choices": ["備前焼", "有田焼", "瀬戸焼", "益子焼"], "note": "栃木県。", "region": "関東", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kiryu", "comp": "産業編", "pref": "群馬県", "cat": "伝統的工芸品", "type": "single", "q": "群馬県の伝統的工芸品は次のうちどれ？", "a": ["桐生織"], "choices": ["西陣織", "小千谷ちぢみ", "加賀友禅", "桐生織"], "note": "「西の西陣・東の桐生」。", "region": "関東", "badgeCat": "伝統工芸品"},
+  {"id": "craft-wajima", "comp": "産業編", "pref": "石川県", "cat": "伝統的工芸品", "type": "single", "q": "石川県の伝統的工芸品は次のうちどれ？", "a": ["輪島塗"], "choices": ["会津塗", "南部鉄器", "天童将棋駒", "輪島塗"], "note": "能登半島の輪島市。", "region": "中部", "badgeCat": "伝統工芸品"},
+  {"id": "craft-ojiya", "comp": "産業編", "pref": "新潟県", "cat": "伝統的工芸品", "type": "single", "q": "新潟県の伝統的工芸品は次のうちどれ？", "a": ["小千谷ちぢみ"], "choices": ["西陣織", "桐生織", "加賀友禅", "小千谷ちぢみ"], "note": "麻織物。", "region": "中部", "badgeCat": "伝統工芸品"},
+  {"id": "craft-nishijin", "comp": "産業編", "pref": "京都府", "cat": "伝統的工芸品", "type": "single", "q": "京都府の伝統的工芸品は次のうちどれ？", "a": ["西陣織"], "choices": ["桐生織", "加賀友禅", "久留米がすり", "西陣織"], "note": "応仁の乱の頃から。絹織物。", "region": "近畿", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kiyomizu", "comp": "産業編", "pref": "京都府", "cat": "伝統的工芸品", "type": "single", "q": "京都府の伝統的工芸品は次のうちどれ？", "a": ["清水焼"], "choices": ["有田焼", "備前焼", "瀬戸焼", "清水焼"], "note": "京都の焼き物。", "region": "近畿", "badgeCat": "伝統工芸品"},
+  {"id": "craft-bizen", "comp": "産業編", "pref": "岡山県", "cat": "伝統的工芸品", "type": "single", "q": "岡山県の伝統的工芸品は次のうちどれ？", "a": ["備前焼"], "choices": ["有田焼", "益子焼", "瀬戸焼", "備前焼"], "note": "岡山県。", "region": "中国四国", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kumano", "comp": "産業編", "pref": "広島県", "cat": "伝統的工芸品", "type": "single", "q": "広島県の伝統的工芸品は次のうちどれ？", "a": ["熊野筆"], "choices": ["輪島塗", "南部鉄器", "西陣織", "熊野筆"], "note": "広島県。筆。", "region": "中国四国", "badgeCat": "伝統工芸品"},
+  {"id": "craft-tosawashi", "comp": "産業編", "pref": "高知県", "cat": "伝統的工芸品", "type": "single", "q": "高知県の伝統的工芸品は次のうちどれ？", "a": ["土佐和紙"], "choices": ["美濃和紙", "越前和紙", "西陣織", "土佐和紙"], "note": "原料はこうぞ・みつまた。", "region": "中国四国", "badgeCat": "伝統工芸品"},
+  {"id": "craft-hakata", "comp": "産業編", "pref": "福岡県", "cat": "伝統的工芸品", "type": "single", "q": "福岡県の伝統的工芸品は次のうちどれ？", "a": ["博多織"], "choices": ["久留米がすり", "西陣織", "桐生織", "博多織"], "note": "福岡市。博多人形も。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kurume", "comp": "産業編", "pref": "福岡県", "cat": "伝統的工芸品", "type": "single", "q": "福岡県の伝統的工芸品は次のうちどれ？", "a": ["久留米がすり"], "choices": ["博多織", "西陣織", "小千谷ちぢみ", "久留米がすり"], "note": "久留米市。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
+  {"id": "craft-arita", "comp": "産業編", "pref": "佐賀県", "cat": "伝統的工芸品", "type": "single", "q": "佐賀県の伝統的工芸品は次のうちどれ？", "a": ["有田焼"], "choices": ["備前焼", "益子焼", "瀬戸焼", "有田焼"], "note": "伊万里焼も。朝鮮出兵が関係。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kaga", "comp": "産業編", "pref": "石川県", "cat": "伝統的工芸品", "type": "single", "q": "石川県の伝統的工芸品は次のうちどれ？", "a": ["加賀友禅"], "choices": ["京友禅", "西陣織", "桐生織", "加賀友禅"], "note": "金沢市。九谷焼も。", "region": "中部", "badgeCat": "伝統工芸品"},
+  {"id": "craft-kutani", "comp": "産業編", "pref": "石川県", "cat": "伝統的工芸品", "type": "single", "q": "石川県の伝統的工芸品は次のうちどれ？", "a": ["九谷焼"], "choices": ["有田焼", "備前焼", "瀬戸焼", "九谷焼"], "note": "金沢市。", "region": "中部", "badgeCat": "伝統工芸品"},
+  {"id": "craft-seto", "comp": "産業編", "pref": "愛知県", "cat": "伝統的工芸品", "type": "single", "q": "愛知県の伝統的工芸品は次のうちどれ？", "a": ["瀬戸焼"], "choices": ["備前焼", "有田焼", "益子焼", "瀬戸焼"], "note": "瀬戸市。「せともの」。", "region": "中部", "badgeCat": "伝統工芸品"},
+  {"id": "ind-chukyo", "comp": "産業編", "pref": "愛知県", "cat": "工業", "type": "single", "q": "製造品出荷額が全国一の工業地帯は？", "a": ["中京工業地帯"], "choices": ["阪神工業地帯", "京浜工業地帯", "北九州工業地帯", "中京工業地帯"], "note": "名古屋中心。豊田市の自動車(トヨタ)。", "region": "中部", "badgeCat": "工業"},
+  {"id": "ind-keiyo", "comp": "産業編", "pref": "千葉県", "cat": "工業", "type": "single", "q": "化学工業の割合が約40%ととても高い工業地域は？", "a": ["京葉工業地域"], "choices": ["瀬戸内工業地域", "東海工業地域", "関東内陸工業地域", "京葉工業地域"], "note": "石油化学コンビナート。", "region": "関東", "badgeCat": "工業"},
+  {"id": "ind-hanshin", "comp": "産業編", "pref": "大阪府", "cat": "工業", "type": "single", "q": "大阪・神戸を中心とし、戦前は出荷額日本一だった工業地帯は？", "a": ["阪神工業地帯"], "choices": ["中京工業地帯", "京浜工業地帯", "瀬戸内工業地域", "阪神工業地帯"], "note": "中小工場が多い。", "region": "近畿", "badgeCat": "工業"},
+  {"id": "ind-keihin", "comp": "産業編", "pref": "神奈川県", "cat": "工業", "type": "single", "q": "東京・川崎・横浜を中心とし、印刷業がさかんな工業地帯は？", "a": ["京浜工業地帯"], "choices": ["阪神工業地帯", "中京工業地帯", "京葉工業地域", "京浜工業地帯"], "note": "出版社が多い。", "region": "関東", "badgeCat": "工業"},
+  {"id": "ind-kitakyushu", "comp": "産業編", "pref": "福岡県", "cat": "工業", "type": "single", "q": "八幡製鉄所から発展し、化学工業の割合が低い工業地帯は？", "a": ["北九州工業地帯"], "choices": ["瀬戸内工業地域", "中京工業地帯", "東海工業地域", "北九州工業地帯"], "note": "四大工業地帯の一つだった。", "region": "九州沖縄", "badgeCat": "工業"},
+  {"id": "ind-tokai", "comp": "産業編", "pref": "静岡県", "cat": "工業", "type": "single", "q": "浜松の楽器・オートバイ、富士の製紙パルプがさかんな工業地域は？", "a": ["東海工業地域"], "choices": ["京葉工業地域", "瀬戸内工業地域", "北陸工業地域", "東海工業地域"], "note": "", "region": "中部", "badgeCat": "工業"},
+  {"id": "ind-setouchi", "comp": "産業編", "pref": "岡山県", "cat": "工業", "type": "single", "q": "倉敷市水島地区の石油化学コンビナートがある工業地域は？", "a": ["瀬戸内工業地域"], "choices": ["京葉工業地域", "東海工業地域", "中京工業地帯", "瀬戸内工業地域"], "note": "塩田跡地を利用。", "region": "中国四国", "badgeCat": "工業"},
+  {"id": "ind-kanto", "comp": "産業編", "pref": "群馬県", "cat": "工業", "type": "single", "q": "太田市の自動車、秩父のセメントがさかんな工業地域は？", "a": ["関東内陸工業地域"], "choices": ["京葉工業地域", "東海工業地域", "北陸工業地域", "関東内陸工業地域"], "note": "高速道路の整備で発展。", "region": "関東", "badgeCat": "工業"},
+  {"id": "city-toyota", "comp": "産業編", "pref": "愛知県", "cat": "工業都市", "type": "single", "q": "「トヨタ自動車」の企業城下町である都市は？", "a": ["豊田市"], "choices": ["東海市", "瀬戸市", "岡崎市", "豊田市"], "note": "自動車工業。", "region": "中部", "badgeCat": "工業"},
+  {"id": "city-yokkaichi", "comp": "産業編", "pref": "三重県", "cat": "工業都市", "type": "single", "q": "石油化学工業がさかんで、四日市ぜんそくが起きた都市は？", "a": ["四日市市"], "choices": ["鈴鹿市", "津市", "桑名市", "四日市市"], "note": "有害物質は亜硫酸ガス。", "region": "近畿", "badgeCat": "工業"},
+  {"id": "city-hamamatsu", "comp": "産業編", "pref": "静岡県", "cat": "工業都市", "type": "single", "q": "「ヤマハ」の企業城下町で、楽器・オートバイの都市は？", "a": ["浜松市"], "choices": ["富士市", "静岡市", "豊橋市", "浜松市"], "note": "", "region": "中部", "badgeCat": "工業"},
+  {"id": "fish-kushiro", "comp": "産業編", "pref": "北海道", "cat": "漁港", "type": "single", "q": "かつて全国一の漁獲量だった、北洋漁業の拠点の港は？", "a": ["釧路港"], "choices": ["八戸港", "銚子港", "焼津港", "釧路港"], "note": "", "region": "北海道", "badgeCat": "漁業"},
+  {"id": "fish-hachinohe", "comp": "産業編", "pref": "青森県", "cat": "漁港", "type": "single", "q": "イカの水揚げが多いことで有名な港は？", "a": ["八戸港"], "choices": ["釧路港", "境港", "銚子港", "八戸港"], "note": "", "region": "東北", "badgeCat": "漁業"},
+  {"id": "fish-choshi", "comp": "産業編", "pref": "千葉県", "cat": "漁港", "type": "single", "q": "沖合漁業がさかんで、漁獲量が日本一の港は？", "a": ["銚子港"], "choices": ["焼津港", "釧路港", "境港", "銚子港"], "note": "利根川河口。さば・いわし。", "region": "関東", "badgeCat": "漁業"},
+  {"id": "fish-yaizu", "comp": "産業編", "pref": "静岡県", "cat": "漁港", "type": "single", "q": "まぐろ・かつおの遠洋漁業の基地となっている港は？", "a": ["焼津港"], "choices": ["銚子港", "境港", "釧路港", "焼津港"], "note": "", "region": "中部", "badgeCat": "漁業"},
+  {"id": "fish-sakai", "comp": "産業編", "pref": "鳥取県", "cat": "漁港", "type": "single", "q": "日本海側で最も水揚げ量が多い港は？", "a": ["境港"], "choices": ["銚子港", "焼津港", "八戸港", "境港"], "note": "", "region": "中国四国", "badgeCat": "漁業"},
+  {"id": "aqua-oyster", "comp": "産業編", "pref": "広島県", "cat": "養殖", "type": "single", "q": "かきの養殖量が全国一の都道府県は？", "a": ["広島県"], "choices": ["宮城県", "岡山県", "三重県", "広島県"], "note": "広島湾。2位宮城県。", "region": "中国四国", "badgeCat": "漁業"},
+  {"id": "aqua-nori", "comp": "産業編", "pref": "佐賀県", "cat": "養殖", "type": "single", "q": "のりの養殖量が全国一で、有明海でさかんな県は？", "a": ["佐賀県"], "choices": ["兵庫県", "福岡県", "宮城県", "佐賀県"], "note": "", "region": "九州沖縄", "badgeCat": "漁業"},
+  {"id": "aqua-pearl", "comp": "産業編", "pref": "三重県", "cat": "養殖", "type": "single", "q": "英虞湾で真珠の養殖がさかんな県は？", "a": ["三重県"], "choices": ["長崎県", "愛媛県", "広島県", "三重県"], "note": "アコヤ貝。あたたかい地方。", "region": "近畿", "badgeCat": "漁業"},
+  {"id": "aqua-scallop", "comp": "産業編", "pref": "北海道", "cat": "養殖", "type": "single", "q": "サロマ湖などで養殖がさかんな、貝ばしらを食べる貝は？", "a": ["ほたて"], "choices": ["ほたて", "かき", "あさり", "しじみ"], "note": "北海道・青森でさかん。", "region": "北海道", "badgeCat": "漁業"},
+  {"id": "forest-natural", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "multi", "q": "天然の三大美林を 全部 選んでね", "a": ["青森ひば", "秋田すぎ", "木曽ひのき"], "choices": ["青森ひば", "秋田すぎ", "木曽ひのき", "吉野すぎ"], "note": "吉野すぎは人工の三大美林。", "region": "全国", "badgeCat": "林業"},
+  {"id": "forest-manmade", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "multi", "q": "人工の三大美林を 全部 選んでね", "a": ["吉野すぎ", "天竜すぎ", "尾鷲ひのき"], "choices": ["吉野すぎ", "天竜すぎ", "尾鷲ひのき", "秋田すぎ"], "note": "吉野(奈良)・天竜(静岡)・尾鷲(三重)。", "region": "全国", "badgeCat": "林業"},
+  {"id": "kogai-minamata", "comp": "産業編", "pref": "熊本県", "cat": "公害", "type": "single", "q": "熊本県で発生し、原因がメチル水銀の公害病は？", "a": ["水俣病"], "choices": ["イタイイタイ病", "四日市ぜんそく", "新潟水俣病", "水俣病"], "note": "四大公害病。", "region": "九州沖縄", "badgeCat": "工業"},
+  {"id": "kogai-niigata", "comp": "産業編", "pref": "新潟県", "cat": "公害", "type": "single", "q": "阿賀野川流域で発生した、メチル水銀が原因の公害病は？", "a": ["新潟水俣病"], "choices": ["水俣病", "イタイイタイ病", "四日市ぜんそく", "新潟水俣病"], "note": "第二水俣病。", "region": "中部", "badgeCat": "工業"},
+  {"id": "kogai-itai", "comp": "産業編", "pref": "富山県", "cat": "公害", "type": "single", "q": "神通川流域で発生し、カドミウムが原因の公害病は？", "a": ["イタイイタイ病"], "choices": ["水俣病", "四日市ぜんそく", "新潟水俣病", "イタイイタイ病"], "note": "四大公害病。", "region": "中部", "badgeCat": "工業"},
+  {"id": "kogai-yokkaichi", "comp": "産業編", "pref": "三重県", "cat": "公害", "type": "single", "q": "亜硫酸ガスによる大気汚染で起きた公害病は？", "a": ["四日市ぜんそく"], "choices": ["水俣病", "イタイイタイ病", "新潟水俣病", "四日市ぜんそく"], "note": "四大公害病。", "region": "近畿", "badgeCat": "工業"},
+  {"id": "forest-aomori", "comp": "産業編", "pref": "青森県", "cat": "林業", "type": "single", "q": "天然の三大美林のうち、青森県のものは？", "a": ["青森ひば"], "choices": ["秋田すぎ", "木曽ひのき", "吉野すぎ", "青森ひば"], "note": "天然の三大美林。", "region": "東北", "badgeCat": "林業"},
+  {"id": "forest-akita", "comp": "産業編", "pref": "秋田県", "cat": "林業", "type": "single", "q": "天然の三大美林のうち、秋田県のものは？", "a": ["秋田すぎ"], "choices": ["青森ひば", "木曽ひのき", "天竜すぎ", "秋田すぎ"], "note": "大館曲げわっぱの材料。", "region": "東北", "badgeCat": "林業"},
+  {"id": "forest-kiso", "comp": "産業編", "pref": "長野県", "cat": "林業", "type": "single", "q": "天然の三大美林のうち、長野県のものは？", "a": ["木曽ひのき"], "choices": ["青森ひば", "秋田すぎ", "尾鷲ひのき", "木曽ひのき"], "note": "中央アルプス周辺。", "region": "中部", "badgeCat": "林業"},
+  {"id": "forest-yoshino", "comp": "産業編", "pref": "奈良県", "cat": "林業", "type": "single", "q": "人工の三大美林のうち、奈良県のものは？", "a": ["吉野すぎ"], "choices": ["天竜すぎ", "尾鷲ひのき", "秋田すぎ", "吉野すぎ"], "note": "奈良県南部。", "region": "近畿", "badgeCat": "林業"},
+  {"id": "forest-tenryu", "comp": "産業編", "pref": "静岡県", "cat": "林業", "type": "single", "q": "人工の三大美林のうち、静岡県のものは？", "a": ["天竜すぎ"], "choices": ["吉野すぎ", "尾鷲ひのき", "木曽ひのき", "天竜すぎ"], "note": "天竜川流域。", "region": "中部", "badgeCat": "林業"},
+  {"id": "forest-owase", "comp": "産業編", "pref": "三重県", "cat": "林業", "type": "single", "q": "人工の三大美林のうち、三重県のものは？", "a": ["尾鷲ひのき"], "choices": ["吉野すぎ", "天竜すぎ", "青森ひば", "尾鷲ひのき"], "note": "降水量が多い尾鷲。", "region": "近畿", "badgeCat": "林業"},
+  {"id": "forest-jikyu", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "single", "q": "日本の木材の自給率はおよそどれくらい？", "a": ["約30%"], "choices": ["約60%", "約90%", "約10%", "約30%"], "note": "アメリカ・カナダからの輸入が多い。", "region": "全国", "badgeCat": "林業"},
+  {"id": "forest-shinrin", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "single", "q": "日本の国土のうち森林がしめる割合はおよそ？", "a": ["約3分の2"], "choices": ["約2分の1", "約3分の1", "約4分の3", "約3分の2"], "note": "森林の「木」の数で覚える。", "region": "全国", "badgeCat": "林業"},
+  {"id": "forest-greendam", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "single", "q": "森林が水をたくわえ土砂崩れを防ぐことから呼ばれる名前は？", "a": ["緑のダム"], "choices": ["天然林", "原生林", "防砂林", "緑のダム"], "note": "漁師が植林することもある。", "region": "全国", "badgeCat": "林業"},
+  {"id": "forest-isan", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "multi", "q": "原生林が残り世界自然遺産に登録されている場所を 全部 選んでね", "a": ["白神山地", "屋久島"], "choices": ["白神山地", "屋久島", "尾瀬", "知床半島"], "note": "白神山地はぶな、屋久島は屋久杉。", "region": "全国", "badgeCat": "林業"},
+  {"id": "fish-okiai", "comp": "産業編", "pref": "全国", "cat": "漁業", "type": "single", "q": "現在、日本で漁獲量が最も多い漁業は？", "a": ["沖合漁業"], "choices": ["遠洋漁業", "沿岸漁業", "養殖業", "沖合漁業"], "note": "数日～1週間ほど。", "region": "全国", "badgeCat": "漁業"},
+  {"id": "fish-enyo", "comp": "産業編", "pref": "全国", "cat": "漁業", "type": "single", "q": "遠洋漁業が衰退した原因、各国が沿岸200海里に設定した水域は？", "a": ["排他的経済水域"], "choices": ["領海", "公海", "大陸棚", "排他的経済水域"], "note": "1973年の石油危機も原因。", "region": "全国", "badgeCat": "漁業"},
+  {"id": "fish-yoshoku", "comp": "産業編", "pref": "全国", "cat": "漁業", "type": "single", "q": "稚魚から成魚になるまで育てて出荷する漁業は？", "a": ["養殖業"], "choices": ["沖合漁業", "遠洋漁業", "栽培漁業", "養殖業"], "note": "生産が増加している。", "region": "全国", "badgeCat": "漁業"},
+  {"id": "geo-fossa", "comp": "自然編", "pref": "新潟県", "cat": "地形", "type": "single", "q": "本州の中央部にある、地層を分ける大きな溝(大地溝帯)は？", "a": ["フォッサマグナ"], "choices": ["カルデラ", "リアス海岸", "三角州", "フォッサマグナ"], "note": "西側は糸魚川静岡構造線。", "region": "中部", "badgeCat": "陸"},
+  {"id": "geo-rias", "comp": "自然編", "pref": "全国", "cat": "地形", "type": "single", "q": "山地が海に沈んでできた、入り組んだ海岸を何という？", "a": ["リアス海岸"], "choices": ["三角州", "扇状地", "カルデラ", "リアス海岸"], "note": "養殖がさかん。三陸・若狭湾・志摩。", "region": "全国", "badgeCat": "陸"},
+  {"id": "geo-senjochi", "comp": "自然編", "pref": "山梨県", "cat": "地形", "type": "single", "q": "川が山から平地に出る所にできる、水はけのよい扇形の地形は？", "a": ["扇状地"], "choices": ["三角州", "リアス海岸", "カルデラ", "扇状地"], "note": "甲府盆地。果樹園。", "region": "中部", "badgeCat": "陸"},
+  {"id": "geo-sankakusu", "comp": "自然編", "pref": "広島県", "cat": "地形", "type": "single", "q": "川が海に注ぐ河口にできる、土砂がたまった平らな地形は？", "a": ["三角州"], "choices": ["扇状地", "台地", "カルデラ", "三角州"], "note": "広島市は太田川の三角州。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "geo-yamase", "comp": "自然編", "pref": "宮城県", "cat": "地形", "type": "single", "q": "東北の太平洋側で夏に吹き、冷害を起こす冷たい北東風は？", "a": ["やませ"], "choices": ["からっ風", "季節風", "フェーン", "やませ"], "note": "稲が育ちにくくなる。", "region": "東北", "badgeCat": "陸"},
+  {"id": "agri-gentan", "comp": "産業編", "pref": "全国", "cat": "農業", "type": "single", "q": "米があまったため、生産量を減らすために行われた政策は？", "a": ["減反政策"], "choices": ["転作政策", "促成栽培", "集約農業", "減反政策"], "note": "米のかわりに他の作物を作る転作。", "region": "全国", "badgeCat": "農業"},
+  {"id": "agri-jikyu", "comp": "産業編", "pref": "全国", "cat": "農業", "type": "single", "q": "近年の日本の食料自給率はおよそどれくらい？", "a": ["約38%"], "choices": ["約60%", "約80%", "約20%", "約38%"], "note": "半分以上が輸入品。", "region": "全国", "badgeCat": "農業"},
+  {"id": "agri-chisan", "comp": "産業編", "pref": "全国", "cat": "農業", "type": "single", "q": "地元で生産したものを地元で消費する取り組みは？", "a": ["地産地消"], "choices": ["六次産業化", "促成栽培", "近郊農業", "地産地消"], "note": "町おこしにもつながる。", "region": "全国", "badgeCat": "農業"},
+  {"id": "agri-sokusei", "comp": "産業編", "pref": "宮崎県", "cat": "農業", "type": "single", "q": "あたたかい気候を利用して野菜を早作りする栽培方法は？", "a": ["促成栽培"], "choices": ["抑制栽培", "高冷地農業", "近郊農業", "促成栽培"], "note": "宮崎平野・高知平野。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "agri-korei", "comp": "産業編", "pref": "群馬県", "cat": "農業", "type": "single", "q": "高原の涼しい気候を利用して野菜を遅作りする農業は？", "a": ["高冷地農業"], "choices": ["促成栽培", "近郊農業", "集約農業", "高冷地農業"], "note": "嬬恋村・野辺山原。", "region": "関東", "badgeCat": "農業"},
+  {"id": "agri-kinkou", "comp": "産業編", "pref": "千葉県", "cat": "農業", "type": "single", "q": "大都市の周辺で新鮮な野菜を届ける農業は？", "a": ["近郊農業"], "choices": ["促成栽培", "高冷地農業", "抑制栽培", "近郊農業"], "note": "千葉・茨城・愛知。", "region": "関東", "badgeCat": "農業"},
+  {"id": "heritage-shirakawa", "comp": "県別編", "pref": "岐阜県", "cat": "世界遺産", "type": "single", "q": "合掌造りの集落で世界文化遺産に登録されているのは？", "a": ["白川郷"], "choices": ["五箇山", "富岡製糸場", "姫路城", "白川郷"], "note": "豪雪地帯。急な屋根。", "region": "中部", "badgeCat": "世界遺産"},
+  {"id": "heritage-genbaku", "comp": "県別編", "pref": "広島県", "cat": "世界遺産", "type": "single", "q": "広島市にある、世界文化遺産に登録された戦争の遺構は？", "a": ["原爆ドーム"], "choices": ["首里城", "厳島神社", "出島", "原爆ドーム"], "note": "", "region": "中国四国", "badgeCat": "世界遺産"},
+  {"id": "heritage-nikko", "comp": "県別編", "pref": "栃木県", "cat": "世界遺産", "type": "single", "q": "徳川家康がまつられ、世界文化遺産の神社は？", "a": ["日光東照宮"], "choices": ["伊勢神宮", "出雲大社", "厳島神社", "日光東照宮"], "note": "", "region": "関東", "badgeCat": "世界遺産"},
+  {"id": "heritage-tomioka", "comp": "県別編", "pref": "群馬県", "cat": "世界遺産", "type": "single", "q": "明治時代に作られ、世界文化遺産になった製糸工場は？", "a": ["富岡製糸場"], "choices": ["八幡製鉄所", "白川郷", "原爆ドーム", "富岡製糸場"], "note": "生糸を生産。", "region": "関東", "badgeCat": "世界遺産"},
+  {"id": "seirei-chubu", "comp": "県別編", "pref": "愛知県", "cat": "政令指定都市", "type": "single", "q": "中部地方で一番人口が多い政令指定都市は？", "a": ["名古屋市"], "choices": ["新潟市", "静岡市", "浜松市", "名古屋市"], "note": "", "region": "中部", "badgeCat": "県庁所在地"},
+  {"id": "seirei-kinki", "comp": "県別編", "pref": "大阪府", "cat": "政令指定都市", "type": "single", "q": "近畿地方で一番人口が多い政令指定都市は？", "a": ["大阪市"], "choices": ["京都市", "神戸市", "堺市", "大阪市"], "note": "", "region": "近畿", "badgeCat": "県庁所在地"},
+  {"id": "oita-onsen", "comp": "県別編", "pref": "大分県", "cat": "観光・その他", "type": "single", "q": "温泉の数が日本一で、別府温泉が有名な県は？", "a": ["大分県"], "choices": ["熊本県", "鹿児島県", "宮崎県", "大分県"], "note": "地熱発電の発電量も日本一。", "region": "九州沖縄", "badgeCat": "観光・雑学"},
+  {"id": "oita-chinetsu", "comp": "産業編", "pref": "大分県", "cat": "工業", "type": "single", "q": "地熱発電の発電量が日本一の県は？", "a": ["大分県"], "choices": ["熊本県", "鹿児島県", "岩手県", "大分県"], "note": "温泉が多い。", "region": "九州沖縄", "badgeCat": "工業"},
+  {"id": "saitama-chichibu", "comp": "産業編", "pref": "埼玉県", "cat": "工業", "type": "single", "q": "埼玉県秩父市で、石灰石がとれるためさかんな工業は？", "a": ["セメント工業"], "choices": ["自動車工業", "製鉄業", "造船業", "セメント工業"], "note": "石灰石が原料。", "region": "関東", "badgeCat": "工業"},
+  {"id": "fukui-wakasa", "comp": "自然編", "pref": "福井県", "cat": "湾", "type": "single", "q": "福井県に面するリアス海岸で「原発銀座」と呼ばれる湾は？", "a": ["若狭湾"], "choices": ["陸奥湾", "有明海", "大村湾", "若狭湾"], "note": "原子力発電所が多い。", "region": "中部", "badgeCat": "海"},
+  {"id": "fukui-sabae", "comp": "産業編", "pref": "福井県", "cat": "工業", "type": "single", "q": "福井県鯖江市の生産が有名なものは？", "a": ["メガネフレーム"], "choices": ["南部鉄器", "タオル", "うちわ", "メガネフレーム"], "note": "", "region": "中部", "badgeCat": "工業"},
+  {"id": "gifu-kisosansen", "comp": "自然編", "pref": "岐阜県", "cat": "河川", "type": "single", "q": "岐阜県を流れる揖斐川・長良川・木曽川をまとめて何という？", "a": ["木曽三川"], "choices": ["三大急流", "坂東太郎", "筑紫三郎", "木曽三川"], "note": "洪水対策に輪中。", "region": "中部", "badgeCat": "陸"},
+  {"id": "gifu-waju", "comp": "自然編", "pref": "岐阜県", "cat": "地形", "type": "single", "q": "木曽三川の下流で、洪水を防ぐため集落を堤防で囲んだ地域は？", "a": ["輪中"], "choices": ["干拓地", "扇状地", "三角州", "輪中"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "yamaguchi-akiyoshi", "comp": "自然編", "pref": "山口県", "cat": "地形", "type": "single", "q": "山口県にある、石灰岩でできたカルスト地形で有名な観光地は？", "a": ["秋吉台"], "choices": ["鳥取砂丘", "阿蘇山", "桜島", "秋吉台"], "note": "", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "yamaguchi-kanmon", "comp": "自然編", "pref": "山口県", "cat": "海岸", "type": "single", "q": "本州(下関)と九州(門司)の間にある海峡は？", "a": ["関門海峡"], "choices": ["鳴門海峡", "津軽海峡", "明石海峡", "関門海峡"], "note": "", "region": "中国四国", "badgeCat": "海"},
+  {"id": "tokushima-awa", "comp": "県別編", "pref": "徳島県", "cat": "観光・その他", "type": "single", "q": "徳島市で夏に行われる有名な盆踊りは？", "a": ["阿波踊り"], "choices": ["よさこい", "ねぶた", "竿燈", "阿波踊り"], "note": "", "region": "中国四国", "badgeCat": "観光・雑学"},
+  {"id": "ehime-towel", "comp": "産業編", "pref": "愛媛県", "cat": "工業", "type": "single", "q": "愛媛県今治市で生産量が全国一のものは？", "a": ["今治タオル"], "choices": ["メガネ", "うちわ", "将棋駒", "今治タオル"], "note": "高級タオル。", "region": "中国四国", "badgeCat": "工業"},
+  {"id": "nagasaki-biwa", "comp": "産業編", "pref": "長崎県", "cat": "特産品", "type": "single", "q": "びわの生産量が日本一の県は？", "a": ["長崎県"], "choices": ["千葉県", "鹿児島県", "愛媛県", "長崎県"], "note": "", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "nagasaki-shima", "comp": "県別編", "pref": "長崎県", "cat": "観光・その他", "type": "single", "q": "島の数が日本一多い県は？", "a": ["長崎県"], "choices": ["鹿児島県", "北海道", "沖縄県", "長崎県"], "note": "対馬も長崎県。", "region": "九州沖縄", "badgeCat": "観光・雑学"},
+  {"id": "miyazaki-sokusei", "comp": "産業編", "pref": "宮崎県", "cat": "農業", "type": "single", "q": "宮崎平野でビニールハウスを使い、ピーマンやきゅうりを早作りする栽培は？", "a": ["促成栽培"], "choices": ["抑制栽培", "高冷地農業", "近郊農業", "促成栽培"], "note": "あたたかい気候。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "miyazaki-chikusan", "comp": "産業編", "pref": "宮崎県", "cat": "畜産", "type": "single", "q": "ブロイラー(食肉用にわとり)の飼育数で鹿児島と1位を争う県は？", "a": ["宮崎県"], "choices": ["岩手県", "北海道", "青森県", "宮崎県"], "note": "畜産がさかん。", "region": "九州沖縄", "badgeCat": "農業"},
+  {"id": "miyagi-matsushima", "comp": "県別編", "pref": "宮城県", "cat": "観光・その他", "type": "single", "q": "宮城県にある、日本三景の一つは？", "a": ["松島"], "choices": ["天橋立", "宮島", "後楽園", "松島"], "note": "", "region": "東北", "badgeCat": "観光・雑学"},
+  {"id": "miyagi-kokeshi", "comp": "産業編", "pref": "宮城県", "cat": "伝統的工芸品", "type": "single", "q": "宮城県鳴子などで作られる伝統的工芸品は？", "a": ["宮城伝統こけし"], "choices": ["南部鉄器", "会津塗", "天童将棋駒", "宮城伝統こけし"], "note": "", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "fukushima-momo", "comp": "産業編", "pref": "福島県", "cat": "特産品", "type": "single", "q": "ももの生産量が山梨に次いで多い、福島盆地の県は？", "a": ["福島県"], "choices": ["長野県", "岡山県", "和歌山県", "福島県"], "note": "全国2位。", "region": "東北", "badgeCat": "農業"},
+  {"id": "tokyo-kamitsu", "comp": "県別編", "pref": "東京都", "cat": "観光・その他", "type": "single", "q": "東京都のように人口が集中しすぎている状態を何という？", "a": ["過密"], "choices": ["過疎", "ドーナツ化", "再開発", "過密"], "note": "人口1200万人以上。", "region": "関東", "badgeCat": "観光・雑学"},
+  {"id": "toyama-itai", "comp": "産業編", "pref": "富山県", "cat": "公害", "type": "single", "q": "富山県の神通川流域で発生した、カドミウムが原因の公害病は？", "a": ["イタイイタイ病"], "choices": ["水俣病", "四日市ぜんそく", "新潟水俣病", "イタイイタイ病"], "note": "四大公害病。", "region": "中部", "badgeCat": "工業"},
+  {"id": "toyama-kurobe", "comp": "産業編", "pref": "富山県", "cat": "工業", "type": "single", "q": "富山県の黒部ダムで行われている発電は？", "a": ["水力発電"], "choices": ["火力発電", "地熱発電", "原子力発電", "水力発電"], "note": "", "region": "中部", "badgeCat": "工業"},
+  {"id": "shiga-shigaraki", "comp": "産業編", "pref": "滋賀県", "cat": "伝統的工芸品", "type": "single", "q": "滋賀県甲賀市で作られる、たぬきの置物で有名な焼き物は？", "a": ["信楽焼"], "choices": ["九谷焼", "備前焼", "有田焼", "信楽焼"], "note": "", "region": "近畿", "badgeCat": "伝統工芸品"},
+  {"id": "osaka-kansai", "comp": "県別編", "pref": "大阪府", "cat": "観光・その他", "type": "single", "q": "大阪府泉佐野市沖にある、24時間離着陸できる海上の空港は？", "a": ["関西国際空港"], "choices": ["中部国際空港", "成田国際空港", "羽田空港", "関西国際空港"], "note": "", "region": "近畿", "badgeCat": "観光・雑学"},
+  {"id": "osaka-kofun", "comp": "県別編", "pref": "大阪府", "cat": "世界遺産", "type": "single", "q": "大阪府にある、日本最大の大仙古墳を含む世界文化遺産の古墳群は？", "a": ["百舌鳥古市古墳群"], "choices": ["吉野ヶ里遺跡", "三内丸山遺跡", "平泉", "百舌鳥古市古墳群"], "note": "（もず・ふるいち）", "region": "近畿", "badgeCat": "世界遺産"},
+  {"id": "hyogo-akashi", "comp": "県別編", "pref": "兵庫県", "cat": "観光・その他", "type": "single", "q": "兵庫県明石市を通る、日本標準時の基準となる経線は東経何度？", "a": ["東経135度"], "choices": ["東経140度", "東経130度", "北緯35度", "東経135度"], "note": "", "region": "近畿", "badgeCat": "観光・雑学"},
+  {"id": "hyogo-himeji", "comp": "県別編", "pref": "兵庫県", "cat": "世界遺産", "type": "single", "q": "「白鷺城」とも呼ばれる兵庫県の世界文化遺産の城は？", "a": ["姫路城"], "choices": ["大阪城", "名古屋城", "熊本城", "姫路城"], "note": "", "region": "近畿", "badgeCat": "世界遺産"},
+  {"id": "shimane-iwami", "comp": "県別編", "pref": "島根県", "cat": "世界遺産", "type": "single", "q": "島根県にある、世界文化遺産に登録された銀山は？", "a": ["石見銀山"], "choices": ["佐渡金山", "足尾銅山", "別子銅山", "石見銀山"], "note": "", "region": "中国四国", "badgeCat": "世界遺産"},
+  {"id": "shimane-izumo", "comp": "県別編", "pref": "島根県", "cat": "観光・その他", "type": "single", "q": "縁結びの神社として有名な、島根県の神社は？", "a": ["出雲大社"], "choices": ["伊勢神宮", "厳島神社", "日光東照宮", "出雲大社"], "note": "", "region": "中国四国", "badgeCat": "観光・雑学"},
+  {"id": "okayama-korakuen", "comp": "県別編", "pref": "岡山県", "cat": "観光・その他", "type": "single", "q": "岡山市にある、日本三名園の一つは？", "a": ["後楽園"], "choices": ["兼六園", "偕楽園", "栗林公園", "後楽園"], "note": "", "region": "中国四国", "badgeCat": "観光・雑学"},
+  {"id": "okayama-setoohashi", "comp": "自然編", "pref": "岡山県", "cat": "地形", "type": "single", "q": "岡山県と香川県を結ぶ、児島-坂出ルートの橋は？", "a": ["瀬戸大橋"], "choices": ["明石海峡大橋", "大鳴門橋", "瀬戸内しまなみ海道", "瀬戸大橋"], "note": "上が道路、下が線路。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "saga-arita", "comp": "産業編", "pref": "佐賀県", "cat": "伝統的工芸品", "type": "single", "q": "佐賀県の伝統的工芸品(陶磁器)で、有田焼とならぶものは？", "a": ["伊万里焼"], "choices": ["九谷焼", "益子焼", "信楽焼", "伊万里焼"], "note": "朝鮮出兵で伝わった。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
+  {"id": "kagawa-udon", "comp": "県別編", "pref": "香川県", "cat": "観光・その他", "type": "single", "q": "香川県の名物料理として有名なうどんは？", "a": ["讃岐うどん"], "choices": ["稲庭うどん", "きしめん", "ほうとう", "讃岐うどん"], "note": "", "region": "中国四国", "badgeCat": "観光・雑学"},
+  {"id": "kagawa-tameike", "comp": "自然編", "pref": "香川県", "cat": "気候", "type": "single", "q": "降水量が少ない瀬戸内気候の香川県で、水不足に備えて多く作られたものは？", "a": ["ため池"], "choices": ["ダム", "用水路", "貯水タンク", "ため池"], "note": "香川用水も引く。", "region": "中国四国", "badgeCat": "気候"},
+  {"id": "akita-magewappa", "comp": "産業編", "pref": "秋田県", "cat": "伝統的工芸品", "type": "single", "q": "秋田すぎを使った秋田県の伝統的工芸品は？", "a": ["大館曲げわっぱ"], "choices": ["南部鉄器", "会津塗", "天童将棋駒", "大館曲げわっぱ"], "note": "", "region": "東北", "badgeCat": "伝統工芸品"},
+  {"id": "kanagawa-jinko", "comp": "県別編", "pref": "神奈川県", "cat": "観光・その他", "type": "single", "q": "都道府県の人口が東京都に次いで全国2位なのは？", "a": ["神奈川県"], "choices": ["大阪府", "愛知県", "埼玉県", "神奈川県"], "note": "横浜市は人口300万人以上。", "region": "関東", "badgeCat": "観光・雑学"},
+  {"id": "kyoto-amanohashidate", "comp": "県別編", "pref": "京都府", "cat": "観光・その他", "type": "single", "q": "京都府北部にある、日本三景の一つは？", "a": ["天橋立"], "choices": ["松島", "宮島", "後楽園", "天橋立"], "note": "", "region": "近畿", "badgeCat": "観光・雑学"},
+  {"id": "ctx-ishikari", "comp": "県別編", "pref": "北海道", "cat": "河川", "type": "single", "q": "北海道を流れ、下流の石狩平野で稲作がさかんな川は？", "a": ["石狩川"], "choices": ["利根川", "信濃川", "十勝川", "石狩川"], "note": "日本で3番目に長い。三日月湖。", "region": "北海道", "badgeCat": "陸"},
+  {"id": "ctx-mogami", "comp": "県別編", "pref": "山形県", "cat": "河川", "type": "single", "q": "山形県を流れ、庄内平野をうるおす日本三大急流の川は？", "a": ["最上川"], "choices": ["北上川", "信濃川", "阿賀野川", "最上川"], "note": "芭蕉の句で有名。", "region": "東北", "badgeCat": "陸"},
+  {"id": "ctx-shinano-c", "comp": "県別編", "pref": "新潟県", "cat": "河川", "type": "single", "q": "新潟県の越後平野を流れ、日本一長い川は？", "a": ["信濃川"], "choices": ["利根川", "阿賀野川", "最上川", "信濃川"], "note": "長野県では千曲川。", "region": "中部", "badgeCat": "陸"},
+  {"id": "ctx-kitakami", "comp": "県別編", "pref": "岩手県", "cat": "河川", "type": "single", "q": "岩手県から宮城県へ流れる、東北一長い川は？", "a": ["北上川"], "choices": ["最上川", "阿賀野川", "信濃川", "北上川"], "note": "", "region": "東北", "badgeCat": "陸"},
+  {"id": "ctx-yoshino-c", "comp": "県別編", "pref": "徳島県", "cat": "河川", "type": "single", "q": "徳島県を流れ「四国三郎」と呼ばれる川は？", "a": ["吉野川"], "choices": ["四万十川", "筑後川", "仁淀川", "吉野川"], "note": "香川用水の水源。", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "ctx-shimanto", "comp": "県別編", "pref": "高知県", "cat": "河川", "type": "single", "q": "高知県を流れ「最後の清流」と呼ばれる川は？", "a": ["四万十川"], "choices": ["吉野川", "仁淀川", "球磨川", "四万十川"], "note": "", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "ctx-kuma", "comp": "県別編", "pref": "熊本県", "cat": "河川", "type": "single", "q": "熊本県を流れ、八代平野をうるおす日本三大急流の川は？", "a": ["球磨川"], "choices": ["最上川", "富士川", "筑後川", "球磨川"], "note": "", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "ctx-biwa-c", "comp": "県別編", "pref": "滋賀県", "cat": "湖", "type": "single", "q": "滋賀県の面積の6分の1をしめる、日本最大の湖は？", "a": ["琵琶湖"], "choices": ["霞ヶ浦", "猪苗代湖", "諏訪湖", "琵琶湖"], "note": "", "region": "近畿", "badgeCat": "陸"},
+  {"id": "ctx-tazawa-c", "comp": "県別編", "pref": "秋田県", "cat": "湖", "type": "single", "q": "秋田県にある、日本一深い湖は？", "a": ["田沢湖"], "choices": ["十和田湖", "猪苗代湖", "宍道湖", "田沢湖"], "note": "", "region": "東北", "badgeCat": "陸"},
+  {"id": "ctx-inawashiro", "comp": "県別編", "pref": "福島県", "cat": "湖", "type": "single", "q": "福島県の中央にある、日本で4番目に大きい湖は？", "a": ["猪苗代湖"], "choices": ["琵琶湖", "霞ヶ浦", "諏訪湖", "猪苗代湖"], "note": "", "region": "東北", "badgeCat": "陸"},
+  {"id": "ctx-shinji-c", "comp": "県別編", "pref": "島根県", "cat": "湖", "type": "single", "q": "島根県松江市の近くにある、しじみの養殖がさかんな汽水湖は？", "a": ["宍道湖"], "choices": ["中海", "浜名湖", "琵琶湖", "宍道湖"], "note": "", "region": "中国四国", "badgeCat": "陸"},
+  {"id": "ctx-hamana", "comp": "県別編", "pref": "静岡県", "cat": "湖", "type": "single", "q": "静岡県にある、うなぎの養殖で有名な湖は？", "a": ["浜名湖"], "choices": ["宍道湖", "諏訪湖", "琵琶湖", "浜名湖"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "ctx-suwa", "comp": "県別編", "pref": "長野県", "cat": "湖", "type": "single", "q": "長野県にある、周辺で精密機械工業がさかんな湖は？", "a": ["諏訪湖"], "choices": ["浜名湖", "琵琶湖", "猪苗代湖", "諏訪湖"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "ctx-aso-c", "comp": "県別編", "pref": "熊本県", "cat": "山・台地・盆地", "type": "single", "q": "熊本県にある、世界最大級のカルデラで知られる山は？", "a": ["阿蘇山"], "choices": ["桜島", "雲仙岳", "浅間山", "阿蘇山"], "note": "", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "ctx-sakura-c", "comp": "県別編", "pref": "鹿児島県", "cat": "山・台地・盆地", "type": "single", "q": "鹿児島県を代表する、活発な活火山は？", "a": ["桜島"], "choices": ["阿蘇山", "浅間山", "雲仙岳", "桜島"], "note": "", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "ctx-kofu-c", "comp": "県別編", "pref": "山梨県", "cat": "山・台地・盆地", "type": "single", "q": "山梨県にある、ぶどう・ももの栽培がさかんな扇状地の盆地は？", "a": ["甲府盆地"], "choices": ["長野盆地", "山形盆地", "近江盆地", "甲府盆地"], "note": "", "region": "中部", "badgeCat": "陸"},
+  {"id": "ctx-shirasu", "comp": "県別編", "pref": "鹿児島県", "cat": "山・台地・盆地", "type": "single", "q": "鹿児島県に広がる、火山灰が積もった水はけのよい台地は？", "a": ["シラス台地"], "choices": ["武蔵野台地", "根釧台地", "牧ノ原", "シラス台地"], "note": "さつまいも。", "region": "九州沖縄", "badgeCat": "陸"},
+  {"id": "ctx-konsen", "comp": "県別編", "pref": "北海道", "cat": "山・台地・盆地", "type": "single", "q": "北海道東部にある、大規模な酪農がさかんな台地は？", "a": ["根釧台地"], "choices": ["石狩平野", "十勝平野", "シラス台地", "根釧台地"], "note": "", "region": "北海道", "badgeCat": "陸"},
+  {"id": "ctx-sanriku", "comp": "県別編", "pref": "岩手県", "cat": "海岸", "type": "single", "q": "岩手県などにある、わかめ・こんぶの養殖がさかんなリアス海岸は？", "a": ["三陸海岸"], "choices": ["九十九里浜", "若狭湾", "有明海", "三陸海岸"], "note": "", "region": "東北", "badgeCat": "海"},
+  {"id": "ctx-ago", "comp": "県別編", "pref": "三重県", "cat": "湾", "type": "single", "q": "三重県の志摩半島にある、真珠の養殖で有名な湾は？", "a": ["英虞湾"], "choices": ["宇和海", "大村湾", "陸奥湾", "英虞湾"], "note": "", "region": "近畿", "badgeCat": "海"},
+  {"id": "ctx-uwa", "comp": "県別編", "pref": "愛媛県", "cat": "海岸", "type": "single", "q": "愛媛県西側の、真珠やぶり・たいの養殖がさかんな海は？", "a": ["宇和海"], "choices": ["英虞湾", "有明海", "若狭湾", "宇和海"], "note": "段々畑でみかん。", "region": "中国四国", "badgeCat": "海"},
+  {"id": "ctx-noto", "comp": "県別編", "pref": "石川県", "cat": "半島", "type": "single", "q": "石川県にある、輪島塗で有名な日本海側最大の半島は？", "a": ["能登半島"], "choices": ["紀伊半島", "房総半島", "下北半島", "能登半島"], "note": "", "region": "中部", "badgeCat": "海"},
+  {"id": "ctx-shimokita", "comp": "県別編", "pref": "青森県", "cat": "半島", "type": "single", "q": "青森県にある、ほたての養殖と大間のまぐろで有名な半島は？", "a": ["下北半島"], "choices": ["津軽半島", "能登半島", "房総半島", "下北半島"], "note": "", "region": "東北", "badgeCat": "海"},
+  {"id": "heritage-kyoto", "comp": "県別編", "pref": "京都府", "cat": "世界遺産", "type": "single", "q": "金閣や清水寺などがふくまれる世界文化遺産は？", "a": ["古都京都の文化財"], "choices": ["古都奈良の文化財", "平泉", "日光の社寺", "古都京都の文化財"], "note": "金閣・銀閣・清水寺など17か所。", "region": "近畿", "badgeCat": "世界遺産"},
+  {"id": "heritage-itsukushima", "comp": "県別編", "pref": "広島県", "cat": "世界遺産", "type": "single", "q": "海の上に大鳥居が立つ、広島県の世界文化遺産の神社は？", "a": ["厳島神社"], "choices": ["日光東照宮", "出雲大社", "伊勢神宮", "厳島神社"], "note": "宮島にある。日本三景の一つ。", "region": "中国四国", "badgeCat": "世界遺産"},
+  {"id": "heritage-kii", "comp": "県別編", "pref": "和歌山県", "cat": "世界遺産", "type": "single", "q": "高野山や熊野古道がふくまれる世界文化遺産は？", "a": ["紀伊山地の霊場と参詣道"], "choices": ["古都京都の文化財", "石見銀山", "平泉", "紀伊山地の霊場と参詣道"], "note": "お参りの道。和歌山県など。", "region": "近畿", "badgeCat": "世界遺産"},
+  {"id": "heritage-shuri", "comp": "県別編", "pref": "沖縄県", "cat": "世界遺産", "type": "single", "q": "琉球王国のグスク(城)として世界文化遺産に登録された沖縄県の城跡は？", "a": ["首里城跡"], "choices": ["大阪城", "姫路城", "熊本城", "首里城跡"], "note": "那覇市。琉球王国の中心だった。", "region": "九州沖縄", "badgeCat": "世界遺産"},
+  {"id": "heritage-hiraizumi", "comp": "県別編", "pref": "岩手県", "cat": "世界遺産", "type": "single", "q": "中尊寺金色堂で有名な、岩手県の世界文化遺産は？", "a": ["平泉"], "choices": ["日光", "鎌倉", "吉野ヶ里", "平泉"], "note": "奥州藤原氏が栄えた。", "region": "東北", "badgeCat": "世界遺産"},
+  {"id": "heritage-fuji", "comp": "県別編", "pref": "山梨県", "cat": "世界遺産", "type": "single", "q": "「信仰の対象と芸術の源泉」として世界文化遺産になった、日本一高い山は？", "a": ["富士山"], "choices": ["阿蘇山", "桜島", "御嶽山", "富士山"], "note": "山梨県と静岡県。3776m。自然遺産ではなく文化遺産。", "region": "中部", "badgeCat": "世界遺産"},
+  {"id": "heritage-yahata", "comp": "県別編", "pref": "福岡県", "cat": "世界遺産", "type": "single", "q": "明治日本の産業革命遺産にふくまれる、福岡県北九州市の製鉄所は？", "a": ["八幡製鉄所"], "choices": ["富岡製糸場", "石見銀山", "大浦天主堂", "八幡製鉄所"], "note": "日清戦争の賠償金で建てられた。", "region": "九州沖縄", "badgeCat": "世界遺産"},
+  {"id": "heritage-shiretoko", "comp": "県別編", "pref": "北海道", "cat": "世界遺産", "type": "single", "q": "流氷がおとずれることで知られる、北海道の世界自然遺産は？", "a": ["知床"], "choices": ["白神山地", "屋久島", "小笠原諸島", "知床"], "note": "オホーツク海につき出た半島。", "region": "北海道", "badgeCat": "世界遺産"},
+  {"id": "heritage-shirakami", "comp": "県別編", "pref": "青森県", "cat": "世界遺産", "type": "single", "q": "ぶなの原生林で世界自然遺産に登録された、青森県と秋田県にまたがる山地は？", "a": ["白神山地"], "choices": ["知床", "屋久島", "紀伊山地", "白神山地"], "note": "", "region": "東北", "badgeCat": "世界遺産"},
+  {"id": "heritage-yakushima", "comp": "県別編", "pref": "鹿児島県", "cat": "世界遺産", "type": "single", "q": "縄文杉で有名な、鹿児島県の世界自然遺産の島は？", "a": ["屋久島"], "choices": ["種子島", "小笠原諸島", "佐渡島", "屋久島"], "note": "樹齢数千年の屋久杉。", "region": "九州沖縄", "badgeCat": "世界遺産"},
+  {"id": "heritage-ogasawara", "comp": "県別編", "pref": "東京都", "cat": "世界遺産", "type": "single", "q": "「東洋のガラパゴス」と呼ばれる、東京都の世界自然遺産は？", "a": ["小笠原諸島"], "choices": ["屋久島", "知床", "佐渡島", "小笠原諸島"], "note": "固有種が多い。船でしか行けない。", "region": "関東", "badgeCat": "世界遺産"},
+  {"id": "map-kawa-01", "comp": "自然編", "pref": "北海道", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["石狩川"], "choices": ["阿賀野川", "石狩川", "天竜川", "信濃川"], "note": "日本で3番目に長い。石狩平野。三日月湖", "region": "北海道", "badgeCat": "白地図", "image": "kawa_01.png"},
+  {"id": "map-kawa-02", "comp": "自然編", "pref": "新潟県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["信濃川"], "choices": ["信濃川", "阿賀野川", "四万十川", "利根川"], "note": "日本一長い。越後平野", "region": "中部", "badgeCat": "白地図", "image": "kawa_02.png"},
+  {"id": "map-kawa-03", "comp": "自然編", "pref": "新潟県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["阿賀野川"], "choices": ["阿賀野川", "信濃川", "石狩川", "天竜川"], "note": "新潟水俣病の原因となった川", "region": "中部", "badgeCat": "白地図", "image": "kawa_03.png"},
+  {"id": "map-kawa-04", "comp": "自然編", "pref": "千葉県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["利根川"], "choices": ["天竜川", "最上川", "四万十川", "利根川"], "note": "流域面積日本一。坂東太郎", "region": "関東", "badgeCat": "白地図", "image": "kawa_04.png"},
+  {"id": "map-kawa-05", "comp": "自然編", "pref": "山形県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["最上川"], "choices": ["球磨川", "最上川", "石狩川", "北上川"], "note": "日本三大急流。庄内平野", "region": "東北", "badgeCat": "白地図", "image": "kawa_05.png"},
+  {"id": "map-kawa-06", "comp": "自然編", "pref": "岩手県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["北上川"], "choices": ["阿賀野川", "神通川", "北上川", "最上川"], "note": "東北地方で一番長い", "region": "東北", "badgeCat": "白地図", "image": "kawa_06.png"},
+  {"id": "map-kawa-07", "comp": "自然編", "pref": "富山県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["神通川"], "choices": ["信濃川", "神通川", "筑後川", "天竜川"], "note": "イタイイタイ病の原因となった川", "region": "中部", "badgeCat": "白地図", "image": "kawa_07.png"},
+  {"id": "map-kawa-08", "comp": "自然編", "pref": "福岡県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["筑後川"], "choices": ["四万十川", "筑後川", "吉野川", "石狩川"], "note": "筑紫次郎。筑紫平野。クリーク", "region": "九州沖縄", "badgeCat": "白地図", "image": "kawa_08.png"},
+  {"id": "map-kawa-09", "comp": "自然編", "pref": "徳島県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["吉野川"], "choices": ["吉野川", "四万十川", "北上川", "最上川"], "note": "四国三郎。香川用水の水源", "region": "中国四国", "badgeCat": "白地図", "image": "kawa_09.png"},
+  {"id": "map-kawa-10", "comp": "自然編", "pref": "高知県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["四万十川"], "choices": ["利根川", "最上川", "四万十川", "石狩川"], "note": "最後の清流", "region": "中国四国", "badgeCat": "白地図", "image": "kawa_10.png"},
+  {"id": "map-kawa-11", "comp": "自然編", "pref": "熊本県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["球磨川"], "choices": ["球磨川", "最上川", "神通川", "筑後川"], "note": "日本三大急流。八代平野", "region": "九州沖縄", "badgeCat": "白地図", "image": "kawa_11.png"},
+  {"id": "map-kawa-12", "comp": "自然編", "pref": "静岡県", "cat": "川", "type": "single", "q": "白地図に示した川の名前は？", "a": ["天竜川"], "choices": ["利根川", "天竜川", "最上川", "北上川"], "note": "諏訪湖から流れる。天竜すぎ", "region": "中部", "badgeCat": "白地図", "image": "kawa_12.png"},
+  {"id": "map-heiya-13", "comp": "自然編", "pref": "北海道", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["石狩平野"], "choices": ["八代平野", "関東平野", "濃尾平野", "石狩平野"], "note": "稲作。客土", "region": "北海道", "badgeCat": "白地図", "image": "heiya_13.png"},
+  {"id": "map-heiya-14", "comp": "自然編", "pref": "北海道", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["十勝平野"], "choices": ["濃尾平野", "高知平野", "十勝平野", "八代平野"], "note": "畑作", "region": "北海道", "badgeCat": "白地図", "image": "heiya_14.png"},
+  {"id": "map-heiya-15", "comp": "自然編", "pref": "新潟県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["越後平野"], "choices": ["讃岐平野", "筑紫平野", "越後平野", "高知平野"], "note": "日本有数の米どころ", "region": "中部", "badgeCat": "白地図", "image": "heiya_15.png"},
+  {"id": "map-heiya-16", "comp": "自然編", "pref": "茨城県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["関東平野"], "choices": ["筑紫平野", "宮崎平野", "濃尾平野", "関東平野"], "note": "日本最大の平野", "region": "関東", "badgeCat": "白地図", "image": "heiya_16.png"},
+  {"id": "map-heiya-17", "comp": "自然編", "pref": "愛知県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["濃尾平野"], "choices": ["越後平野", "関東平野", "讃岐平野", "濃尾平野"], "note": "木曽三川。輪中", "region": "中部", "badgeCat": "白地図", "image": "heiya_17.png"},
+  {"id": "map-heiya-18", "comp": "自然編", "pref": "香川県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["讃岐平野"], "choices": ["関東平野", "越後平野", "高知平野", "讃岐平野"], "note": "ため池が多い", "region": "中国四国", "badgeCat": "白地図", "image": "heiya_18.png"},
+  {"id": "map-heiya-19", "comp": "自然編", "pref": "高知県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["高知平野"], "choices": ["越後平野", "十勝平野", "八代平野", "高知平野"], "note": "促成栽培。なす", "region": "中国四国", "badgeCat": "白地図", "image": "heiya_19.png"},
+  {"id": "map-heiya-20", "comp": "自然編", "pref": "福岡県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["筑紫平野"], "choices": ["庄内平野", "高知平野", "筑紫平野", "宮崎平野"], "note": "二毛作。九州一の米どころ", "region": "九州沖縄", "badgeCat": "白地図", "image": "heiya_20.png"},
+  {"id": "map-heiya-21", "comp": "自然編", "pref": "宮崎県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["宮崎平野"], "choices": ["宮崎平野", "八代平野", "十勝平野", "濃尾平野"], "note": "促成栽培。ピーマン", "region": "九州沖縄", "badgeCat": "白地図", "image": "heiya_21.png"},
+  {"id": "map-heiya-22", "comp": "自然編", "pref": "熊本県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["八代平野"], "choices": ["八代平野", "越後平野", "筑紫平野", "高知平野"], "note": "い草", "region": "九州沖縄", "badgeCat": "白地図", "image": "heiya_22.png"},
+  {"id": "map-heiya-23", "comp": "自然編", "pref": "山形県", "cat": "平野", "type": "single", "q": "白地図に示した平野の名前は？", "a": ["庄内平野"], "choices": ["越後平野", "宮崎平野", "庄内平野", "十勝平野"], "note": "稲作。最上川河口", "region": "東北", "badgeCat": "白地図", "image": "heiya_23.png"},
+  {"id": "map-sanchi-24", "comp": "自然編", "pref": "青森県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["奥羽山脈"], "choices": ["奥羽山脈", "木曽山脈", "越後山脈", "飛驒山脈"], "note": "日本最大の山脈", "region": "東北", "badgeCat": "白地図", "image": "sanchi_24.png"},
+  {"id": "map-sanchi-25", "comp": "自然編", "pref": "新潟県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["越後山脈"], "choices": ["越後山脈", "赤石山脈", "奥羽山脈", "紀伊山地"], "note": "日本海側と関東を分ける", "region": "中部", "badgeCat": "白地図", "image": "sanchi_25.png"},
+  {"id": "map-sanchi-26", "comp": "自然編", "pref": "富山県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["飛驒山脈"], "choices": ["木曽山脈", "越後山脈", "飛驒山脈", "奥羽山脈"], "note": "北アルプス", "region": "中部", "badgeCat": "白地図", "image": "sanchi_26.png"},
+  {"id": "map-sanchi-27", "comp": "自然編", "pref": "長野県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["木曽山脈"], "choices": ["越後山脈", "奥羽山脈", "紀伊山地", "木曽山脈"], "note": "中央アルプス", "region": "中部", "badgeCat": "白地図", "image": "sanchi_27.png"},
+  {"id": "map-sanchi-28", "comp": "自然編", "pref": "静岡県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["赤石山脈"], "choices": ["飛驒山脈", "赤石山脈", "奥羽山脈", "木曽山脈"], "note": "南アルプス", "region": "中部", "badgeCat": "白地図", "image": "sanchi_28.png"},
+  {"id": "map-sanchi-29", "comp": "自然編", "pref": "和歌山県", "cat": "山地・山脈", "type": "single", "q": "白地図に示した山地・山脈の名前は？", "a": ["紀伊山地"], "choices": ["飛驒山脈", "越後山脈", "木曽山脈", "紀伊山地"], "note": "霊場・参詣道が世界遺産", "region": "近畿", "badgeCat": "白地図", "image": "sanchi_29.png"},
+  {"id": "map-hanto-30", "comp": "自然編", "pref": "青森県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["下北半島"], "choices": ["津軽半島", "下北半島", "薩摩半島", "能登半島"], "note": "ほたて。大間のまぐろ", "region": "東北", "badgeCat": "白地図", "image": "hanto_30.png"},
+  {"id": "map-hanto-31", "comp": "自然編", "pref": "青森県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["津軽半島"], "choices": ["能登半島", "津軽半島", "下北半島", "薩摩半島"], "note": "青函トンネル。りんご", "region": "東北", "badgeCat": "白地図", "image": "hanto_31.png"},
+  {"id": "map-hanto-32", "comp": "自然編", "pref": "石川県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["能登半島"], "choices": ["下北半島", "能登半島", "津軽半島", "紀伊半島"], "note": "日本海側最大。輪島塗", "region": "中部", "badgeCat": "白地図", "image": "hanto_32.png"},
+  {"id": "map-hanto-33", "comp": "自然編", "pref": "千葉県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["房総半島"], "choices": ["能登半島", "房総半島", "下北半島", "紀伊半島"], "note": "京葉工業地帯", "region": "関東", "badgeCat": "白地図", "image": "hanto_33.png"},
+  {"id": "map-hanto-34", "comp": "自然編", "pref": "和歌山県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["紀伊半島"], "choices": ["紀伊半島", "薩摩半島", "津軽半島", "房総半島"], "note": "日本最大の半島", "region": "近畿", "badgeCat": "白地図", "image": "hanto_34.png"},
+  {"id": "map-hanto-35", "comp": "自然編", "pref": "鹿児島県", "cat": "半島", "type": "single", "q": "白地図に示した半島の名前は？", "a": ["薩摩半島"], "choices": ["津軽半島", "房総半島", "能登半島", "薩摩半島"], "note": "西側。ザビエル来航", "region": "九州沖縄", "badgeCat": "白地図", "image": "hanto_35.png"},
+  {"id": "map-mizuumi-36", "comp": "自然編", "pref": "北海道", "cat": "湖", "type": "single", "q": "白地図に示した湖の名前は？", "a": ["サロマ湖"], "choices": ["宍道湖", "サロマ湖", "猪苗代湖", "琵琶湖"], "note": "3番目に大きい。ほたて", "region": "北海道", "badgeCat": "白地図", "image": "mizuumi_36.png"},
+  {"id": "map-mizuumi-37", "comp": "自然編", "pref": "福島県", "cat": "湖", "type": "single", "q": "白地図に示した湖の名前は？", "a": ["猪苗代湖"], "choices": ["宍道湖", "琵琶湖", "猪苗代湖", "サロマ湖"], "note": "4番目に大きい", "region": "東北", "badgeCat": "白地図", "image": "mizuumi_37.png"},
+  {"id": "map-mizuumi-38", "comp": "自然編", "pref": "滋賀県", "cat": "湖", "type": "single", "q": "白地図に示した湖の名前は？", "a": ["琵琶湖"], "choices": ["サロマ湖", "琵琶湖", "猪苗代湖", "霞ヶ浦"], "note": "日本最大の湖", "region": "近畿", "badgeCat": "白地図", "image": "mizuumi_38.png"},
+  {"id": "map-mizuumi-39", "comp": "自然編", "pref": "茨城県", "cat": "湖", "type": "single", "q": "白地図に示した湖の名前は？", "a": ["霞ヶ浦"], "choices": ["琵琶湖", "宍道湖", "霞ヶ浦", "サロマ湖"], "note": "2番目に大きい", "region": "関東", "badgeCat": "白地図", "image": "mizuumi_39.png"},
+  {"id": "map-mizuumi-40", "comp": "自然編", "pref": "島根県", "cat": "湖", "type": "single", "q": "白地図に示した湖の名前は？", "a": ["宍道湖"], "choices": ["琵琶湖", "霞ヶ浦", "宍道湖", "猪苗代湖"], "note": "汽水湖。しじみ", "region": "中国四国", "badgeCat": "白地図", "image": "mizuumi_40.png"},
+  {"id": "map-kairyu-41", "comp": "自然編", "pref": "太平洋", "cat": "海流", "type": "single", "q": "白地図の矢印が示す海流の名前は？", "a": ["日本海流"], "choices": ["千島海流", "リマン海流", "対馬海流", "日本海流"], "note": "黒潮。太平洋側の暖流", "region": "全国", "badgeCat": "白地図", "image": "kairyu_41.png"},
+  {"id": "map-kairyu-42", "comp": "自然編", "pref": "太平洋", "cat": "海流", "type": "single", "q": "白地図の矢印が示す海流の名前は？", "a": ["千島海流"], "choices": ["日本海流", "千島海流", "対馬海流", "リマン海流"], "note": "親潮。太平洋側の寒流", "region": "全国", "badgeCat": "白地図", "image": "kairyu_42.png"},
+  {"id": "map-kairyu-43", "comp": "自然編", "pref": "日本海", "cat": "海流", "type": "single", "q": "白地図の矢印が示す海流の名前は？", "a": ["対馬海流"], "choices": ["リマン海流", "対馬海流", "日本海流", "千島海流"], "note": "日本海側の暖流", "region": "全国", "badgeCat": "白地図", "image": "kairyu_43.png"},
+  {"id": "map-kairyu-44", "comp": "自然編", "pref": "日本海", "cat": "海流", "type": "single", "q": "白地図の矢印が示す海流の名前は？", "a": ["リマン海流"], "choices": ["千島海流", "リマン海流", "日本海流", "対馬海流"], "note": "日本海側の寒流", "region": "全国", "badgeCat": "白地図", "image": "kairyu_44.png"},
+  {"id": "map-daichi-45", "comp": "自然編", "pref": "鹿児島県", "cat": "台地", "type": "single", "q": "白地図に示した台地の名前は？", "a": ["笠野原台地"], "choices": ["笠野原台地", "牧ノ原台地", "武蔵野台地", "根釧台地"], "note": "シラス台地の一部。畑作(さつまいも・茶)と畜産", "region": "九州沖縄", "badgeCat": "白地図", "image": "daichi_45.png"},
+  {"id": "map-daichi-46", "comp": "自然編", "pref": "北海道", "cat": "台地", "type": "single", "q": "白地図に示した台地の名前は？", "a": ["根釧台地"], "choices": ["根釧台地", "武蔵野台地", "笠野原台地", "牧ノ原台地"], "note": "酪農。パイロットファーム", "region": "北海道", "badgeCat": "白地図", "image": "daichi_46.png"},
+  {"id": "map-daichi-47", "comp": "自然編", "pref": "静岡県", "cat": "台地", "type": "single", "q": "白地図に示した台地の名前は？", "a": ["牧ノ原台地"], "choices": ["牧ノ原台地", "武蔵野台地", "笠野原台地", "根釧台地"], "note": "茶の生産日本一。大井川の流域", "region": "中部", "badgeCat": "白地図", "image": "daichi_47.png"},
+  {"id": "map-kaigan-48", "comp": "自然編", "pref": "岩手県", "cat": "海岸・湾", "type": "single", "q": "白地図に示した海岸・湾の名前は？", "a": ["三陸海岸"], "choices": ["若狭湾", "九十九里浜", "三陸海岸", "陸奥湾"], "note": "リアス海岸。わかめ養殖", "region": "東北", "badgeCat": "白地図", "image": "kaigan_48.png"},
+  {"id": "map-kaigan-49", "comp": "自然編", "pref": "千葉県", "cat": "海岸・湾", "type": "single", "q": "白地図に示した海岸・湾の名前は？", "a": ["九十九里浜"], "choices": ["九十九里浜", "三陸海岸", "若狭湾", "陸奥湾"], "note": "砂浜海岸", "region": "関東", "badgeCat": "白地図", "image": "kaigan_49.png"},
+  {"id": "map-kaigan-50", "comp": "自然編", "pref": "福井県", "cat": "海岸・湾", "type": "single", "q": "白地図に示した海岸・湾の名前は？", "a": ["若狭湾"], "choices": ["若狭湾", "九十九里浜", "三陸海岸", "陸奥湾"], "note": "リアス海岸。原発銀座", "region": "中部", "badgeCat": "白地図", "image": "kaigan_50.png"},
+];
+/* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
+const PREF_REGION = {
+  "北海道":"北海道",
+  "青森県":"東北","岩手県":"東北","宮城県":"東北","秋田県":"東北","山形県":"東北","福島県":"東北",
+  "茨城県":"関東","栃木県":"関東","群馬県":"関東","埼玉県":"関東","千葉県":"関東","東京都":"関東","神奈川県":"関東",
+  "新潟県":"中部","富山県":"中部","石川県":"中部","福井県":"中部","山梨県":"中部","長野県":"中部","岐阜県":"中部","静岡県":"中部","愛知県":"中部",
+  "三重県":"近畿","滋賀県":"近畿","京都府":"近畿","大阪府":"近畿","兵庫県":"近畿","奈良県":"近畿","和歌山県":"近畿",
+  "鳥取県":"中国四国","島根県":"中国四国","岡山県":"中国四国","広島県":"中国四国","山口県":"中国四国","徳島県":"中国四国","香川県":"中国四国","愛媛県":"中国四国","高知県":"中国四国",
+  "福岡県":"九州沖縄","佐賀県":"九州沖縄","長崎県":"九州沖縄","熊本県":"九州沖縄","大分県":"九州沖縄","宮崎県":"九州沖縄","鹿児島県":"九州沖縄","沖縄県":"九州沖縄",
+  // 県をまたぐ・広域の表記
+  "全国":"全国","太平洋":"全国","日本海":"全国",
+  "関東":"関東","東北":"東北","中部":"中部","近畿":"近畿","中国":"中国四国","四国":"中国四国"
+};
+const CAT_BADGE = {
+  "県庁所在地":"県庁所在地","道庁所在地":"県庁所在地","政令指定都市":"県庁所在地",
+  "河川":"水","湖":"水","海流":"水","海岸":"水","湾":"水",
+  "山地・山脈":"陸","山・台地・盆地":"陸","半島":"陸",
+  "特産品":"農業","畜産":"農業",
+  "漁港":"漁業","養殖":"漁業",   // 漁港・養殖は産業として「漁業」称号に寄せる
+  "林業":"林業",
+  "工業":"工業","工業都市":"工業","公害":"工業",
+  "伝統的工芸品":"伝統工芸品",
+  "日本三景":"その他","日本三名園":"その他"
+};
+function regionOf(pref){ return PREF_REGION[pref] || "全国"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "その他"; }
+function enrichCards(cards){
+  cards.forEach(c=>{
+    if(!c.region) c.region = regionOf(c.pref);
+    if(!c.badgeCat) c.badgeCat = badgeCatOf(c.cat);
+  });
+  return cards;
+}
+
+let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards() を呼ぶと定数が未初期化で常にDEFAULT_CARDSに落ちるバグがあった
+
+/* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
+function buildMap(mset){
+  // 47都道府県タイルマップ。1県=1マス。地理配置に沿わせた簡略地図。
+  // mset に含まれる県（マスター済み）は緑に塗られる。
+  const T = {"北海道": {"c": 11, "r": 0, "s": "北海"}, "青森県": {"c": 10, "r": 2, "s": "青森"}, "秋田県": {"c": 9, "r": 3, "s": "秋田"}, "岩手県": {"c": 10, "r": 3, "s": "岩手"}, "山形県": {"c": 9, "r": 4, "s": "山形"}, "宮城県": {"c": 10, "r": 4, "s": "宮城"}, "福島県": {"c": 10, "r": 5, "s": "福島"}, "群馬県": {"c": 9, "r": 6, "s": "群馬"}, "栃木県": {"c": 10, "r": 6, "s": "栃木"}, "茨城県": {"c": 11, "r": 6, "s": "茨城"}, "埼玉県": {"c": 9, "r": 7, "s": "埼玉"}, "東京都": {"c": 10, "r": 7, "s": "東京"}, "千葉県": {"c": 11, "r": 7, "s": "千葉"}, "神奈川県": {"c": 10, "r": 8, "s": "神奈"}, "新潟県": {"c": 8, "r": 5, "s": "新潟"}, "富山県": {"c": 7, "r": 6, "s": "富山"}, "長野県": {"c": 8, "r": 6, "s": "長野"}, "石川県": {"c": 6, "r": 6, "s": "石川"}, "福井県": {"c": 6, "r": 7, "s": "福井"}, "山梨県": {"c": 8, "r": 7, "s": "山梨"}, "岐阜県": {"c": 7, "r": 7, "s": "岐阜"}, "静岡県": {"c": 8, "r": 8, "s": "静岡"}, "愛知県": {"c": 7, "r": 8, "s": "愛知"}, "滋賀県": {"c": 6, "r": 8, "s": "滋賀"}, "三重県": {"c": 6, "r": 9, "s": "三重"}, "京都府": {"c": 5, "r": 7, "s": "京都"}, "奈良県": {"c": 5, "r": 9, "s": "奈良"}, "大阪府": {"c": 5, "r": 8, "s": "大阪"}, "兵庫県": {"c": 4, "r": 8, "s": "兵庫"}, "和歌山県": {"c": 5, "r": 10, "s": "和歌"}, "鳥取県": {"c": 3, "r": 7, "s": "鳥取"}, "島根県": {"c": 2, "r": 7, "s": "島根"}, "岡山県": {"c": 3, "r": 8, "s": "岡山"}, "広島県": {"c": 2, "r": 8, "s": "広島"}, "山口県": {"c": 1, "r": 8, "s": "山口"}, "香川県": {"c": 3, "r": 9, "s": "香川"}, "徳島県": {"c": 4, "r": 9, "s": "徳島"}, "愛媛県": {"c": 2, "r": 9, "s": "愛媛"}, "高知県": {"c": 3, "r": 10, "s": "高知"}, "福岡県": {"c": 1, "r": 9, "s": "福岡"}, "佐賀県": {"c": 0, "r": 9, "s": "佐賀"}, "大分県": {"c": 1, "r": 10, "s": "大分"}, "長崎県": {"c": 0, "r": 10, "s": "長崎"}, "熊本県": {"c": 1, "r": 11, "s": "熊本"}, "宮崎県": {"c": 2, "r": 11, "s": "宮崎"}, "鹿児島県": {"c": 1, "r": 12, "s": "鹿児"}, "沖縄県": {"c": 0, "r": 13, "s": "沖縄"}};
+  const CELL=20, GAP=2.5, PAD=6;
+  let maxC=0,maxR=0;
+  for(const k in T){ if(T[k].c>maxC)maxC=T[k].c; if(T[k].r>maxR)maxR=T[k].r; }
+  const W = PAD*2 + (maxC+1)*(CELL+GAP);
+  const H = PAD*2 + (maxR+1)*(CELL+GAP);
+  let cells="";
+  for(const name in T){
+    const t=T[name];
+    const x=PAD+t.c*(CELL+GAP), y=PAD+t.r*(CELL+GAP);
+    const on=mset.has(name);
+    const fill=on?"var(--green)":"#e7e2d4";
+    const tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3.5" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+3.2}" text-anchor="middle" font-size="7.3" fill="${tcol}" font-weight="700">${t.s}</text></g>`;
+  }
+  return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
+}
+
+/* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
+const DAILY_GOAL=10;
+const LS_CARDS="chizutan_cards";
+const userKey=(n,p)=>"chizutan_user_"+n+"_"+p;
+let state=null;
+
+function loadCards(){
+  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  return DEFAULT_CARDS.slice();
+}
+CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0,review:[],daily30Date:""};}
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function loadState(n,p){
+  try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
+  return null;
+}
+function dayGap(a,b){
+  // "YYYY-M-D"文字列の日数差。Safariは"2026-7-11"をDate()で解釈できないため手動パース
+  const p=s=>{const[y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
+  return Math.round((p(b)-p(a))/864e5);
+}
+function rolloverDay(){
+  // 日付が変わっていたら「今日の学習」をリセット。
+  // 前回の記録日に30問未完了、または丸1日以上あいていたら連続記録を0に戻す
+  const t=todayStr();
+  if(state.lastDay!==t){
+    if(dayGap(state.lastDay,t)>=2 || !state.streakedToday) state.streak=0;
+    state.doneToday=0; state.streakedToday=false; state.lastDay=t;
+  }
+}
+
+/* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
+/* stage: 0=4択, 1=文字を並べ替え。の2段階（入力ステージは廃止）。reps（連続正解数）で決まる */
+function stageOf(r){
+  if(!r||r.reps<=0) return 0;
+  return 1;
+}
+function schedule(id,correct){
+  const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
+  if(correct){
+    r.reps+=1;
+    if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
+    r.ef=Math.min(2.6,r.ef+0.05);
+    if(r.reps>=3)r.mastered=true;
+    r.everCorrect=true; // ポイント制用：一度でも正解したことがある印（初正解の判定に使う）
+  }else{
+    r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
+    r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
+    r.wrong=(r.wrong||0)+1; // 苦手復習用：まちがえた回数を記録
+  }
+  r.due=Date.now()+r.interval*864e5;
+  state.reviews[id]=r;
+}
+function masteredCount(){const s=new Set();CARDS.forEach(c=>{const r=state.reviews[c.id];if(r&&r.mastered)s.add(c.pref);});return s;}
+function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastered).length;}
+
+/* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
+const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
+const BADGES = [
+  {key:"region_hokkaido",      name:"北海道マスター",     emoji:"🐻", type:"region", match:"北海道"},
+  {key:"region_tohoku",        name:"東北マスター",       emoji:"🍎", type:"region", match:"東北"},
+  {key:"region_kanto",         name:"関東マスター",       emoji:"🗼", type:"region", match:"関東"},
+  {key:"region_chubu",         name:"中部マスター",       emoji:"🗻", type:"region", match:"中部"},
+  {key:"region_kinki",         name:"近畿マスター",       emoji:"🦌", type:"region", match:"近畿"},
+  {key:"region_chugokushikoku",name:"中国四国マスター",   emoji:"🌉", type:"region", match:"中国四国"},
+  {key:"region_kyushuokinawa", name:"九州沖縄マスター",   emoji:"🌺", type:"region", match:"九州沖縄"},
+  {key:"land",        name:"陸マスター",       emoji:"⛰️", type:"badgeCat", match:"陸"},
+  {key:"sea",         name:"海マスター",       emoji:"🌊", type:"badgeCat", match:"海"},
+  {key:"climate",     name:"気候マスター",     emoji:"🌦️", type:"badgeCat", match:"気候"},
+  {key:"agriculture", name:"農業マスター",     emoji:"🌾", type:"badgeCat", match:"農業"},
+  {key:"fishery",     name:"漁業マスター",     emoji:"🐟", type:"badgeCat", match:"漁業"},
+  {key:"forestry",    name:"林業マスター",     emoji:"🌲", type:"badgeCat", match:"林業"},
+  {key:"industry",    name:"工業マスター",     emoji:"🏭", type:"badgeCat", match:"工業"},
+  {key:"craft",       name:"伝統工芸品マスター",emoji:"🏺", type:"badgeCat", match:"伝統工芸品"},
+  {key:"capitals",    name:"県庁所在地マスター",emoji:"🏯", type:"badgeCat", match:"県庁所在地"},
+  {key:"heritage",    name:"世界遺産マスター",  emoji:"🏛️", type:"badgeCat", match:"世界遺産"},
+  {key:"tourism",     name:"観光・雑学マスター",emoji:"🎏", type:"badgeCat", match:"観光・雑学"},
+  {key:"whitemap",    name:"白地図マスター",    emoji:"🗺️", type:"badgeCat", match:"白地図"},
+];
+const FINAL_BADGE = {key:"doctor", name:"地理博士", emoji:"🎓"};
+// 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
+// 解放判定・地理博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
+function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
+function activeBadges(){return BADGES.filter(badgeActive);}
+
+// 称号ごとの進捗 {total, mastered, ratio, earned}
+function badgeProgress(b){
+  const group = CARDS.filter(c => b.type==="region" ? c.region===b.match : c.badgeCat===b.match);
+  const total = group.length;
+  let mastered = 0;
+  group.forEach(c=>{const r=state.reviews[c.id]; if(r&&r.mastered)mastered++;});
+  const ratio = total ? mastered/total : 0;
+  return {total, mastered, ratio, earned: total>0 && ratio>=BADGE_THRESHOLD};
+}
+// 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
+function refreshBadges(){
+  if(!state.badges)state.badges={};
+  const act=activeBadges(), fresh=[];
+  act.forEach(b=>{
+    if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
+  });
+  if(act.length && act.every(b=>state.badges[b.key]) && !state.badges[FINAL_BADGE.key]){
+    state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
+  }
+  if(fresh.length){saveState();celebrate(fresh);}
+  return state.badges;
+}
+function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
+let celebrateQueue=[], celebrating=false;
+function celebrate(badges){ celebrateQueue.push(...badges); if(!celebrating) nextCelebration(); }
+function nextCelebration(){
+  const b=celebrateQueue.shift();
+  if(!b){celebrating=false;return;}
+  celebrating=true;
+  const isDoctor=b.key===FINAL_BADGE.key;
+  const colors=["#4f9d69","#e08a3c","#d8a93a","#3f7cc4","#d9534f","#9a6fc4"];
+  let conf="";
+  const n=isDoctor?90:45;
+  for(let i=0;i<n;i++){ // 疑似ランダム配置（indexから決める）
+    conf+=`<i style="left:${(i*37)%100}%;background:${colors[i%colors.length]};animation-delay:${(i%20)*0.13}s;animation-duration:${2.2+(i%7)*0.3}s;width:${6+(i%3)*3}px"></i>`;
+  }
+  const ov=document.createElement('div');
+  ov.className="celebrate"+(isDoctor?" doctor":"");
+  ov.innerHTML=`<div class="conf">${conf}</div>
+    <div class="cbody">
+      <div class="cemoji">${b.emoji}</div>
+      <div class="ctitle">${isDoctor?"最後の称号":"新しい称号"}</div>
+      <div class="cname">${b.name}</div>
+      <div class="cget">${isDoctor?"全部の称号を 集めたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップで閉じる</div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
+  ov.onclick=close;
+  setTimeout(close, isDoctor?9000:4500);
+}
+
+/* ===== 5. 画面 ===== */
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+
+$('loginBtn').onclick=async()=>{
+  const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
+  $('loginMsg').textContent="";
+  if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
+  $('loginBtn').disabled=true;
+  try{
+    let onlineOk=false, srvCampus="", srvWeek=0;
+    if(ONLINE()){
+      $('loginMsg').textContent="通信中…";
+      try{
+        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        if(!r.ok&&r.reason==='not_found'){
+          if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
+          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          r.week_score=0;
+        }else if(!r.ok&&r.reason==='suspended'){
+          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";return;
+        }else if(!r.ok){
+          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";return;
+        }
+        onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+      }catch(e){ /* サーバに届かない → オフラインで続行 */ }
+    }
+    const existing=loadState(n,p);
+    state=existing||freshState(n,p);
+    if(!state.badges)state.badges={};
+    if(state.weekPending==null)state.weekPending=0;
+    state.online=onlineOk;
+    if(onlineOk){
+      state.campus=srvCampus;
+      state.weekScore=srvWeek;
+      if(!existing){
+        // この端末に記録がない → サーバのバックアップから復元を試みる
+        try{
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
+          if(pr.ok&&pr.data){
+            const d=pr.data;
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{
+              if(d[k]!=null)state[k]=d[k];
+            });
+          }
+        }catch(e){}
+      }
+    }
+    $('loginMsg').textContent="";
+    rolloverDay(); refreshBadges(); saveState();
+    renderHome(); show('home');
+    flushScore();
+  }finally{ $('loginBtn').disabled=false; }
+};
+$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+
+function renderHome(){
+  rolloverDay();
+  $('hiNick').textContent=state.nick;
+  $('streakN').textContent=state.streak;
+  refreshBadges();
+  renderHomeBadges();
+  // ランキングはオンライン時のみ入口を出す
+  $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
+  // 今日の30問：クリア済みなら見た目を変える
+  const dailyDone = state.daily30Date===todayStr();
+  $('modeDaily').classList.toggle('done',dailyDone);
+  $('modeDailyEmoji').textContent = dailyDone ? "✅" : "📅";
+  $('modeDailyTitle').textContent = dailyDone ? "今日の30問（クリア済み）" : "今日の30問";
+  $('modeDailyDesc').textContent = dailyDone ? "また明日ちょうせんできるよ。今日は復習や称号モードをどうぞ" : "全範囲からランダム約30問。毎日やって🔥連続をのばそう";
+  // 復習モード：たまっている間だけ入口を出す
+  const nrev = reviewCards().length;
+  $('modeReview').style.display = nrev>0 ? "" : "none";
+  $('reviewCount').textContent = nrev>0 ? nrev+"問" : "";
+}
+
+// ホーム上部の称号コレクション：獲得＝カラーで光る／未獲得＝グレー の2状態だけ
+function renderHomeBadges(){
+  const items=BADGES.concat([FINAL_BADGE]);
+  let html="";
+  items.forEach(b=>{
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const isFinal=b.key===FINAL_BADGE.key;
+    const short=b.name.replace("マスター","");
+    html+=`<button class="hbadge ${isFinal?'final ':''}${earned?'earned':'locked'}" data-key="${b.key}">
+      <span class="hb-emoji">${b.emoji}</span><span class="hb-name">${short}</span></button>`;
+  });
+  $('homeBadgeGrid').innerHTML=html;
+  $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
+  $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
+  $('collTotal').textContent=BADGES.length+1; // 19称号＋地理博士＝20
+}
+$('modeBadge').onclick=()=>{renderPick();show('pick');};
+$('modeDaily').onclick=()=>startQuiz('DAILY30');
+$('modeReview').onclick=()=>startQuiz('REVIEW');
+$('modeRank').onclick=()=>{show('ranking');renderPeriodTabs();renderRankTabs();loadRanking();};
+
+/* ===== 称号画面 ===== */
+function renderBadges(){
+  refreshBadges(); saveState();
+  const got=earnedBadgeCount();
+  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 地理博士 達成！</span>':'（全部集めると「地理博士」）'}`;
+  let html="";
+  BADGES.forEach(b=>{
+    if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
+      html+=`<div class="badge locked" style="filter:grayscale(.6)">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="bname">${b.name}</div>
+        <div class="bmeta">準備中・お楽しみに！</div>
+      </div>`;
+      return;
+    }
+    const p=badgeProgress(b);
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const pct=Math.round(p.ratio*100);
+    const meta = earned
+      ? `ゲット！ ${state.badges[b.key]}`
+      : (p.total ? `あと${Math.max(0,Math.ceil(p.total*BADGE_THRESHOLD)-p.mastered)}問でゲット` : "問題なし");
+    html+=`<div class="badge ${earned?'earned':'locked'}">
+      <div class="bemoji">${b.emoji}</div>
+      <div class="bname">${b.name}</div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+      <div class="bmeta">${p.mastered}/${p.total}　${meta}</div>
+    </div>`;
+  });
+  const fEarned=!!(state.badges&&state.badges[FINAL_BADGE.key]);
+  html+=`<div class="badge final ${fEarned?'earned':'locked'}">
+    <div class="bemoji">${FINAL_BADGE.emoji}</div>
+    <div class="bname">${FINAL_BADGE.name}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号全てでゲット'}</div>
+  </div>`;
+  $('badgeGrid').innerHTML=html;
+}
+$('badgesBack').onclick=()=>{renderHome();show('home');};
+
+/* ===== 選んで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+function renderPick(){
+  const mk=(b,comp)=>{
+    const p=badgeProgress(b);
+    const done=p.total>0&&p.mastered>=p.total;
+    return `<button class="pick-btn ${done?'done':''}" data-comp="${comp}">
+      <span class="pe">${b.emoji}</span>
+      <span><span class="pn">${b.match}</span><span class="pp">${p.mastered}/${p.total}${done?'　パーフェクト！':''}</span></span>
+    </button>`;
+  };
+  $('pickRegion').innerHTML=BADGES.filter(b=>b.type==="region").map(b=>mk(b,"R:"+b.match)).join("");
+  $('pickCat').innerHTML=BADGES.filter(b=>b.type==="badgeCat"&&badgeActive(b)).map(b=>mk(b,"B:"+b.match)).join("");
+  document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
+}
+$('pickBack').onclick=()=>{renderHome();show('home');};
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+function cardInGroup(c,comp){
+  if(comp==="ALL")return true;
+  if(comp.startsWith("R:"))return c.region===comp.slice(2);
+  if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  return c.comp===comp;
+}
+function dueCards(comp){
+  const now=Date.now();
+  return CARDS.filter(c=>{
+    if(!cardInGroup(c,comp))return false;
+    const r=state.reviews[c.id];
+    if(!r)return true;
+    if(r.mastered&&r.due>now)return false;
+    return r.due?r.due<=now:true;
+  });
+}
+
+/* ===== 6. クイズ進行（3ステージ） ===== */
+let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+    .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
+}
+const DAILY30=30; // 今日の30問の枚数
+function reviewCards(){ // 今日の30問で間違えた問題（過去分もたまる）。正解すると外れる
+  return (state.review||[]).map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+}
+function startQuiz(comp){
+  let pool;
+  if(comp==="DAILY30"){
+    if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
+    // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
+    pool=shuffle(CARDS.slice()).slice(0,DAILY30);
+  }else if(comp==="REVIEW"){
+    // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
+    pool=reviewCards();
+    if(pool.length===0){alert("復習する問題はないよ！今日の30問をがんばろう😊");return;}
+  }else if(comp&&(comp.startsWith("R:")||comp.startsWith("B:"))){
+    // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
+    pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
+    if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
+  }else if(comp==="NIGATE"){
+    pool=nigateCards().slice(0,DAILY_GOAL);
+  }else{
+    pool=dueCards(comp);
+    if(pool.length===0)pool=CARDS.filter(c=>cardInGroup(c,comp));
+    pool=shuffle(pool).slice(0,DAILY_GOAL);
+  }
+  if(pool.length===0){renderHome();show('home');return;}
+  session={queue:pool,idx:0,correct:0,total:pool.length,comp};
+  renderQuestion(); show('quiz');
+}
+const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を並べる","ステップ3・漢字で入力"];
+
+function renderQuestion(){
+  const c=session.queue[session.idx];
+  picked=new Set(); answered=false; slotChars=[];
+  // multiと画像つきカードは常に4択（画像問題はステージ進行させない）
+  stage = (c.type==="multi"||c.image) ? 0 : stageOf(state.reviews[c.id]);
+  $('qProg').style.width=(session.idx/session.total*100)+"%";
+  $('qCount').textContent=(session.idx+1)+"/"+session.total;
+  $('stagePill').textContent = c.type==="multi" ? "複数選ぶ問題" : (c.image ? "画像を見て選ぶ問題" : STAGE_LABEL[stage]);
+  $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
+  $('qText').textContent=c.q; // 都道府県名(qPref)は表示しない（答えが分かってしまうため）
+  const im=$('qImg'); $('qImgMiss').style.display="none";
+  if(c.image){
+    im.alt="（画像："+c.q+"）";
+    im.onerror=()=>{im.style.display="none";$('qImgMiss').style.display="";};
+    im.src="images/"+c.image; im.style.display="";
+  }else{ im.style.display="none"; im.removeAttribute('src'); }
+  $('qMultiHint').style.display=c.type==="multi"?"block":"none";
+  $('feedback').className="feedback";
+  $('checkBtn').textContent="答え合わせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('dontknow').style.display="block";
+
+  if(stage===0) renderChoices(c);
+  else if(stage===1) renderTiles(c);
+  else renderInput(c);
+}
+
+function renderChoices(c){
+  // 取り込みCSV由来のテキストをHTMLとして解釈しないよう、DOM APIで組み立てる（XSS対策）
+  const ch=shuffle(c.choices);
+  const wrap=document.createElement('div');wrap.className='choices';
+  ch.forEach(o=>{
+    const b=document.createElement('button');b.className='choice';b.dataset.opt=o;
+    const mk=document.createElement('span');mk.className='mk';mk.textContent=c.type==="multi"?"☐":"";
+    const tx=document.createElement('span');tx.textContent=o;
+    b.append(mk,tx);b.onclick=()=>onPick(b,c.type);
+    wrap.appendChild(b);
+  });
+  const host=$('answerArea');host.innerHTML="";host.appendChild(wrap);
+}
+function onPick(btn,type){
+  if(answered)return;const opt=btn.dataset.opt;
+  if(type==="single"){
+    $('answerArea').querySelectorAll('.choice').forEach(x=>{x.classList.remove('sel');x.querySelector('.mk').textContent="";});
+    picked=new Set([opt]);btn.classList.add('sel');
+  }else{
+    if(picked.has(opt)){picked.delete(opt);btn.classList.remove('sel');btn.querySelector('.mk').textContent="☐";}
+    else{picked.add(opt);btn.classList.add('sel');btn.querySelector('.mk').textContent="✓";}
+  }
+  $('checkBtn').disabled=picked.size===0;
+}
+
+/* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+function renderTiles(c){
+  const ans=c.a[0];
+  const ansChars=ans.split("");
+  // ダミー文字：他の選択肢から文字を拝借
+  let pool=[];
+  c.choices.forEach(o=>{if(o!==ans)pool.push(...o.split(""));});
+  pool=pool.filter(ch=>!ansChars.includes(ch));
+  const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
+  const tiles=shuffle([...ansChars,...dummies]);
+  let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
+  $('answerArea').innerHTML=html;
+  renderSlots(ansChars.length);
+  const tw=$('tiles');
+  tiles.forEach((ch,i)=>{
+    const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
+    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    tw.appendChild(b);
+  });
+}
+function renderSlots(n){
+  const host=$('slots');host.innerHTML="";
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+      d.onclick=()=>{if(answered)return;
+        // タップで戻す（最後の1つ）
+        const removed=slotChars.splice(i,1)[0];
+        // 対応するタイルのusedを1つ解除
+        const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
+        if(t)t.classList.remove('used');
+        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+    }else{d.className="slot empty";d.textContent="";}
+    host.appendChild(d);
+  }
+}
+
+/* ステージ3：漢字入力 */
+function renderInput(c){
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="答えを入力">
+    <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
+  const inp=$('txtIn');
+  inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
+  setTimeout(()=>inp.focus(),100);
+}
+
+/* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
+function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
+
+$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+
+function checkAnswer(){
+  const c=session.queue[session.idx];
+  if(!answered){
+    let correct=false;
+    if(stage===0){
+      const aset=new Set(c.a);
+      correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
+    }else if(stage===1){
+      correct = slotChars.join("")===c.a[0];
+    }else{
+      const v=$('txtIn').value;
+      correct = norm(v)===norm(c.a[0]);
+    }
+    judge(correct);
+  }else{
+    session.idx++;
+    if(session.idx<session.total)renderQuestion(); else finishSession();
+  }
+}
+
+function judge(correct){
+  const c=session.queue[session.idx];
+  answered=true; $('dontknow').style.display="none";
+  // 表示の色付け
+  if(stage===0){
+    const aset=new Set(c.a);
+    $('answerArea').querySelectorAll('.choice').forEach(b=>{
+      const o=b.dataset.opt;b.disabled=true;
+      if(aset.has(o)){b.classList.remove('sel');b.classList.add('correct');b.querySelector('.mk').textContent="✓";}
+      else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
+    });
+  }
+  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=1点
+  const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
+  const isDaily = session.comp==="DAILY30";
+  schedule(c.id,correct);
+  state.accTotal++;
+  if(correct){
+    session.correct++; state.accCorrect++; state.xp+=10;
+    const pts = isDaily ? 10 : (firstCorrect ? 10 : 1);
+    state.weekPending=(state.weekPending||0)+pts;
+    if(session)session.points=(session.points||0)+pts;
+  }
+  // 復習リスト：今日の30問で間違えた問題をためる／正解したら（どのモードでも）その問題を外す
+  if(!state.review)state.review=[];
+  if(isDaily && !correct){ if(!state.review.includes(c.id))state.review.push(c.id); }
+  if(correct){ const i=state.review.indexOf(c.id); if(i>=0)state.review.splice(i,1); }
+  state.doneToday++;
+  refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
+  saveState();
+  const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
+  $('fTitle').innerHTML=correct?"正解！ <span class='xp-pop'>+10 XP</span>":"惜しい！もう一度覚えよう";
+  // 答え・覚え方メモはCSV由来テキストなのでDOM APIで挿入（XSS対策）
+  const fn=$('fNote');fn.innerHTML="";
+  if(!correct){
+    fn.append("答え：");
+    const b=document.createElement('b');b.textContent=c.a.join("・");
+    fn.append(b,document.createElement('br'));
+  }
+  fn.append(c.note||"");
+  $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
+  $('checkBtn').disabled=false;
+}
+
+$('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+function finishSession(){
+  let up=false;
+  // 今日の30問を1セット完了：ストリーク+1（1日1回）＋今日はもうできない印
+  if(session.comp==="DAILY30"){
+    state.daily30Date=todayStr();
+    if(!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  }
+  refreshBadges();
+  saveState();
+  flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  $('dCards').textContent=session.total;
+  $('dCorrect').textContent=session.correct;
+  $('dXp').textContent="+"+(session.correct*10);
+  $('dStreakMsg').textContent=up
+    ? `🔥 連続 ${state.streak}日 になったよ！`
+    : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  show('done');
+}
+$('backHome').onclick=()=>{renderHome();show('home');};
+$('againBtn').onclick=()=>{startQuiz(session.comp);};
+
+/* ===== 7. CSV取り込み ===== */
+$('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
+$('impBack').onclick=()=>{renderHome();show('home');};
+$('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題に戻しました</span>';};
+
+$('doImport').onclick=()=>{
+  const txt=$('csvText').value.trim();
+  if(!txt){$('impMsg').innerHTML='<span class="err-msg">CSVが空です</span>';return;}
+  try{
+    const cards=parseCSV(txt);
+    if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
+  }catch(err){
+    // 例外メッセージにCSV断片が混ざることがあるためテキストとして表示（XSS対策）
+    const s=document.createElement('span');s.className='err-msg';s.textContent='読み込みエラー：'+err.message;
+    const m=$('impMsg');m.innerHTML="";m.appendChild(s);
+  }
+};
+
+/* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
+function parseCSV(text){
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch==='\r'){} else cur+=ch; }
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  if(rows.length<2)return [];
+  const head=rows[0].map(h=>h.trim());
+  const idx=name=>head.indexOf(name);
+  const ci={id:idx("id"),comp:idx("編"),pref:idx("都道府県"),cat:idx("カテゴリ"),type:idx("出題タイプ"),q:idx("問題文"),a:idx("正解"),choices:idx("選択肢"),note:idx("覚え方メモ"),tag:idx("タグ"),region:idx("地方"),badgeCat:idx("称号カテゴリ"),image:idx("画像")}; // 画像列はオプショナル（無い12列CSVでも動く）
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.join("").trim()==="")continue;
+    const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
+    const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
+    const type=get("type")==="multi"?"multi":"single";
+    const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
+    let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
+    a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
+    const region=get("region")||regionOf(get("pref"));
+    const badgeCat=get("badgeCat")||badgeCatOf(get("cat"));
+    const card={id,comp:get("comp")||"県別編",pref:get("pref"),cat:get("cat"),type,q:qq,a,choices,note:get("note"),region,badgeCat};
+    const image=get("image"); if(image)card.image=image;
+    out.push(card);
+  }
+  return out;
+}
+
+$('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
+
+/* ===== 8. ランキングバトル（Supabase） =====
+   下の2つを埋めるとオンライン機能（登録・週間ランキング・進捗バックアップ）が有効になる。
+   空のままなら従来どおり端末内のみで動く。
+   ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
+   ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
+     このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
+   ・番号：生徒のログイン認証はbcryptハッシュ照合。平文の番号は「発行済み番号表」にだけ残り、
+     講師（管理ページ／管理パスワード）からのみ参照できる（生徒・anon keyからは一切見えない）。
+     講師はニックネーム↔番号を照合し、塾のスプレッドシート（番号↔氏名）で誰かを特定する。
+   ・本名などの個人情報はアプリ／DBに保存しない。通信はHTTPS。 */
+const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
+
+function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+// ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
+(function initLoginUI(){
+  const on=ONLINE();
+  document.querySelectorAll('.online-only').forEach(el=>{
+    el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
+  });
+})();
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+  return res.json();
+}
+const REG_ERR={
+  bad_nick:"ニックネームは1〜12文字で入れてね",
+  bad_campus:"校舎を選んでね",
+  bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"
+};
+
+/* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
+async function flushScore(){
+  if(!state||!state.online||!ONLINE())return;
+  while(state.weekPending>0){
+    const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
+    try{
+      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send});
+      if(!r.ok)break;
+      // サーバが実際に加算できた分（granted）だけ減らす。日次上限で一部切り捨てられた分は消さずに翌日送る
+      const granted=(r.granted!=null)?r.granted:send; // granted未対応の旧サーバとの互換
+      state.weekPending-=granted; state.weekScore=r.week_score; saveState();
+      if(granted<send)break; // 日次上限に到達→残りは明日
+    }catch(e){break;}
+  }
+}
+
+/* 進捗バックアップ：番号(pin)は送るデータに含めない */
+async function syncProgress(){
+  if(!state||!state.online||!ONLINE())return;
+  const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+    accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
+    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+}
+
+/* ランキング画面 */
+let rankCampus="", rankPeriod="week";
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
+// チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
+function starHtml(gold,silver){
+  let h="";
+  if(gold>0)  h+=`<span class="star gold" title="月間チャンピオン">★</span>${gold>1?'<span class="stx">×'+gold+'</span>':''}`;
+  if(silver>0)h+=`${h?' ':''}<span class="star silver" title="週間チャンピオン">★</span>${silver>1?'<span class="stx">×'+silver+'</span>':''}`;
+  return h;
+}
+$('rankBack').onclick=()=>{renderHome();show('home');};
+$('rankReload').onclick=()=>loadRanking();
+function renderPeriodTabs(){
+  $('rankPeriodTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.period===rankPeriod);
+    b.onclick=()=>{rankPeriod=b.dataset.period;renderPeriodTabs();loadRanking();};
+  });
+}
+function renderRankTabs(){
+  $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.campus===rankCampus);
+    b.onclick=()=>{rankCampus=b.dataset.campus;renderRankTabs();loadRanking();};
+  });
+}
+async function loadRanking(){
+  const isMonth=rankPeriod==='month';
+  $('rankNote').innerHTML=(isMonth?'今月の 点数 で 勝負！':'今週の 点数 で 勝負！')
+    +'<span id="rankReset"></span>';
+  if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
+  await flushScore();
+  $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
+  try{
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod});
+    if(!rows.length){
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
+        +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
+      return;
+    }
+    const medal=["🥇","🥈","🥉"];
+    $('rankList').innerHTML=rows.map(r=>{
+      const me=state&&r.nick===state.nick;
+      const st=starHtml(r.monthly_wins||0,r.weekly_wins||0);
+      return `<div class="rank-row${me?' me':''}">
+        <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
+        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}点</span></div>`;
+    }).join("");
+  }catch(e){
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">通信エラー。<br>しばらくしてから「最新にする」を押してね</div>';
+  }
+}
+</script>

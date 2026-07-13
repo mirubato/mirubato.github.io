@@ -1,0 +1,1156 @@
+<!--
+  ミルバト国語 v1 — 中学受験 国語・語彙 暗記アプリ（旧ことばたん）
+  ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
+  ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みはすべてRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
+  Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ミルバト国語｜語彙編</title>
+<style>
+  :root{
+    --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
+    --green:#4f9d69; --blue:#3f7cc4; --orange:#e08a3c; --gold:#d8a93a;
+    --wrong:#d9534f; --ok:#4f9d69; --card:#fffdf8;
+    --shadow:0 2px 0 rgba(42,39,35,.08), 0 10px 24px -12px rgba(42,39,35,.35); --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    background:radial-gradient(circle at 20% -10%, #fffaf0 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #eef5ee 0%, transparent 45%), var(--paper);
+    color:var(--ink);min-height:100%;display:flex;justify-content:center}
+  #app{width:100%;max-width:460px;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  .screen{flex:1;display:none;flex-direction:column;padding:20px 18px 28px}
+  .screen.active{display:flex;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:30px;margin:0;letter-spacing:.04em}
+  .brandsub{color:var(--ink-soft);font-size:13px;margin-top:2px;letter-spacing:.12em}
+  #login{justify-content:center;gap:18px;text-align:center}
+  .logo{font-size:64px;line-height:1}
+  .field{text-align:left;margin-top:6px}
+  .field label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px;letter-spacing:.05em}
+  .field input{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:18px;background:var(--card);font-family:inherit;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--green)}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:700;font-family:inherit;
+    cursor:pointer;width:100%;color:#fff;background:var(--green);box-shadow:0 3px 0 #3c7d52;
+    transition:transform .05s, box-shadow .05s;letter-spacing:.05em}
+  .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
+  .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
+  .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .btn[disabled]{opacity:.5}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .greet{font-size:14px;color:var(--ink-soft)}
+  .greet b{color:var(--ink);font-size:18px}
+  .streak{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid var(--line);
+    border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px}
+  .streak .fire{font-size:17px}
+  .map-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:16px 14px 8px;margin-bottom:16px;position:relative;overflow:hidden}
+  .map-wrap h2{margin:0 0 2px;font-size:15px;letter-spacing:.05em}
+  .map-wrap .sub{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+  svg.jpmap{width:100%;height:auto;display:block}
+  .mapnote{font-size:11px;color:var(--ink-soft);text-align:center;padding:6px 0 2px}
+  .stat-row{display:flex;gap:10px;margin-bottom:16px}
+  .stat{flex:1;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px;text-align:center}
+  .stat .num{font-size:24px;font-weight:800}
+  .stat .lbl{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+  .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .goal .gt{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+  .bar{height:12px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .5s}
+  .deck-pick{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .deck{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);
+    border-radius:16px;padding:14px;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .deck:active{transform:scale(.99)}
+  .deck .dot{width:14px;height:14px;border-radius:5px;flex:none}
+  .deck .dn{font-weight:700;font-size:16px}
+  .deck .dd{font-size:12px;color:var(--ink-soft)}
+  .deck .due{margin-left:auto;font-size:12px;background:#fbeede;color:var(--orange);
+    border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+  .deck .due.zero{background:#eef2ee;color:var(--ink-soft)}
+  .toolrow{display:flex;gap:8px;margin-top:12px}
+  .toolrow .btn{padding:11px;font-size:13px}
+  #quiz{padding-top:14px}
+  .qtop{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .qtop button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-soft);padding:4px}
+  .qbar{flex:1;height:10px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .qbar > i{display:block;height:100%;width:0;background:var(--green);transition:width .3s}
+  .qcount{font-size:13px;color:var(--ink-soft);font-weight:700}
+  .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:4px 10px;border-radius:999px;background:#eef2ee;color:var(--ink-soft);margin-bottom:10px}
+  .qcard{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px}
+  .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    padding:4px 10px;border-radius:999px;margin-bottom:10px;color:#fff}
+  .qpref{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+  .qtext{font-size:21px;font-weight:700;line-height:1.5}
+  .qmulti-hint{margin-top:8px;font-size:12px;color:var(--orange);font-weight:700}
+  .choices{display:flex;flex-direction:column;gap:10px}
+  .choice{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:15px 16px;
+    font-size:17px;font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;color:var(--ink);transition:.12s}
+  .choice:active{transform:scale(.99)}
+  .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choice.sel{border-color:var(--blue);background:#eef4fb}
+  .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
+  .choice.correct{border-color:var(--ok);background:#eef7f0}
+  .choice.correct .mk{background:var(--ok);border-color:var(--ok)}
+  .choice.wrong{border-color:var(--wrong);background:#fcefee}
+  .choice.wrong .mk{background:var(--wrong);border-color:var(--wrong)}
+  .choice[disabled]{cursor:default}
+  /* 文字を選ぶ・入力 */
+  .answer-slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:54px;
+    padding:12px;border:2px dashed var(--line);border-radius:14px;margin-bottom:14px;background:#fff}
+  .slot{min-width:44px;height:44px;border-radius:10px;background:#eef4fb;border:2px solid var(--blue);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;cursor:pointer}
+  .slot.empty{background:#f3eee2;border:2px dashed var(--line);cursor:default}
+  .tiles{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tile{min-width:44px;height:48px;padding:0 10px;border-radius:12px;background:var(--card);
+    border:2px solid var(--line);font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+  .tile:active{transform:scale(.96)}
+  .tile.used{opacity:.25;pointer-events:none}
+  .text-input{width:100%;padding:16px;border:2px solid var(--line);border-radius:14px;font-size:24px;
+    font-family:inherit;text-align:center;color:var(--ink);background:#fff}
+  .text-input:focus{outline:none;border-color:var(--green)}
+  .input-help{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .feedback{border-radius:var(--r);padding:16px;margin-top:16px;display:none}
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.good{background:#eef7f0;border:2px solid var(--ok)}
+  .feedback.bad{background:#fcefee;border:2px solid var(--wrong)}
+  .feedback .ft{font-weight:800;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .feedback.good .ft{color:var(--ok)}
+  .feedback.bad .ft{color:var(--wrong)}
+  .feedback .fn{font-size:14px;color:var(--ink);line-height:1.6}
+  .qfoot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px}
+  .linkbtn{background:none;border:none;color:var(--ink-soft);font-size:13px;font-family:inherit;
+    cursor:pointer;text-decoration:underline;padding:4px}
+  #done{justify-content:center;text-align:center;gap:14px}
+  #done .big{font-size:72px;line-height:1}
+  #done h2{font-size:26px;margin:0}
+  #done .reward{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;display:flex;justify-content:space-around}
+  #done .reward div{font-size:13px;color:var(--ink-soft)}
+  #done .reward b{display:block;font-size:26px;color:var(--ink);margin-top:2px}
+  .xp-pop{color:var(--gold);font-weight:800}
+  /* 取り込み画面 */
+  #import{gap:14px}
+  #import h2{margin:0;font-size:22px}
+  #import textarea{width:100%;height:200px;border:2px solid var(--line);border-radius:14px;
+    padding:12px;font-family:monospace;font-size:12px;background:#fff;color:var(--ink)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--ink-soft);font-size:14px;background:#fff}
+  .ok-msg{color:var(--ok);font-weight:700;font-size:14px}
+  .err-msg{color:var(--wrong);font-weight:700;font-size:14px}
+  /* 称号画面 */
+  #badges{gap:0}
+  #badges .qtop{margin-bottom:6px}
+  #badges h2{margin:0;font-size:22px}
+  .badge-sum{font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;text-align:center;
+    box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .badge.locked{opacity:.55;filter:grayscale(.8)}
+  .badge .bemoji{font-size:34px;line-height:1}
+  .badge .bname{font-size:13px;font-weight:700;line-height:1.3}
+  .badge .bbar{width:100%;height:8px;border-radius:999px;background:#ece6d8;overflow:hidden;margin-top:4px}
+  .badge .bbar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--blue))}
+  .badge .bmeta{font-size:11px;color:var(--ink-soft)}
+  .badge.earned{border-color:var(--green)}
+  .badge.earned .bmeta{color:var(--green);font-weight:700}
+  .badge.final{grid-column:1 / -1;background:linear-gradient(135deg,#fff8e8,#fef0d8);border-color:var(--gold)}
+  .badge.final.locked{filter:grayscale(.7)}
+  .badge.final .bemoji{font-size:42px}
+  .badge.final .bname{font-size:16px}
+  footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 画像つきカード */
+  .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
+  .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
+  /* 称号獲得のお祝い（音なし） */
+  .celebrate{position:fixed;inset:0;z-index:99;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .celebrate.out{opacity:0;transition:opacity .25s}
+  @keyframes cel-in{from{opacity:0}to{opacity:1}}
+  .celebrate .conf{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .celebrate .conf i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;opacity:.9;animation:conf-fall linear infinite}
+  @keyframes conf-fall{0%{transform:translateY(-6vh) rotate(0deg)}100%{transform:translateY(108vh) rotate(720deg)}}
+  .celebrate .cbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:28px 40px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:80%}
+  @keyframes cel-pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  .celebrate .cemoji{font-size:62px;line-height:1.2;animation:cel-bounce 1.2s ease-in-out infinite}
+  @keyframes cel-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .celebrate .ctitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .celebrate .cname{font-size:22px;font-weight:800;margin-top:2px}
+  .celebrate .cget{color:var(--orange);font-weight:800;font-size:16px;margin-top:6px}
+  .celebrate .chint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  .celebrate.doctor .cemoji{font-size:76px}
+  .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* えらんで学習 */
+  .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
+    border-radius:12px;padding:10px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 2px 0 rgba(42,39,35,.06)}
+  .pick-btn:active{transform:translateY(2px);box-shadow:none}
+  .pick-btn .pe{font-size:22px;flex-shrink:0}
+  .pick-btn .pn{font-weight:700;font-size:13px;display:block;color:var(--ink)}
+  .pick-btn .pp{font-size:10px;color:var(--ink-soft)}
+  .pick-btn.done{border-color:var(--green);background:#eef7f0}
+  .pick-btn.done .pp{color:var(--green);font-weight:700}
+  /* ランキング */
+  .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
+  .field select:focus{outline:none;border-color:var(--green)}
+  .rank-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .rtab{flex:1 1 30%;padding:9px 2px;border:1.5px solid var(--line);border-radius:10px;background:#fff;
+    font-size:12px;font-weight:700;color:var(--ink-soft);font-family:inherit;cursor:pointer;white-space:nowrap}
+  .rtab.active{border-color:var(--green);color:var(--green);background:#eef7f0}
+  .rank-note{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:4px}
+  .rank-me{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 14px;
+    margin:10px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .rank-me b{color:var(--green);font-size:18px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff}
+  .rank-row.me{border-color:var(--green);background:#eef7f0}
+  .rank-row .rno{width:40px;text-align:center;font-weight:800;font-size:15px;flex-shrink:0}
+  .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
+  .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
+  .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+</style>
+
+<div id="app">
+  <!-- ログイン -->
+  <section id="login" class="screen active">
+    <div class="logo">📖</div>
+    <div><h1>ミルバト国語</h1><div class="brandsub">ことわざ・慣用句・四字熟語（中学受験）</div></div>
+    <div class="field"><label>ニックネーム</label>
+      <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
+      <div class="hint">本名はつかわず、すきな名前にしてね</div></div>
+    <div class="field"><label>番号（塾からもらった数字）</label>
+      <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
+      <div class="hint">先生からもらった数字だよ。ほかの人には教えないでね</div></div>
+    <div class="field" id="campusField"><label>校舎（はじめての人だけえらんでね）</label>
+      <select id="campusSel">
+        <option value="">えらんでね</option>
+        <option value="麻布">麻布</option>
+        <option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option>
+        <option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select></div>
+    <button class="btn" id="loginBtn">はじめる / つづきから</button>
+    <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="home" class="screen">
+    <div class="topbar">
+      <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日れんぞく</div>
+    </div>
+    <div class="map-wrap">
+      <h2>ことば コレクション マップ</h2>
+      <div class="sub">マスターした分野が緑にそまっていくよ</div>
+      <div id="mapHost"></div>
+      <div class="mapnote"><span id="masterN">0</span> / <span id="mapTotal">-</span> 分野をマスター</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="sCards">0</div><div class="lbl">おぼえたカード</div></div>
+      <div class="stat"><div class="num" id="sXp">0</div><div class="lbl">XP</div></div>
+      <div class="stat"><div class="num" id="sAcc">–</div><div class="lbl">せいかい率</div></div>
+    </div>
+    <div class="goal">
+      <div class="gt"><span>きょうのゴール</span><span><b id="goalNow">0</b> / <span id="goalMax">10</span> 問</span></div>
+      <div class="bar"><i id="goalBar"></i></div>
+    </div>
+    <div class="deck-pick" id="deckPick"></div>
+    <div class="toolrow">
+      <button class="btn secondary" id="rankBtn" style="display:none">🏆 ランキング</button>
+      <button class="btn secondary" id="badgesBtn">🏅 称号 <span id="badgeCountPill" style="font-weight:800"></span></button>
+    </div>
+    <div class="toolrow">
+      <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- クイズ -->
+  <section id="quiz" class="screen">
+    <div class="qtop">
+      <button id="quitBtn">✕</button>
+      <div class="qbar"><i id="qProg"></i></div>
+      <div class="qcount" id="qCount">1/10</div>
+    </div>
+    <div class="stage-pill" id="stagePill">ステップ1・4たくからえらぶ</div>
+    <div class="qcard">
+      <span class="qtag" id="qTag">県別編</span>
+      <div class="qpref" id="qPref">香川県</div>
+      <img id="qImg" class="qimg" style="display:none" alt="">
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像がひらけないよ（先生におしらせしてね）</div>
+      <div class="qtext" id="qText">問題文</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを ぜんぶ えらんでね</div>
+    </div>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback">
+      <div class="ft" id="fTitle"></div>
+      <div class="fn" id="fNote"></div>
+    </div>
+    <div class="qfoot">
+      <button class="btn" id="checkBtn" disabled>こたえあわせ</button>
+      <button class="linkbtn" id="dontknow">わからない（答えを見る）</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="done" class="screen">
+    <div class="big">🎉</div>
+    <h2>きょうのぶん クリア！</h2>
+    <div class="reward">
+      <div>といた問題<b id="dCards">10</b></div>
+      <div>せいかい<b id="dCorrect">8</b></div>
+      <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
+    </div>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 れんぞく記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへもどる</button>
+    <button class="btn secondary" id="againBtn">もうひとセットやる</button>
+  </section>
+
+  <!-- 取り込み -->
+  <section id="import" class="screen">
+    <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
+    <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,都道府県,…）のままでOK。</p>
+    <label class="dz" for="csvFile">📄 CSVファイルをえらぶ
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
+    <p class="hint" style="text-align:center">または下に貼り付け</p>
+    <textarea id="csvText" placeholder="id,編,都道府県,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
+    <div id="impMsg" style="min-height:18px"></div>
+    <button class="btn" id="doImport">この内容で問題を入れかえる</button>
+    <button class="linkbtn" id="resetCards">さいしょのサンプル問題にもどす</button>
+  </section>
+
+  <!-- えらんで学習（地方・分野べつ） -->
+  <section id="pick" class="screen">
+    <div class="qtop"><button id="pickBack">✕</button><h2>🎯 えらんで学習</h2></div>
+    <p class="hint" style="margin:2px 0 4px">称号をねらって、しゅるいやテーマをえらんで学習しよう</p>
+    <h3 class="pick-h">📚 しゅるいで えらぶ</h3>
+    <div class="pick-grid" id="pickRegion"></div>
+    <h3 class="pick-h">🏅 テーマで えらぶ</h3>
+    <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- ランキング -->
+  <section id="ranking" class="screen">
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 今週のランキング</h2></div>
+    <div class="rank-note">今週の せいかい数 で しょうぶ！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>きみの今週のせいかい</span><span><b id="myWeekScore">0</b> 問</span></div>
+    <div class="rank-tabs" id="rankTabs">
+      <button class="rtab active" data-campus="">ぜんいん</button>
+      <button class="rtab" data-campus="麻布">麻布</button>
+      <button class="rtab" data-campus="渋谷">渋谷</button>
+      <button class="rtab" data-campus="四谷">四谷</button>
+      <button class="rtab" data-campus="新宿">新宿</button>
+      <button class="rtab" data-campus="自由が丘">自由が丘</button>
+    </div>
+    <div id="rankList"></div>
+    <button class="btn secondary" id="rankReload">🔄 さいしんにする</button>
+  </section>
+
+  <!-- 称号 -->
+  <section id="badges" class="screen">
+    <div class="qtop"><button id="badgesBack">✕</button><h2>🏅 称号</h2></div>
+    <div class="badge-sum" id="badgeSum"></div>
+    <div class="badge-grid" id="badgeGrid"></div>
+  </section>
+
+  <footer>ミルバト国語 v1 ・ 進捗はこの端末に保存されます</footer>
+</div>
+
+<script>
+/* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
+const COLOR = { "ことわざ編":"var(--green)", "慣用句編":"var(--blue)", "四字熟語編":"var(--orange)" };
+const DEFAULT_CARDS = [
+  {"id": "kw-inu-bou", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「（　）も歩けば棒に当たる」に入る動物は？", "a": ["犬"], "choices": ["犬", "猫", "馬", "猿"], "note": "出歩けば思わぬ幸運（または災難）に出会う。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-neko-koban", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「（　）に小判」に入る動物は？", "a": ["猫"], "choices": ["猫", "犬", "馬", "たぬき"], "note": "価値のわからない人には宝もむだ。似た意味：豚に真珠。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-uma-nenbutsu", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「（　）の耳に念仏」に入る動物は？", "a": ["馬"], "choices": ["馬", "牛", "犬", "猿"], "note": "いくら意見しても効き目がないこと。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-saru-ki", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「その道の名人でも、ときには失敗する」という意味のことわざは？", "a": ["猿も木から落ちる"], "choices": ["猿も木から落ちる", "犬も歩けば棒に当たる", "井の中の蛙大海を知らず", "虎の威を借る狐"], "note": "似た意味：河童の川流れ、弘法にも筆の誤り。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-kappa", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「（　）の川流れ」に入ることばは？", "a": ["河童"], "choices": ["河童", "亀", "うなぎ", "かえる"], "note": "名人でも失敗する。「猿も木から落ちる」と同じ意味。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-i-no-kaeru", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「井の中の（　）大海を知らず」に入る生き物は？", "a": ["蛙"], "choices": ["蛙", "魚", "亀", "えび"], "note": "せまい世界しか知らず、広い世界を知らないこと。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-tora-kitsune", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「強い者の力をかりていばる」という意味のことわざは？", "a": ["虎の威を借る狐"], "choices": ["虎の威を借る狐", "鶴の一声", "能ある鷹は爪を隠す", "馬の耳に念仏"], "note": "", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-nito", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「同時に二つのものをねらって、両方とも失敗する」という意味のことわざは？", "a": ["二兎を追う者は一兎をも得ず"], "choices": ["二兎を追う者は一兎をも得ず", "泣きっ面に蜂", "鶴の一声", "猿も木から落ちる"], "note": "反対の意味：一石二鳥。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-nakittsura", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「不運の上に、さらに不運が重なる」という意味のことわざは？", "a": ["泣きっ面に蜂"], "choices": ["泣きっ面に蜂", "焼け石に水", "月とすっぽん", "虻蜂取らず"], "note": "似た意味：弱り目にたたり目。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-tsuru-hitokoe", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「実力者や目上の人の一言で、ものごとがすぐ決まる」という意味のことわざは？", "a": ["鶴の一声"], "choices": ["鶴の一声", "能ある鷹は爪を隠す", "雀百まで踊り忘れず", "とんびが鷹を生む"], "note": "", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-suzume", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「小さいころの習慣は、年をとっても直らない」という意味のことわざは？", "a": ["雀百まで踊り忘れず"], "choices": ["雀百まで踊り忘れず", "とんびが鷹を生む", "鶴の一声", "犬も歩けば棒に当たる"], "note": "「三つ子の魂百まで」と同じ意味。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-takatsume", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「本当に実力のある人は、それをむやみに見せびらかさない」という意味のことわざは？", "a": ["能ある鷹は爪を隠す"], "choices": ["能ある鷹は爪を隠す", "虎の威を借る狐", "猫に小判", "井の中の蛙大海を知らず"], "note": "", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-tonbi", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「平凡な親から、すぐれた子どもが生まれる」という意味のことわざは？", "a": ["とんびが鷹を生む"], "choices": ["とんびが鷹を生む", "蛙の子は蛙", "雀百まで踊り忘れず", "鶴の一声"], "note": "反対の意味：蛙の子は蛙。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-kaeruko", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「子どもの性質や能力は、親に似るものだ」という意味のことわざは？", "a": ["蛙の子は蛙"], "choices": ["蛙の子は蛙", "とんびが鷹を生む", "井の中の蛙大海を知らず", "雀百まで踊り忘れず"], "note": "反対の意味：とんびが鷹を生む。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-abuhachi", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「あれもこれもねらって、結局どちらも得られない」という意味のことわざは？", "a": ["虻蜂取らず"], "choices": ["虻蜂取らず", "泣きっ面に蜂", "能ある鷹は爪を隠す", "鶴の一声"], "note": "「二兎を追う者は一兎をも得ず」と同じ意味。", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-taizan", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「大さわぎしたわりに、結果が小さい」という意味のことわざは？", "a": ["大山鳴動してねずみ一匹"], "choices": ["大山鳴動してねずみ一匹", "枯れ木も山のにぎわい", "風が吹けば桶屋がもうかる", "月とすっぽん"], "note": "", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-tatsutori", "comp": "ことわざ編", "pref": "動物のことわざ", "cat": "ことわざ", "type": "single", "q": "「立ち去る者は、あとが見苦しくないようきちんと始末すべきだ」という意味のことわざは？", "a": ["立つ鳥跡を濁さず"], "choices": ["立つ鳥跡を濁さず", "能ある鷹は爪を隠す", "鶴の一声", "雀百まで踊り忘れず"], "note": "", "region": "ことわざ", "badgeCat": "動物"},
+  {"id": "kw-kuchi-wazawai", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「うっかり話したことから災難を招く。ことばには気をつけよ」という意味のことわざは？", "a": ["口は災いの元"], "choices": ["口は災いの元", "良薬は口に苦し", "目は口ほどに物を言う", "のど元過ぎれば熱さを忘れる"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-atama-kakushi", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「欠点の一部だけ隠して、全部隠したつもりになっている」という意味のことわざは？", "a": ["頭隠して尻隠さず"], "choices": ["頭隠して尻隠さず", "壁に耳あり障子に目あり", "口は災いの元", "転ばぬ先の杖"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-me-kuchi", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「目つきは、ことばと同じくらい気持ちを伝える」という意味のことわざは？", "a": ["目は口ほどに物を言う"], "choices": ["目は口ほどに物を言う", "口は災いの元", "仏の顔も三度", "壁に耳あり障子に目あり"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-kabe-mimi", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「秘密は、どこでだれが聞いて（見て）いるかわからない」という意味のことわざは？", "a": ["壁に耳あり障子に目あり"], "choices": ["壁に耳あり障子に目あり", "口は災いの元", "頭隠して尻隠さず", "人のうわさも七十五日"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-nodomoto", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「苦しいことも、過ぎてしまえば忘れてしまう」という意味のことわざは？", "a": ["のど元過ぎれば熱さを忘れる"], "choices": ["のど元過ぎれば熱さを忘れる", "良薬は口に苦し", "七転び八起き", "石の上にも三年"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-hotoke", "comp": "ことわざ編", "pref": "体のことわざ", "cat": "ことわざ", "type": "single", "q": "「どんなに温和な人でも、何度もひどいことをされれば怒る」という意味のことわざは？", "a": ["仏の顔も三度"], "choices": ["仏の顔も三度", "のど元過ぎれば熱さを忘れる", "口は災いの元", "目は口ほどに物を言う"], "note": "", "region": "ことわざ", "badgeCat": "からだ"},
+  {"id": "kw-ishinoue", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「つらくても、しんぼう強く続ければいつか成功する」という意味のことわざは？", "a": ["石の上にも三年"], "choices": ["石の上にも三年", "急がば回れ", "七転び八起き", "塵も積もれば山となる"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-isogaba", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「急ぐときこそ、安全で確実な道を選んだほうがよい」という意味のことわざは？", "a": ["急がば回れ"], "choices": ["急がば回れ", "善は急げ", "転ばぬ先の杖", "論より証拠"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-zenisoge", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「よいと思ったことは、すぐに実行せよ」という意味のことわざは？", "a": ["善は急げ"], "choices": ["善は急げ", "急がば回れ", "石の上にも三年", "餅は餅屋"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-chiri", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「小さなものでも、積み重なれば大きなものになる」という意味のことわざは？", "a": ["塵も積もれば山となる"], "choices": ["塵も積もれば山となる", "枯れ木も山のにぎわい", "石の上にも三年", "焼け石に水"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-mochi", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「何ごとも専門家に任せるのが一番だ」という意味のことわざは？", "a": ["餅は餅屋"], "choices": ["餅は餅屋", "良薬は口に苦し", "論より証拠", "善は急げ"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-obi", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「中途半端で、どちらの役にも立たない」という意味のことわざは？", "a": ["帯に短したすきに長し"], "choices": ["帯に短したすきに長し", "月とすっぽん", "焼け石に水", "餅は餅屋"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-hyakubun", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「人から百回聞くより、自分の目で一度見るほうが確かだ」という意味のことわざは？", "a": ["百聞は一見にしかず"], "choices": ["百聞は一見にしかず", "論より証拠", "目は口ほどに物を言う", "三人寄れば文殊の知恵"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-kawaii", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「子どもがかわいいなら、甘やかさず世の中の苦労をさせよ」という意味のことわざは？", "a": ["かわいい子には旅をさせよ"], "choices": ["かわいい子には旅をさせよ", "蛙の子は蛙", "情けは人のためならず", "朱に交われば赤くなる"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-nasake", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「人に親切にすれば、めぐりめぐって自分によい報いが返ってくる」という意味のことわざは？", "a": ["情けは人のためならず"], "choices": ["情けは人のためならず", "仏の顔も三度", "良薬は口に苦し", "善は急げ"], "note": "「親切はその人のためにならない」という意味ではない！", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-shu", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「人は、つき合う相手によってよくも悪くもなる」という意味のことわざは？", "a": ["朱に交われば赤くなる"], "choices": ["朱に交われば赤くなる", "かわいい子には旅をさせよ", "餅は餅屋", "善は急げ"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-ryoyaku", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「ためになる忠告は、聞くのがつらいものだ」という意味のことわざは？", "a": ["良薬は口に苦し"], "choices": ["良薬は口に苦し", "口は災いの元", "のど元過ぎれば熱さを忘れる", "論より証拠"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-korobanu", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「失敗しないように、前もって準備しておくこと」という意味のことわざは？", "a": ["転ばぬ先の杖"], "choices": ["転ばぬ先の杖", "七転び八起き", "急がば回れ", "石の上にも三年"], "note": "似た意味：備えあれば憂いなし。", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-nanakorobi", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「何度失敗しても、くじけずに立ち上がる」という意味のことわざは？", "a": ["七転び八起き"], "choices": ["七転び八起き", "石の上にも三年", "転ばぬ先の杖", "雨降って地固まる"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-sannin", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「凡人でも、三人集まって考えればよい知恵が出る」という意味のことわざは？", "a": ["三人寄れば文殊の知恵"], "choices": ["三人寄れば文殊の知恵", "百聞は一見にしかず", "船頭多くして船山に上る", "餅は餅屋"], "note": "反対の意味：船頭多くして船山に上る。", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-sendou", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「指図する人が多すぎると、ものごとがとんでもない方向に進む」という意味のことわざは？", "a": ["船頭多くして船山に上る"], "choices": ["船頭多くして船山に上る", "三人寄れば文殊の知恵", "大山鳴動してねずみ一匹", "帯に短したすきに長し"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-ron", "comp": "ことわざ編", "pref": "暮らしのことわざ", "cat": "ことわざ", "type": "single", "q": "「あれこれ議論するより、証拠を見せるほうが早い」という意味のことわざは？", "a": ["論より証拠"], "choices": ["論より証拠", "百聞は一見にしかず", "口は災いの元", "善は急げ"], "note": "", "region": "ことわざ", "badgeCat": "くらし"},
+  {"id": "kw-amefutte", "comp": "ことわざ編", "pref": "自然のことわざ", "cat": "ことわざ", "type": "single", "q": "「もめごとの後は、かえって前よりも状態がよくなる」という意味のことわざは？", "a": ["雨降って地固まる"], "choices": ["雨降って地固まる", "焼け石に水", "風が吹けば桶屋がもうかる", "月とすっぽん"], "note": "", "region": "ことわざ", "badgeCat": "自然"},
+  {"id": "kw-yakeishi", "comp": "ことわざ編", "pref": "自然のことわざ", "cat": "ことわざ", "type": "single", "q": "「少しばかりの助けでは、効き目がない」という意味のことわざは？", "a": ["焼け石に水"], "choices": ["焼け石に水", "塵も積もれば山となる", "雨降って地固まる", "枯れ木も山のにぎわい"], "note": "", "region": "ことわざ", "badgeCat": "自然"},
+  {"id": "kw-tsukisuppon", "comp": "ことわざ編", "pref": "自然のことわざ", "cat": "ことわざ", "type": "single", "q": "「二つのものの差が大きすぎて、比べものにならない」という意味のことわざは？", "a": ["月とすっぽん"], "choices": ["月とすっぽん", "帯に短したすきに長し", "焼け石に水", "枯れ木も山のにぎわい"], "note": "似た意味：雲泥の差、提灯に釣り鐘。", "region": "ことわざ", "badgeCat": "自然"},
+  {"id": "kw-kareki", "comp": "ことわざ編", "pref": "自然のことわざ", "cat": "ことわざ", "type": "single", "q": "「つまらないものでも、ないよりはましだ」という意味のことわざは？", "a": ["枯れ木も山のにぎわい"], "choices": ["枯れ木も山のにぎわい", "塵も積もれば山となる", "月とすっぽん", "大山鳴動してねずみ一匹"], "note": "ほめことばとして使うのは誤り！", "region": "ことわざ", "badgeCat": "自然"},
+  {"id": "kw-kaze-okeya", "comp": "ことわざ編", "pref": "自然のことわざ", "cat": "ことわざ", "type": "single", "q": "「あることが、めぐりめぐって意外なところに影響をおよぼす」という意味のことわざは？", "a": ["風が吹けば桶屋がもうかる"], "choices": ["風が吹けば桶屋がもうかる", "雨降って地固まる", "情けは人のためならず", "枯れ木も山のにぎわい"], "note": "", "region": "ことわざ", "badgeCat": "自然"},
+  {"id": "ki-mimigaitai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「他人のことばが自分の弱点をついていて、聞くのがつらい」という意味の慣用句は？", "a": ["耳が痛い"], "choices": ["耳が痛い", "耳を疑う", "頭が上がらない", "目に余る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-mimiutagau", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「思いがけないことを聞いて、聞きまちがいかと思う」という意味の慣用句は？", "a": ["耳を疑う"], "choices": ["耳を疑う", "耳が痛い", "目を丸くする", "口が堅い"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-hanagatakai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「ほこらしい気持ちである」という意味の慣用句は？", "a": ["鼻が高い"], "choices": ["鼻が高い", "顔が広い", "目がない", "胸を張る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kaogahiroi", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「知り合いが多い」という意味の慣用句は？", "a": ["顔が広い"], "choices": ["顔が広い", "鼻が高い", "口が軽い", "目が高い"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-meganai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「あまいものに（　）」＝大好きでたまらない。（　）に入る慣用句は？", "a": ["目がない"], "choices": ["目がない", "目が高い", "目が回る", "目に余る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-megatakai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「よいものを見分ける力がある」という意味の慣用句は？", "a": ["目が高い"], "choices": ["目が高い", "目がない", "鼻が高い", "耳を疑う"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-atamaagaranai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「相手にひけ目があって、対等にふるまえない」という意味の慣用句は？", "a": ["頭が上がらない"], "choices": ["頭が上がらない", "顔から火が出る", "耳が痛い", "目に余る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kaokarahi", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「はずかしくて、顔が真っ赤になる」という意味の慣用句は？", "a": ["顔から火が出る"], "choices": ["顔から火が出る", "頭が上がらない", "目を丸くする", "鼻が高い"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-memaru", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「おどろいて、目を大きく見開く」という意味の慣用句は？", "a": ["目を丸くする"], "choices": ["目を丸くする", "目がない", "目を疑う", "目に余る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-meniamaru", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「あまりにひどくて、だまって見ていられない」という意味の慣用句は？", "a": ["目に余る"], "choices": ["目に余る", "目が高い", "目を丸くする", "耳が痛い"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchigakatai", "comp": "慣用句編", "pref": "顔の慣用句", "cat": "慣用句", "type": "single", "q": "「秘密をかんたんに人にもらさない」という意味の慣用句は？", "a": ["口が堅い"], "choices": ["口が堅い", "口が軽い", "口がすべる", "口をそろえる"], "note": "反対の意味：口が軽い。", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-tewoyaku", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「あつかいに困る」という意味の慣用句は？", "a": ["手を焼く"], "choices": ["手を焼く", "手を貸す", "手に汗を握る", "腕をふるう"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-teniase", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「どうなることかと、はらはらしながら見守る」という意味の慣用句は？", "a": ["手に汗を握る"], "choices": ["手に汗を握る", "手を焼く", "肝をつぶす", "胸を張る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-ashigabou", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「歩きすぎて、足がひどく疲れる」という意味の慣用句は？", "a": ["足が棒になる"], "choices": ["足が棒になる", "足が出る", "足を引っ張る", "手が足りない"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-ashihipparu", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「仲間の成功や前進のじゃまをする」という意味の慣用句は？", "a": ["足を引っ張る"], "choices": ["足を引っ張る", "足元を見る", "足が出る", "手を焼く"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-ashigaderu", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「予算やお金が足りなくなる」という意味の慣用句は？", "a": ["足が出る"], "choices": ["足が出る", "足が棒になる", "手が足りない", "足元を見る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-ashimoto", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「相手の弱みにつけこむ」という意味の慣用句は？", "a": ["足元を見る"], "choices": ["足元を見る", "足を引っ張る", "目に余る", "口車に乗る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-udewofuruu", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「持っている実力を十分に発揮する」という意味の慣用句は？", "a": ["腕をふるう"], "choices": ["腕をふるう", "腕が上がる", "手を貸す", "胸を張る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-udegaagaru", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「技術が上達する」という意味の慣用句は？", "a": ["腕が上がる"], "choices": ["腕が上がる", "腕をふるう", "目が高い", "鼻が高い"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-tegatarinai", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「働く人数が足りない」という意味の慣用句は？", "a": ["手が足りない"], "choices": ["手が足りない", "足が出る", "手を焼く", "手も足も出ない"], "note": "似た意味：猫の手も借りたい。", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-temoashimo", "comp": "慣用句編", "pref": "手足の慣用句", "cat": "慣用句", "type": "single", "q": "「自分の力では、どうすることもできない」という意味の慣用句は？", "a": ["手も足も出ない"], "choices": ["手も足も出ない", "足を引っ張る", "手を貸す", "腕をふるう"], "note": "似た意味：歯が立たない。", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kigaokenai", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「遠慮する必要がなく、気楽につき合える」という意味の慣用句は？", "a": ["気が置けない"], "choices": ["気が置けない", "気が気でない", "肝がすわる", "虫の居所が悪い"], "note": "「油断できない」という意味ではない！", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-kigakidenai", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「心配で落ち着かない」という意味の慣用句は？", "a": ["気が気でない"], "choices": ["気が気でない", "気が置けない", "肝がすわる", "胸が躍る"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-munegaodoru", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「うれしさや期待で、わくわくする」という意味の慣用句は？", "a": ["胸が躍る"], "choices": ["胸が躍る", "心を打つ", "肝をつぶす", "気が気でない"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-kokorowoutsu", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「深く感動させる」という意味の慣用句は？", "a": ["心を打つ"], "choices": ["心を打つ", "胸が躍る", "舌を巻く", "肩を持つ"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-kimotsubusu", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「非常におどろく」という意味の慣用句は？", "a": ["肝をつぶす"], "choices": ["肝をつぶす", "肝がすわる", "目を丸くする", "気が気でない"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-kimosuwaru", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「度胸があって、ものごとに動じない」という意味の慣用句は？", "a": ["肝がすわる"], "choices": ["肝がすわる", "肝をつぶす", "胸を張る", "気が置けない"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-mushinoidokoro", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「機嫌が悪い」という意味の慣用句は？", "a": ["虫の居所が悪い"], "choices": ["虫の居所が悪い", "気が気でない", "腹を割る", "耳が痛い"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-harawowaru", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「本心を隠さず、打ち明ける」という意味の慣用句は？", "a": ["腹を割る"], "choices": ["腹を割る", "胸を張る", "心を打つ", "口が堅い"], "note": "「腹を割って話す」と使う。", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-munewoharu", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「自信を持って、堂々とする」という意味の慣用句は？", "a": ["胸を張る"], "choices": ["胸を張る", "鼻が高い", "肩を持つ", "腕をふるう"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-katawomotsu", "comp": "慣用句編", "pref": "気持ちの慣用句", "cat": "慣用句", "type": "single", "q": "「対立しているうちの、一方の味方をする」という意味の慣用句は？", "a": ["肩を持つ"], "choices": ["肩を持つ", "足を引っ張る", "手を貸す", "胸を張る"], "note": "", "region": "慣用句", "badgeCat": "こころ"},
+  {"id": "ki-shitawomaku", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「あまりのすごさに、非常に感心しおどろく」という意味の慣用句は？", "a": ["舌を巻く"], "choices": ["舌を巻く", "歯が立たない", "目を丸くする", "口をはさむ"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchiguruma", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「うまいことばにだまされる」という意味の慣用句は？", "a": ["口車に乗る"], "choices": ["口車に乗る", "口をそろえる", "口がすべる", "口火を切る"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchiwosoroeru", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「みんなが同じことを言う」という意味の慣用句は？", "a": ["口をそろえる"], "choices": ["口をそろえる", "口が堅い", "口車に乗る", "口をはさむ"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchigasuberu", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「言ってはいけないことを、うっかり言ってしまう」という意味の慣用句は？", "a": ["口がすべる"], "choices": ["口がすべる", "口を割る", "口車に乗る", "口をそろえる"], "note": "「口が軽い」は秘密をすぐしゃべる性質のこと。", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-hagatatanai", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「相手が強すぎて、とてもかなわない」という意味の慣用句は？", "a": ["歯が立たない"], "choices": ["歯が立たない", "舌を巻く", "口をはさむ", "鼻が高い"], "note": "似た意味：手も足も出ない。", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchibiwokiru", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「みんなの先頭に立って、最初に始める」という意味の慣用句は？", "a": ["口火を切る"], "choices": ["口火を切る", "口をはさむ", "口がすべる", "舌を巻く"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "ki-kuchiwohasamu", "comp": "慣用句編", "pref": "口や舌の慣用句", "cat": "慣用句", "type": "single", "q": "「人の話に、横から割りこむ」という意味の慣用句は？", "a": ["口をはさむ"], "choices": ["口をはさむ", "口火を切る", "口をそろえる", "耳を疑う"], "note": "", "region": "慣用句", "badgeCat": "からだ"},
+  {"id": "yj-issekinicho", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「一つのことをして、二つの利益を得る」という意味の四字熟語は？", "a": ["一石二鳥"], "choices": ["一石二鳥", "一朝一夕", "一長一短", "二束三文"], "note": "似た意味：一挙両得。反対：二兎を追う者は一兎をも得ず。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-junin", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「人の好みや考えは、それぞれちがう」という意味の四字熟語は？", "a": ["十人十色"], "choices": ["十人十色", "一日千秋", "四苦八苦", "右往左往"], "note": "似た意味：千差万別。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-iccho", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「（　）には身につかない」＝わずかな時間や日数。（　）に入る四字熟語は？", "a": ["一朝一夕"], "choices": ["一朝一夕", "一日千秋", "一進一退", "一長一短"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-shiku", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「たいへん苦労すること」という意味の四字熟語は？", "a": ["四苦八苦"], "choices": ["四苦八苦", "右往左往", "絶体絶命", "一心不乱"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-sankan", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「冬に、寒い日が3日・あたたかい日が4日ほどくり返される気候」を表す四字熟語は？", "a": ["三寒四温"], "choices": ["三寒四温", "四苦八苦", "十人十色", "一日千秋"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-ichijitsu", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「とても待ち遠しいこと」という意味の四字熟語は？", "a": ["一日千秋"], "choices": ["一日千秋", "一朝一夕", "千差万別", "半信半疑"], "note": "一日が千年に感じられるほど。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-hyappatsu", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「予想や計画が、すべてその通りになる」という意味の四字熟語は？", "a": ["百発百中"], "choices": ["百発百中", "千差万別", "十人十色", "一石二鳥"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-sensaban", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「さまざまに異なっていること」という意味の四字熟語は？", "a": ["千差万別"], "choices": ["千差万別", "大同小異", "百発百中", "三寒四温"], "note": "似た意味：十人十色。反対：大同小異。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-icchoittan", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「よいところもあれば、悪いところもある」という意味の四字熟語は？", "a": ["一長一短"], "choices": ["一長一短", "一進一退", "一朝一夕", "自画自賛"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-isshinittai", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「進んだり戻ったりで、ものごとがはかどらない」という意味の四字熟語は？", "a": ["一進一退"], "choices": ["一進一退", "一長一短", "右往左往", "日進月歩"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-blank-ishi", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「一□二鳥」の□に入る漢字は？", "a": ["石"], "choices": ["石", "鳥", "朝", "挙"], "note": "一挙両得と同じ意味。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-nisoku", "comp": "四字熟語編", "pref": "数の四字熟語", "cat": "四字熟語", "type": "single", "q": "「数が多くても、ねだんがひどく安いこと」という意味の四字熟語は？", "a": ["二束三文"], "choices": ["二束三文", "四苦八苦", "千差万別", "百発百中"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-ishinden", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「ことばにしなくても、たがいに心が通じ合う」という意味の四字熟語は？", "a": ["以心伝心"], "choices": ["以心伝心", "半信半疑", "自画自賛", "一心不乱"], "note": "", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-mugamuchu", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「我を忘れるほど、ひとつのことに熱中する」という意味の四字熟語は？", "a": ["無我夢中"], "choices": ["無我夢中", "半信半疑", "自業自得", "右往左往"], "note": "似た意味：一心不乱。", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-isshinfuran", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「心を乱さず、ひとつのことに集中する」という意味の四字熟語は？", "a": ["一心不乱"], "choices": ["一心不乱", "以心伝心", "疑心暗鬼", "絶体絶命"], "note": "似た意味：無我夢中。", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-hanshin", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「半分信じて、半分疑うこと」という意味の四字熟語は？", "a": ["半信半疑"], "choices": ["半信半疑", "疑心暗鬼", "以心伝心", "自画自賛"], "note": "", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-jiga", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「自分で自分のことをほめる」という意味の四字熟語は？", "a": ["自画自賛"], "choices": ["自画自賛", "自業自得", "以心伝心", "大器晩成"], "note": "", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-gishin", "comp": "四字熟語編", "pref": "心情の四字熟語", "cat": "四字熟語", "type": "single", "q": "「疑い出すと、なんでもないことまで信じられなくなる」という意味の四字熟語は？", "a": ["疑心暗鬼"], "choices": ["疑心暗鬼", "半信半疑", "無我夢中", "危機一髪"], "note": "", "region": "四字熟語", "badgeCat": "こころ"},
+  {"id": "yj-onko", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「昔のことを学び、そこから新しい知識や考えを得る」という意味の四字熟語は？", "a": ["温故知新"], "choices": ["温故知新", "日進月歩", "切磋琢磨", "初志貫徹"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-sessa", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「仲間どうしで、はげまし合い競い合って向上する」という意味の四字熟語は？", "a": ["切磋琢磨"], "choices": ["切磋琢磨", "温故知新", "自画自賛", "大器晩成"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-shoshi", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「最初に決めた志を、最後までつらぬき通す」という意味の四字熟語は？", "a": ["初志貫徹"], "choices": ["初志貫徹", "温故知新", "一進一退", "自業自得"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-nisshin", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「日ごと月ごとに、絶えず進歩する」という意味の四字熟語は？", "a": ["日進月歩"], "choices": ["日進月歩", "一進一退", "温故知新", "一朝一夕"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-jigou", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「自分の悪い行いの報いを、自分が受ける」という意味の四字熟語は？", "a": ["自業自得"], "choices": ["自業自得", "自画自賛", "油断大敵", "以心伝心"], "note": "似た意味：因果応報。", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-yudan", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「油断は失敗のもとであり、おそろしい敵である」という意味の四字熟語は？", "a": ["油断大敵"], "choices": ["油断大敵", "絶体絶命", "初志貫徹", "百発百中"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-taiki", "comp": "四字熟語編", "pref": "行動の四字熟語", "cat": "四字熟語", "type": "single", "q": "「大人物は、若いころは目立たず、遅れて才能をあらわす」という意味の四字熟語は？", "a": ["大器晩成"], "choices": ["大器晩成", "日進月歩", "温故知新", "十人十色"], "note": "", "region": "四字熟語", "badgeCat": "くらし"},
+  {"id": "yj-uou", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「うろたえて、あっちへ行ったりこっちへ来たりする」という意味の四字熟語は？", "a": ["右往左往"], "choices": ["右往左往", "一進一退", "四苦八苦", "単刀直入"], "note": "", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-zettai", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「追いつめられて、どうにもならない状態」という意味の四字熟語は？", "a": ["絶体絶命"], "choices": ["絶体絶命", "危機一髪", "四苦八苦", "油断大敵"], "note": "「絶対絶命」と書くのは誤り！", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-kiki", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「髪の毛一本ほどのわずかな差で、危険がせまっている」という意味の四字熟語は？", "a": ["危機一髪"], "choices": ["危機一髪", "絶体絶命", "油断大敵", "一朝一夕"], "note": "「危機一発」と書くのは誤り！", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-daidou", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「細かい点はちがうが、だいたい同じ」という意味の四字熟語は？", "a": ["大同小異"], "choices": ["大同小異", "千差万別", "十人十色", "半信半疑"], "note": "反対の意味：千差万別。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-tanto", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「前置きなしに、いきなり本題に入る」という意味の四字熟語は？", "a": ["単刀直入"], "choices": ["単刀直入", "右往左往", "以心伝心", "一心不乱"], "note": "「短刀」ではなく「単刀」。", "region": "四字熟語", "badgeCat": "数・ようす"},
+  {"id": "yj-baji", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「人の意見を聞き流して、心にとめない」という意味の四字熟語は？", "a": ["馬耳東風"], "choices": ["馬耳東風", "竜頭蛇尾", "以心伝心", "単刀直入"], "note": "ことわざ「馬の耳に念仏」と同じ意味。", "region": "四字熟語", "badgeCat": "動物"},
+  {"id": "yj-ryuto", "comp": "四字熟語編", "pref": "様子の四字熟語", "cat": "四字熟語", "type": "single", "q": "「初めは勢いがよいが、終わりはふるわない」という意味の四字熟語は？", "a": ["竜頭蛇尾"], "choices": ["竜頭蛇尾", "馬耳東風", "大器晩成", "初志貫徹"], "note": "頭は竜、尾は蛇。", "region": "四字熟語", "badgeCat": "動物"},
+];
+/* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
+const PREF_REGION = {
+  "北海道":"北海道",
+  "青森県":"東北","岩手県":"東北","宮城県":"東北","秋田県":"東北","山形県":"東北","福島県":"東北",
+  "茨城県":"関東","栃木県":"関東","群馬県":"関東","埼玉県":"関東","千葉県":"関東","東京都":"関東","神奈川県":"関東",
+  "新潟県":"中部","富山県":"中部","石川県":"中部","福井県":"中部","山梨県":"中部","長野県":"中部","岐阜県":"中部","静岡県":"中部","愛知県":"中部",
+  "三重県":"近畿","滋賀県":"近畿","京都府":"近畿","大阪府":"近畿","兵庫県":"近畿","奈良県":"近畿","和歌山県":"近畿",
+  "鳥取県":"中国四国","島根県":"中国四国","岡山県":"中国四国","広島県":"中国四国","山口県":"中国四国","徳島県":"中国四国","香川県":"中国四国","愛媛県":"中国四国","高知県":"中国四国",
+  "福岡県":"九州沖縄","佐賀県":"九州沖縄","長崎県":"九州沖縄","熊本県":"九州沖縄","大分県":"九州沖縄","宮崎県":"九州沖縄","鹿児島県":"九州沖縄","沖縄県":"九州沖縄",
+  // 県をまたぐ・広域の表記
+  "全国":"全国","太平洋":"全国","日本海":"全国",
+  "関東":"関東","東北":"東北","中部":"中部","近畿":"近畿","中国":"中国四国","四国":"中国四国"
+};
+const CAT_BADGE = {
+  "県庁所在地":"県庁所在地","道庁所在地":"県庁所在地","政令指定都市":"県庁所在地",
+  "河川":"水","湖":"水","海流":"水","海岸":"水","湾":"水",
+  "山地・山脈":"陸","山・台地・盆地":"陸","半島":"陸",
+  "特産品":"農業","畜産":"農業",
+  "漁港":"漁業","養殖":"漁業",   // 漁港・養殖は産業として「漁業」称号に寄せる
+  "林業":"林業",
+  "工業":"工業","工業都市":"工業","公害":"工業",
+  "伝統的工芸品":"伝統工芸品",
+  "日本三景":"その他","日本三名園":"その他"
+};
+function regionOf(pref){ return PREF_REGION[pref] || "全国"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "その他"; }
+function enrichCards(cards){
+  cards.forEach(c=>{
+    if(!c.region) c.region = regionOf(c.pref);
+    if(!c.badgeCat) c.badgeCat = badgeCatOf(c.cat);
+  });
+  return cards;
+}
+
+let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards() を呼ぶと定数が未初期化で常にDEFAULT_CARDSに落ちるバグがあった
+
+/* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
+function buildMap(mset){
+  // 教科版：カード(pref)からユニークな分野を拾って自動でタイルを並べる
+  const prefs=[...new Set(CARDS.map(c=>c.pref))];
+  const COLS=5, CELL=34, GAP=4, PAD=6;
+  const rows=Math.ceil(prefs.length/COLS);
+  const W=PAD*2+COLS*(CELL+GAP), H=PAD*2+rows*(CELL+GAP);
+  let cells="";
+  prefs.forEach((name,i)=>{
+    const x=PAD+(i%COLS)*(CELL+GAP), y=PAD+Math.floor(i/COLS)*(CELL+GAP);
+    const on=mset.has(name);
+    const fill=on?"var(--green)":"#e7e2d4", tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="6" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+4}" text-anchor="middle" font-size="11" fill="${tcol}" font-weight="700">${name.slice(0,2)}</text></g>`;
+  });
+  return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
+}
+
+/* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
+const DAILY_GOAL=10;
+const LS_CARDS="kotobatan_cards";
+const userKey=(n,p)=>"kotobatan_user_"+n+"_"+p;
+let state=null;
+
+function loadCards(){
+  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  return DEFAULT_CARDS.slice();
+}
+CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0};}
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function loadState(n,p){
+  try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
+  return null;
+}
+function rolloverDay(){
+  // 日付が変わっていたら「今日の学習」をリセット。前日にゴール未達ならストリークを途切れさせる簡易版
+  const t=todayStr();
+  if(state.lastDay!==t){
+    state.doneToday=0; state.streakedToday=false; state.lastDay=t;
+  }
+}
+
+/* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
+/* stage: 0=4択, 1=文字を選ぶ, 2=入力。reps（連続正解数）で決まる */
+function stageOf(r){
+  if(!r||r.reps<=0) return 0;
+  if(r.reps===1) return 1;
+  return 2;
+}
+function schedule(id,correct){
+  const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
+  if(correct){
+    r.reps+=1;
+    if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
+    r.ef=Math.min(2.6,r.ef+0.05);
+    if(r.reps>=3)r.mastered=true;
+  }else{
+    r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
+    r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
+    r.wrong=(r.wrong||0)+1; // にがて復習用：まちがえた回数を記録
+  }
+  r.due=Date.now()+r.interval*864e5;
+  state.reviews[id]=r;
+}
+function masteredCount(){const s=new Set();CARDS.forEach(c=>{const r=state.reviews[c.id];if(r&&r.mastered)s.add(c.pref);});return s;}
+function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastered).length;}
+
+/* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
+const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
+const BADGES = [
+  {key:"kotowaza",   name:"ことわざマスター",   emoji:"🐢", type:"region", match:"ことわざ"},
+  {key:"kanyoku",    name:"慣用句マスター",     emoji:"👂", type:"region", match:"慣用句"},
+  {key:"yojijukugo", name:"四字熟語マスター",   emoji:"🖌️", type:"region", match:"四字熟語"},
+  {key:"animal",     name:"動物マスター",       emoji:"🐾", type:"badgeCat", match:"動物"},
+  {key:"body",       name:"からだマスター",     emoji:"👀", type:"badgeCat", match:"からだ"},
+  {key:"kokoro",     name:"こころマスター",     emoji:"💗", type:"badgeCat", match:"こころ"},
+  {key:"kurashi",    name:"くらしマスター",     emoji:"🍚", type:"badgeCat", match:"くらし"},
+  {key:"shizen",     name:"自然マスター",       emoji:"🌤️", type:"badgeCat", match:"自然"},
+  {key:"kazu",       name:"数・ようすマスター", emoji:"🔢", type:"badgeCat", match:"数・ようす"},
+];
+const FINAL_BADGE = {key:"doctor", name:"ことば名人", emoji:"🎓"};
+// 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
+// 解放判定・地理博士の条件・称号数の分母すべてから除外し、カードが入ると自動で有効になる
+function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
+function activeBadges(){return BADGES.filter(badgeActive);}
+
+// 称号ごとの進捗 {total, mastered, ratio, earned}
+function badgeProgress(b){
+  const group = CARDS.filter(c => b.type==="region" ? c.region===b.match : c.badgeCat===b.match);
+  const total = group.length;
+  let mastered = 0;
+  group.forEach(c=>{const r=state.reviews[c.id]; if(r&&r.mastered)mastered++;});
+  const ratio = total ? mastered/total : 0;
+  return {total, mastered, ratio, earned: total>0 && ratio>=BADGE_THRESHOLD};
+}
+// 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
+function refreshBadges(){
+  if(!state.badges)state.badges={};
+  const act=activeBadges(), fresh=[];
+  act.forEach(b=>{
+    if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
+  });
+  if(act.length && act.every(b=>state.badges[b.key]) && !state.badges[FINAL_BADGE.key]){
+    state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
+  }
+  if(fresh.length){saveState();celebrate(fresh);}
+  return state.badges;
+}
+function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
+let celebrateQueue=[], celebrating=false;
+function celebrate(badges){ celebrateQueue.push(...badges); if(!celebrating) nextCelebration(); }
+function nextCelebration(){
+  const b=celebrateQueue.shift();
+  if(!b){celebrating=false;return;}
+  celebrating=true;
+  const isDoctor=b.key===FINAL_BADGE.key;
+  const colors=["#4f9d69","#e08a3c","#d8a93a","#3f7cc4","#d9534f","#9a6fc4"];
+  let conf="";
+  const n=isDoctor?90:45;
+  for(let i=0;i<n;i++){ // 疑似ランダム配置（indexから決める）
+    conf+=`<i style="left:${(i*37)%100}%;background:${colors[i%colors.length]};animation-delay:${(i%20)*0.13}s;animation-duration:${2.2+(i%7)*0.3}s;width:${6+(i%3)*3}px"></i>`;
+  }
+  const ov=document.createElement('div');
+  ov.className="celebrate"+(isDoctor?" doctor":"");
+  ov.innerHTML=`<div class="conf">${conf}</div>
+    <div class="cbody">
+      <div class="cemoji">${b.emoji}</div>
+      <div class="ctitle">${isDoctor?"さいごの称号":"あたらしい称号"}</div>
+      <div class="cname">${b.name}</div>
+      <div class="cget">${isDoctor?"ぜんぶの称号を あつめたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップでとじる</div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
+  ov.onclick=close;
+  setTimeout(close, isDoctor?9000:4500);
+}
+
+/* ===== 5. 画面 ===== */
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+
+$('loginBtn').onclick=async()=>{
+  const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
+  $('loginMsg').textContent="";
+  if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8けた）で入れてね";return;}
+  $('loginBtn').disabled=true;
+  try{
+    let onlineOk=false, srvCampus="", srvWeek=0;
+    if(ONLINE()){
+      $('loginMsg').textContent="つうしん中…";
+      try{
+        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        if(!r.ok&&r.reason==='not_found'){
+          if(!campus){$('loginMsg').textContent="はじめての人は校舎をえらんでね";return;}
+          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          r.week_score=0;
+        }else if(!r.ok){
+          $('loginMsg').textContent="番号がちがうみたい。もういちど確かめてね";return;
+        }
+        onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+      }catch(e){ /* サーバに届かない → オフラインで続行 */ }
+    }
+    const existing=loadState(n,p);
+    state=existing||freshState(n,p);
+    if(!state.badges)state.badges={};
+    if(state.weekPending==null)state.weekPending=0;
+    state.online=onlineOk;
+    if(onlineOk){
+      state.campus=srvCampus;
+      state.weekScore=srvWeek;
+      if(!existing){
+        // この端末に記録がない → サーバのバックアップから復元を試みる
+        try{
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
+          if(pr.ok&&pr.data){
+            const d=pr.data;
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges"].forEach(k=>{
+              if(d[k]!=null)state[k]=d[k];
+            });
+          }
+        }catch(e){}
+      }
+    }
+    $('loginMsg').textContent="";
+    rolloverDay(); refreshBadges(); saveState();
+    renderHome(); show('home');
+    flushScore();
+  }finally{ $('loginBtn').disabled=false; }
+};
+$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+
+function renderHome(){
+  rolloverDay();
+  $('hiNick').textContent=state.nick;
+  $('streakN').textContent=state.streak;
+  const mset=masteredCount();
+  $('mapHost').innerHTML=buildMap(mset);
+  $('masterN').textContent=mset.size;
+  $('mapTotal').textContent=[...new Set(CARDS.map(c=>c.pref))].length;
+  $('sCards').textContent=masteredCards();
+  $('sXp').textContent=state.xp;
+  $('sAcc').textContent=state.accTotal?Math.round(state.accCorrect/state.accTotal*100)+"%":"–";
+  $('goalNow').textContent=Math.min(state.doneToday,DAILY_GOAL);
+  $('goalMax').textContent=DAILY_GOAL;
+  $('goalBar').style.width=Math.min(100,state.doneToday/DAILY_GOAL*100)+"%";
+  const comps=["ことわざ編","慣用句編","四字熟語編"],desc={"ことわざ編":"犬も歩けば…など","慣用句編":"耳が痛い…など","四字熟語編":"一石二鳥…など"};
+  let html="";
+  comps.forEach(c=>{
+    const due=dueCards(c).length, total=CARDS.filter(x=>x.comp===c).length;
+    if(total===0)return;
+    html+=`<button class="deck" data-comp="${c}"><span class="dot" style="background:${COLOR[c]}"></span>
+      <span><span class="dn">${c}</span><br><span class="dd">${desc[c]}・全${total}枚</span></span>
+      <span class="due ${due?'':'zero'}">${due?('学習 '+due+'枚'):'おわり'}</span></button>`;
+  });
+  html+=`<button class="deck" data-comp="ALL"><span class="dot" style="background:linear-gradient(135deg,var(--green),var(--blue),var(--orange))"></span>
+    <span><span class="dn">きょうのおすすめ</span><br><span class="dd">復習どきのカードをまぜて出題</span></span>
+    <span class="due">スタート</span></button>`;
+  html+=`<button class="deck" data-comp="PICK"><span class="dot" style="background:var(--gold)"></span>
+    <span><span class="dn">🎯 えらんで学習</span><br><span class="dd">しゅるい・テーマごとに出題（称号ねらい）</span></span>
+    <span class="due">えらぶ</span></button>`;
+  const ng=nigateCards().length;
+  if(ng>0){ // まちがえた問題ができたときだけ出現する
+    html+=`<button class="deck" data-comp="NIGATE"><span class="dot" style="background:var(--wrong)"></span>
+      <span><span class="dn">🔥 にがて復習</span><br><span class="dd">まちがえた回数が多い問題から出すよ</span></span>
+      <span class="due">${Math.min(ng,DAILY_GOAL)}枚</span></button>`;
+  }
+  $('deckPick').innerHTML=html;
+  $('deckPick').querySelectorAll('.deck').forEach(b=>b.onclick=()=>{
+    if(b.dataset.comp==="PICK"){renderPick();show('pick');}
+    else startQuiz(b.dataset.comp);
+  });
+  refreshBadges();
+  $('badgeCountPill').textContent=earnedBadgeCount()+"/"+activeBadges().length;
+  $('rankBtn').style.display=(ONLINE()&&state.online)?"":"none";
+}
+
+/* ===== 称号画面 ===== */
+function renderBadges(){
+  refreshBadges(); saveState();
+  const got=earnedBadgeCount();
+  $('badgeSum').innerHTML=`あつめた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 '+FINAL_BADGE.name+' 達成！</span>':'（ぜんぶ集めると「'+FINAL_BADGE.name+'」）'}`;
+  let html="";
+  BADGES.forEach(b=>{
+    if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
+      html+=`<div class="badge locked" style="filter:grayscale(.6)">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="bname">${b.name}</div>
+        <div class="bmeta">じゅんびちゅう・おたのしみに！</div>
+      </div>`;
+      return;
+    }
+    const p=badgeProgress(b);
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const pct=Math.round(p.ratio*100);
+    const meta = earned
+      ? `ゲット！ ${state.badges[b.key]}`
+      : (p.total ? `あと${Math.max(0,Math.ceil(p.total*BADGE_THRESHOLD)-p.mastered)}問でゲット` : "問題なし");
+    html+=`<div class="badge ${earned?'earned':'locked'}">
+      <div class="bemoji">${b.emoji}</div>
+      <div class="bname">${b.name}</div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+      <div class="bmeta">${p.mastered}/${p.total}　${meta}</div>
+    </div>`;
+  });
+  const fEarned=!!(state.badges&&state.badges[FINAL_BADGE.key]);
+  html+=`<div class="badge final ${fEarned?'earned':'locked'}">
+    <div class="bemoji">${FINAL_BADGE.emoji}</div>
+    <div class="bname">${FINAL_BADGE.name}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号すべてでゲット'}</div>
+  </div>`;
+  $('badgeGrid').innerHTML=html;
+}
+$('badgesBtn').onclick=()=>{renderBadges();show('badges');};
+$('badgesBack').onclick=()=>{renderHome();show('home');};
+
+/* ===== えらんで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+function renderPick(){
+  const mk=(b,comp)=>{
+    const p=badgeProgress(b);
+    const done=p.total>0&&p.mastered>=p.total;
+    return `<button class="pick-btn ${done?'done':''}" data-comp="${comp}">
+      <span class="pe">${b.emoji}</span>
+      <span><span class="pn">${b.match}</span><span class="pp">${p.mastered}/${p.total}${done?'　パーフェクト！':''}</span></span>
+    </button>`;
+  };
+  $('pickRegion').innerHTML=BADGES.filter(b=>b.type==="region").map(b=>mk(b,"R:"+b.match)).join("");
+  $('pickCat').innerHTML=BADGES.filter(b=>b.type==="badgeCat"&&badgeActive(b)).map(b=>mk(b,"B:"+b.match)).join("");
+  document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
+}
+$('pickBack').onclick=()=>{renderHome();show('home');};
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+function cardInGroup(c,comp){
+  if(comp==="ALL")return true;
+  if(comp.startsWith("R:"))return c.region===comp.slice(2);
+  if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  return c.comp===comp;
+}
+function dueCards(comp){
+  const now=Date.now();
+  return CARDS.filter(c=>{
+    if(!cardInGroup(c,comp))return false;
+    const r=state.reviews[c.id];
+    if(!r)return true;
+    if(r.mastered&&r.due>now)return false;
+    return r.due?r.due<=now:true;
+  });
+}
+
+/* ===== 6. クイズ進行（3ステージ） ===== */
+let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+    .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
+}
+function startQuiz(comp){
+  let pool;
+  if(comp==="NIGATE"){
+    pool=nigateCards().slice(0,DAILY_GOAL);
+  }else{
+    pool=dueCards(comp);
+    if(pool.length===0)pool=CARDS.filter(c=>cardInGroup(c,comp));
+    pool=shuffle(pool).slice(0,DAILY_GOAL);
+  }
+  if(pool.length===0){renderHome();show('home');return;}
+  session={queue:pool,idx:0,correct:0,total:pool.length,comp};
+  renderQuestion(); show('quiz');
+}
+const STAGE_LABEL=["ステップ1・4たくからえらぶ","ステップ2・文字をならべる","ステップ3・自分で入力"];
+
+function renderQuestion(){
+  const c=session.queue[session.idx];
+  picked=new Set(); answered=false; slotChars=[];
+  // multiと画像つきカードは常に4択（画像問題はステージ進行させない）
+  stage = (c.type==="multi"||c.image) ? 0 : stageOf(state.reviews[c.id]);
+  $('qProg').style.width=(session.idx/session.total*100)+"%";
+  $('qCount').textContent=(session.idx+1)+"/"+session.total;
+  $('stagePill').textContent = c.type==="multi" ? "ふくすう選ぶ問題" : (c.image ? "画像を見てえらぶ問題" : STAGE_LABEL[stage]);
+  $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
+  $('qPref').textContent=c.pref; $('qText').textContent=c.q;
+  const im=$('qImg'); $('qImgMiss').style.display="none";
+  if(c.image){
+    im.alt="（画像："+c.q+"）";
+    im.onerror=()=>{im.style.display="none";$('qImgMiss').style.display="";};
+    im.src="images/"+c.image; im.style.display="";
+  }else{ im.style.display="none"; im.removeAttribute('src'); }
+  $('qMultiHint').style.display=c.type==="multi"?"block":"none";
+  $('feedback').className="feedback";
+  $('checkBtn').textContent="こたえあわせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('dontknow').style.display="block";
+
+  if(stage===0) renderChoices(c);
+  else if(stage===1) renderTiles(c);
+  else renderInput(c);
+}
+
+function renderChoices(c){
+  const ch=shuffle(c.choices);
+  let html='<div class="choices">';
+  ch.forEach(o=>{const mk=c.type==="multi"?"☐":"";html+=`<button class="choice" data-opt="${o}"><span class="mk">${mk}</span><span>${o}</span></button>`;});
+  html+='</div>';
+  $('answerArea').innerHTML=html;
+  $('answerArea').querySelectorAll('.choice').forEach(b=>b.onclick=()=>onPick(b,c.type));
+}
+function onPick(btn,type){
+  if(answered)return;const opt=btn.dataset.opt;
+  if(type==="single"){
+    $('answerArea').querySelectorAll('.choice').forEach(x=>{x.classList.remove('sel');x.querySelector('.mk').textContent="";});
+    picked=new Set([opt]);btn.classList.add('sel');
+  }else{
+    if(picked.has(opt)){picked.delete(opt);btn.classList.remove('sel');btn.querySelector('.mk').textContent="☐";}
+    else{picked.add(opt);btn.classList.add('sel');btn.querySelector('.mk').textContent="✓";}
+  }
+  $('checkBtn').disabled=picked.size===0;
+}
+
+/* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+function renderTiles(c){
+  const ans=c.a[0];
+  const ansChars=ans.split("");
+  // ダミー文字：他の選択肢から文字を拝借
+  let pool=[];
+  c.choices.forEach(o=>{if(o!==ans)pool.push(...o.split(""));});
+  pool=pool.filter(ch=>!ansChars.includes(ch));
+  const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
+  const tiles=shuffle([...ansChars,...dummies]);
+  let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
+  $('answerArea').innerHTML=html;
+  renderSlots(ansChars.length);
+  const tw=$('tiles');
+  tiles.forEach((ch,i)=>{
+    const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
+    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    tw.appendChild(b);
+  });
+}
+function renderSlots(n){
+  const host=$('slots');host.innerHTML="";
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+      d.onclick=()=>{if(answered)return;
+        // タップで戻す（最後の1つ）
+        const removed=slotChars.splice(i,1)[0];
+        // 対応するタイルのusedを1つ解除
+        const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
+        if(t)t.classList.remove('used');
+        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+    }else{d.className="slot empty";d.textContent="";}
+    host.appendChild(d);
+  }
+}
+
+/* ステージ3：漢字入力 */
+function renderInput(c){
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="こたえを入力">
+    <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
+  const inp=$('txtIn');
+  inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
+  setTimeout(()=>inp.focus(),100);
+}
+
+/* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
+function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
+
+$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+
+function checkAnswer(){
+  const c=session.queue[session.idx];
+  if(!answered){
+    let correct=false;
+    if(stage===0){
+      const aset=new Set(c.a);
+      correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
+    }else if(stage===1){
+      correct = slotChars.join("")===c.a[0];
+    }else{
+      const v=$('txtIn').value;
+      correct = norm(v)===norm(c.a[0]);
+    }
+    judge(correct);
+  }else{
+    session.idx++;
+    if(session.idx<session.total)renderQuestion(); else finishSession();
+  }
+}
+
+function judge(correct){
+  const c=session.queue[session.idx];
+  answered=true; $('dontknow').style.display="none";
+  // 表示の色付け
+  if(stage===0){
+    const aset=new Set(c.a);
+    $('answerArea').querySelectorAll('.choice').forEach(b=>{
+      const o=b.dataset.opt;b.disabled=true;
+      if(aset.has(o)){b.classList.remove('sel');b.classList.add('correct');b.querySelector('.mk').textContent="✓";}
+      else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
+    });
+  }
+  schedule(c.id,correct);
+  state.accTotal++; if(correct){session.correct++;state.accCorrect++;state.xp+=10;state.weekPending=(state.weekPending||0)+1;}
+  state.doneToday++;
+  refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
+  saveState();
+  const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
+  $('fTitle').innerHTML=correct?"せいかい！ <span class='xp-pop'>+10 XP</span>":"おしい！もういちど覚えよう";
+  $('fNote').innerHTML=(correct?"":("こたえ：<b>"+c.a.join("・")+"</b><br>"))+c.note;
+  $('checkBtn').textContent=session.idx+1<session.total?"つぎへ":"けっか をみる";
+  $('checkBtn').disabled=false;
+}
+
+$('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+function finishSession(){
+  let up=false;
+  if(state.doneToday>=DAILY_GOAL&&!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  refreshBadges();
+  saveState();
+  flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  $('dCards').textContent=session.total;
+  $('dCorrect').textContent=session.correct;
+  $('dXp').textContent="+"+(session.correct*10);
+  $('dStreakMsg').textContent=up?`🔥 れんぞく ${state.streak}日 になったよ！`:`きょうの学習 ${state.doneToday}問 ・ ゴールまであと ${Math.max(0,DAILY_GOAL-state.doneToday)}問`;
+  show('done');
+}
+$('backHome').onclick=()=>{renderHome();show('home');};
+$('againBtn').onclick=()=>{startQuiz(session.comp);};
+
+/* ===== 7. CSV取り込み ===== */
+$('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
+$('impBack').onclick=()=>{renderHome();show('home');};
+$('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題にもどしました</span>';};
+
+$('doImport').onclick=()=>{
+  const txt=$('csvText').value.trim();
+  if(!txt){$('impMsg').innerHTML='<span class="err-msg">CSVが空です</span>';return;}
+  try{
+    const cards=parseCSV(txt);
+    if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへもどってください。</span>';
+  }catch(err){$('impMsg').innerHTML='<span class="err-msg">読み込みエラー：'+err.message+'</span>';}
+};
+
+/* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
+function parseCSV(text){
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch==='\r'){} else cur+=ch; }
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  if(rows.length<2)return [];
+  const head=rows[0].map(h=>h.trim());
+  const idx=name=>head.indexOf(name);
+  const ci={id:idx("id"),comp:idx("編"),pref:idx("都道府県"),cat:idx("カテゴリ"),type:idx("出題タイプ"),q:idx("問題文"),a:idx("正解"),choices:idx("選択肢"),note:idx("覚え方メモ"),tag:idx("タグ"),region:idx("地方"),badgeCat:idx("称号カテゴリ"),image:idx("画像")}; // 画像列はオプショナル（無い12列CSVでも動く）
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.join("").trim()==="")continue;
+    const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
+    const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
+    const type=get("type")==="multi"?"multi":"single";
+    const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
+    let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
+    a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
+    const region=get("region")||regionOf(get("pref"));
+    const badgeCat=get("badgeCat")||badgeCatOf(get("cat"));
+    const card={id,comp:get("comp")||"県別編",pref:get("pref"),cat:get("cat"),type,q:qq,a,choices,note:get("note"),region,badgeCat};
+    const image=get("image"); if(image)card.image=image;
+    out.push(card);
+  }
+  return out;
+}
+
+$('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
+
+/* ===== 8. ランキングバトル（Supabase） =====
+   下の2つを埋めるとオンライン機能（登録・週間ランキング・進捗バックアップ）が有効になる。
+   空のままなら従来どおり端末内のみで動く。
+   ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
+   ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
+     このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
+   ・番号は平文でDBに保存されない（サーバ側でbcryptハッシュ化）。通信はHTTPS。 */
+const SUPABASE_URL = "";      // れい： "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY = ""; // れい： "eyJhbGciOi..."
+
+function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+  return res.json();
+}
+const REG_ERR={
+  bad_nick:"ニックネームは1〜12文字で入れてね",
+  bad_campus:"校舎をえらんでね",
+  bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+  nick_taken:"そのニックネームはもう使われているよ。べつの名前にしてね"
+};
+
+/* 週間スコア送信：正解のたびに weekPending にためて、まとめて送る（オフラインでも消えない） */
+async function flushScore(){
+  if(!state||!state.online||!ONLINE())return;
+  while(state.weekPending>0){
+    const send=Math.min(state.weekPending,30); // サーバ側の1回上限に合わせる
+    try{
+      const r=await rpc('add_correct',{p_nick:state.nick,p_number:state.pin,p_count:send});
+      if(!r.ok)break;
+      state.weekPending-=send; state.weekScore=r.week_score; saveState();
+    }catch(e){break;}
+  }
+}
+
+/* 進捗バックアップ：番号(pin)は送るデータに含めない */
+async function syncProgress(){
+  if(!state||!state.online||!ONLINE())return;
+  const d={xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+    accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+}
+
+/* ランキング画面 */
+let rankCampus="";
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
+$('rankBtn').onclick=()=>{show('ranking');renderRankTabs();loadRanking();};
+$('rankBack').onclick=()=>{renderHome();show('home');};
+$('rankReload').onclick=()=>loadRanking();
+function renderRankTabs(){
+  $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.campus===rankCampus);
+    b.onclick=()=>{rankCampus=b.dataset.campus;renderRankTabs();loadRanking();};
+  });
+}
+async function loadRanking(){
+  $('rankReset').textContent=" つぎのリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">よみこみ中…</div>';
+  await flushScore();
+  $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
+  try{
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null});
+    if(!rows.length){
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">今週はまだだれも記録がないよ。<br>1番のりのチャンス！</div>';
+      return;
+    }
+    const medal=["🥇","🥈","🥉"];
+    $('rankList').innerHTML=rows.map(r=>{
+      const me=state&&r.nick===state.nick;
+      return `<div class="rank-row${me?' me':''}">
+        <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
+        <span class="rnick">${esc(r.nick)}${me?' ★':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}問</span></div>`;
+    }).join("");
+  }catch(e){
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">つうしんエラー。<br>しばらくしてから「さいしんにする」を押してね</div>';
+  }
+}
+</script>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト｜ココロミルの学習アプリ</title>
+<style>
+  :root{--ink:#3d3a33;--sub:#8d8672;--line:#e3ddcc;--green:#4d9e63;--gold:#d8a93a;--paper:#f7f4ec;--card:#fffdf7;}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 16px 40px;}
+  h1{font-size:34px;letter-spacing:2px;margin-top:8px;}
+  .sub{color:var(--sub);font-size:13px;margin:6px 0 26px;}
+  .wrap{width:100%;max-width:440px;}
+  .sec{margin-bottom:22px;}
+  .sec h2{font-size:14px;color:var(--sub);letter-spacing:1px;margin:0 0 8px 4px;}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  a.tile,div.tile{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);border-radius:16px;padding:14px 16px;text-decoration:none;color:var(--ink);transition:transform .08s;}
+  a.tile:active{transform:scale(.97);}
+  .tile .emoji{font-size:28px;}
+  .tile .name{font-weight:700;font-size:16px;}
+  .tile .desc{font-size:11px;color:var(--sub);margin-top:2px;}
+  .tile.soon{opacity:.55;}
+  .tile.soon .badge{font-size:10px;background:var(--line);border-radius:8px;padding:2px 7px;color:var(--sub);margin-left:auto;white-space:nowrap;}
+  footer{margin-top:auto;padding-top:30px;font-size:11px;color:var(--sub);}
+  @media (max-width:360px){.tiles{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+  <h1>ミルバト</h1>
+  <div class="sub">ココロミルの学習アプリ ─ やりたい教科を選んでね</div>
+  <div class="wrap">
+    <div class="sec">
+      <h2>社会</h2>
+      <div class="tiles">
+        <a class="tile" href="./chiri/"><span class="emoji">🗾</span><span><span class="name">地理</span><div class="desc">都道府県・産業・自然</div></span></a>
+        <a class="tile" href="./rekishi/"><span class="emoji">📜</span><span><span class="name">歴史</span><div class="desc">縄文〜昭和</div></span></a>
+        <div class="tile soon"><span class="emoji">🏛️</span><span><span class="name">公民</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h2>国語・理科</h2>
+      <div class="tiles">
+        <a class="tile" href="./kokugo/"><span class="emoji">📖</span><span><span class="name">国語</span><div class="desc">ことわざ・慣用句・四字熟語</div></span></a>
+        <a class="tile" href="./rika/"><span class="emoji">🔬</span><span><span class="name">理科</span><div class="desc">生物・地学・物理化学</div></span></a>
+      </div>
+    </div>
+  </div>
+  <footer>ミルバト ・ ココロミル</footer>
+</body>
+</html>

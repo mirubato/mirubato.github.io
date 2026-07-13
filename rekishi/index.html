@@ -1,0 +1,1342 @@
+<!--
+  ミルバト社会 v3 — 中学受験 社会・地理 暗記アプリ
+  ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
+  ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
+  Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト社会｜歴史編</title>
+<style>
+  :root{
+    --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
+    --green:#4f9d69; --blue:#3f7cc4; --orange:#e08a3c; --gold:#d8a93a;
+    --wrong:#d9534f; --ok:#4f9d69; --card:#fffdf8;
+    --shadow:0 2px 0 rgba(42,39,35,.08), 0 10px 24px -12px rgba(42,39,35,.35); --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    background:radial-gradient(circle at 20% -10%, #fffaf0 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #eef5ee 0%, transparent 45%), var(--paper);
+    color:var(--ink);min-height:100%;display:flex;justify-content:center}
+  #app{width:100%;max-width:460px;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  .screen{flex:1;display:none;flex-direction:column;padding:20px 18px 28px}
+  .screen.active{display:flex;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:30px;margin:0;letter-spacing:.04em}
+  .brandsub{color:var(--ink-soft);font-size:13px;margin-top:2px;letter-spacing:.12em}
+  #login{justify-content:center;gap:18px;text-align:center}
+  .logo{font-size:64px;line-height:1}
+  .field{text-align:left;margin-top:6px}
+  .field label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px;letter-spacing:.05em}
+  .field input{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:18px;background:var(--card);font-family:inherit;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--green)}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:700;font-family:inherit;
+    cursor:pointer;width:100%;color:#fff;background:var(--green);box-shadow:0 3px 0 #3c7d52;
+    transition:transform .05s, box-shadow .05s;letter-spacing:.05em}
+  .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
+  .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
+  .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .btn[disabled]{opacity:.5}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .greet{font-size:14px;color:var(--ink-soft)}
+  .greet b{color:var(--ink);font-size:18px}
+  .streak{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid var(--line);
+    border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px}
+  .streak .fire{font-size:17px}
+  .map-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:16px 14px 8px;margin-bottom:16px;position:relative;overflow:hidden}
+  .map-wrap h2{margin:0 0 2px;font-size:15px;letter-spacing:.05em}
+  .map-wrap .sub{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+  svg.jpmap{width:100%;height:auto;display:block}
+  .mapnote{font-size:11px;color:var(--ink-soft);text-align:center;padding:6px 0 2px}
+  .stat-row{display:flex;gap:10px;margin-bottom:16px}
+  .stat{flex:1;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px;text-align:center}
+  .stat .num{font-size:24px;font-weight:800}
+  .stat .lbl{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+  .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .goal .gt{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+  .bar{height:12px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .5s}
+  .deck-pick{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .deck{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);
+    border-radius:16px;padding:14px;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .deck:active{transform:scale(.99)}
+  .deck .dot{width:14px;height:14px;border-radius:5px;flex:none}
+  .deck .dn{font-weight:700;font-size:16px}
+  .deck .dd{font-size:12px;color:var(--ink-soft)}
+  .deck .due{margin-left:auto;font-size:12px;background:#fbeede;color:var(--orange);
+    border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+  .deck .due.zero{background:#eef2ee;color:var(--ink-soft)}
+  .toolrow{display:flex;gap:8px;margin-top:12px}
+  .toolrow .btn{padding:11px;font-size:13px}
+  #quiz{padding-top:14px}
+  .qtop{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .qtop button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-soft);padding:4px}
+  .qbar{flex:1;height:10px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .qbar > i{display:block;height:100%;width:0;background:var(--green);transition:width .3s}
+  .qcount{font-size:13px;color:var(--ink-soft);font-weight:700}
+  .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:4px 10px;border-radius:999px;background:#eef2ee;color:var(--ink-soft);margin-bottom:10px}
+  .qcard{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px}
+  .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    padding:4px 10px;border-radius:999px;margin-bottom:10px;color:#fff}
+  .qpref{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+  .qtext{font-size:21px;font-weight:700;line-height:1.5}
+  .qmulti-hint{margin-top:8px;font-size:12px;color:var(--orange);font-weight:700}
+  .choices{display:flex;flex-direction:column;gap:10px}
+  .choice{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:15px 16px;
+    font-size:17px;font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;color:var(--ink);transition:.12s}
+  .choice:active{transform:scale(.99)}
+  .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choice.sel{border-color:var(--blue);background:#eef4fb}
+  .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
+  .choice.correct{border-color:var(--ok);background:#eef7f0}
+  .choice.correct .mk{background:var(--ok);border-color:var(--ok)}
+  .choice.wrong{border-color:var(--wrong);background:#fcefee}
+  .choice.wrong .mk{background:var(--wrong);border-color:var(--wrong)}
+  .choice[disabled]{cursor:default}
+  /* 文字を選ぶ・入力 */
+  .answer-slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:54px;
+    padding:12px;border:2px dashed var(--line);border-radius:14px;margin-bottom:14px;background:#fff}
+  .slot{min-width:44px;height:44px;border-radius:10px;background:#eef4fb;border:2px solid var(--blue);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;cursor:pointer}
+  .slot.empty{background:#f3eee2;border:2px dashed var(--line);cursor:default}
+  .tiles{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tile{min-width:44px;height:48px;padding:0 10px;border-radius:12px;background:var(--card);
+    border:2px solid var(--line);font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+  .tile:active{transform:scale(.96)}
+  .tile.used{opacity:.25;pointer-events:none}
+  .text-input{width:100%;padding:16px;border:2px solid var(--line);border-radius:14px;font-size:24px;
+    font-family:inherit;text-align:center;color:var(--ink);background:#fff}
+  .text-input:focus{outline:none;border-color:var(--green)}
+  .input-help{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .feedback{border-radius:var(--r);padding:16px;margin-top:16px;display:none}
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.good{background:#eef7f0;border:2px solid var(--ok)}
+  .feedback.bad{background:#fcefee;border:2px solid var(--wrong)}
+  .feedback .ft{font-weight:800;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .feedback.good .ft{color:var(--ok)}
+  .feedback.bad .ft{color:var(--wrong)}
+  .feedback .fn{font-size:14px;color:var(--ink);line-height:1.6}
+  .qfoot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px}
+  .linkbtn{background:none;border:none;color:var(--ink-soft);font-size:13px;font-family:inherit;
+    cursor:pointer;text-decoration:underline;padding:4px}
+  #done{justify-content:center;text-align:center;gap:14px}
+  #done .big{font-size:72px;line-height:1}
+  #done h2{font-size:26px;margin:0}
+  #done .reward{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;display:flex;justify-content:space-around}
+  #done .reward div{font-size:13px;color:var(--ink-soft)}
+  #done .reward b{display:block;font-size:26px;color:var(--ink);margin-top:2px}
+  .xp-pop{color:var(--gold);font-weight:800}
+  /* 取り込み画面 */
+  #import{gap:14px}
+  #import h2{margin:0;font-size:22px}
+  #import textarea{width:100%;height:200px;border:2px solid var(--line);border-radius:14px;
+    padding:12px;font-family:monospace;font-size:12px;background:#fff;color:var(--ink)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--ink-soft);font-size:14px;background:#fff}
+  .ok-msg{color:var(--ok);font-weight:700;font-size:14px}
+  .err-msg{color:var(--wrong);font-weight:700;font-size:14px}
+  /* 称号画面 */
+  #badges{gap:0}
+  #badges .qtop{margin-bottom:6px}
+  #badges h2{margin:0;font-size:22px}
+  .badge-sum{font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;text-align:center;
+    box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .badge.locked{opacity:.55;filter:grayscale(.8)}
+  .badge .bemoji{font-size:34px;line-height:1}
+  .badge .bname{font-size:13px;font-weight:700;line-height:1.3}
+  .badge .bbar{width:100%;height:8px;border-radius:999px;background:#ece6d8;overflow:hidden;margin-top:4px}
+  .badge .bbar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--blue))}
+  .badge .bmeta{font-size:11px;color:var(--ink-soft)}
+  .badge.earned{border-color:var(--green)}
+  .badge.earned .bmeta{color:var(--green);font-weight:700}
+  .badge.final{grid-column:1 / -1;background:linear-gradient(135deg,#fff8e8,#fef0d8);border-color:var(--gold)}
+  .badge.final.locked{filter:grayscale(.7)}
+  .badge.final .bemoji{font-size:42px}
+  .badge.final .bname{font-size:16px}
+  footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 称号コレクション（ホーム上部） */
+  .collection{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 14px 16px;margin-bottom:16px}
+  .collection-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .collection-head h2{margin:0}
+  .coll-count{font-size:12px;color:var(--ink-soft)}
+  .coll-count b{color:var(--green);font-size:16px}
+  .hbadge-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .hbadge{border:none;background:none;font-family:inherit;cursor:pointer;padding:6px 2px;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .1s}
+  .hbadge:active{transform:scale(.92)}
+  .hbadge .hb-emoji{font-size:26px;line-height:1.1;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .hbadge .hb-name{font-size:9px;color:var(--ink-soft);text-align:center;line-height:1.15}
+  .hbadge.earned .hb-emoji{background:radial-gradient(circle at 50% 35%, #fff6df, #ffe9b8);
+    box-shadow:0 0 0 2px var(--gold), 0 2px 8px rgba(216,169,58,.5)}
+  .hbadge.earned .hb-name{color:var(--ink);font-weight:700}
+  .hbadge.locked{filter:grayscale(1);opacity:.4}
+  .hbadge.locked .hb-emoji{background:#eee7d8}
+  .hbadge.final .hb-emoji{font-size:30px;width:48px;height:48px}
+  .hbadge.final.earned .hb-emoji{box-shadow:0 0 0 3px var(--gold),0 2px 12px rgba(216,169,58,.7)}
+  /* 3モード入口 */
+  .mode-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+  .mode-card{display:flex;align-items:center;gap:14px;background:var(--card);border:2px solid var(--line);
+    border-radius:var(--r);box-shadow:var(--shadow);padding:16px;cursor:pointer;font-family:inherit;text-align:left}
+  .mode-card:active{transform:translateY(2px)}
+  .mode-card .mc-emoji{font-size:32px;flex-shrink:0}
+  .mode-card .mc-title{display:block;font-size:17px;font-weight:800;color:var(--ink)}
+  .mode-card .mc-desc{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
+  #modeDaily{border-color:var(--green)}
+  #modeDaily.done{border-color:var(--line);opacity:.7}
+  #modeReview{border-color:var(--orange)}
+  .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
+  /* 画像つきカード */
+  .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
+  .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
+  /* 称号獲得のお祝い（音なし） */
+  .celebrate{position:fixed;inset:0;z-index:99;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .celebrate.out{opacity:0;transition:opacity .25s}
+  @keyframes cel-in{from{opacity:0}to{opacity:1}}
+  .celebrate .conf{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .celebrate .conf i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;opacity:.9;animation:conf-fall linear infinite}
+  @keyframes conf-fall{0%{transform:translateY(-6vh) rotate(0deg)}100%{transform:translateY(108vh) rotate(720deg)}}
+  .celebrate .cbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:28px 40px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:80%}
+  @keyframes cel-pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  .celebrate .cemoji{font-size:62px;line-height:1.2;animation:cel-bounce 1.2s ease-in-out infinite}
+  @keyframes cel-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .celebrate .ctitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .celebrate .cname{font-size:22px;font-weight:800;margin-top:2px}
+  .celebrate .cget{color:var(--orange);font-weight:800;font-size:16px;margin-top:6px}
+  .celebrate .chint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  .celebrate.doctor .cemoji{font-size:76px}
+  .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* 選んで学習 */
+  .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
+    border-radius:12px;padding:10px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 2px 0 rgba(42,39,35,.06)}
+  .pick-btn:active{transform:translateY(2px);box-shadow:none}
+  .pick-btn .pe{font-size:22px;flex-shrink:0}
+  .pick-btn .pn{font-weight:700;font-size:13px;display:block;color:var(--ink)}
+  .pick-btn .pp{font-size:10px;color:var(--ink-soft)}
+  .pick-btn.done{border-color:var(--green);background:#eef7f0}
+  .pick-btn.done .pp{color:var(--green);font-weight:700}
+  /* ランキング */
+  .online-only{display:none} /* Supabase接続時のみ表示（初期化でonにする） */
+  .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
+  .field select:focus{outline:none;border-color:var(--green)}
+  .rank-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .rtab{flex:1 1 30%;padding:9px 2px;border:1.5px solid var(--line);border-radius:10px;background:#fff;
+    font-size:12px;font-weight:700;color:var(--ink-soft);font-family:inherit;cursor:pointer;white-space:nowrap}
+  .rtab.active{border-color:var(--green);color:var(--green);background:#eef7f0}
+  .rank-note{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:4px}
+  .rank-me{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 14px;
+    margin:10px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .rank-me b{color:var(--green);font-size:18px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff}
+  .rank-row.me{border-color:var(--green);background:#eef7f0}
+  .rank-row .rno{width:40px;text-align:center;font-weight:800;font-size:15px;flex-shrink:0}
+  .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
+  .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
+  .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+  .star{font-size:14px;line-height:1}
+  .star.gold{color:#d8a93a}
+  .star.silver{color:#9aa0a6}
+  .rnick .stx{font-size:10px;color:var(--ink-soft);font-weight:700}
+  .rnick .me-tag{font-size:10px;background:var(--green);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
+  .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
+</style>
+
+<div id="app">
+  <!-- ログイン -->
+  <section id="login" class="screen active">
+    <div class="logo">🗾</div>
+    <div><h1>ミルバト社会</h1><div class="brandsub">歴史編（中学受験）</div></div>
+    <div class="field"><label>ニックネーム</label>
+      <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
+      <div class="hint">本名は使わず、好きな名前にしてね。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
+    <div class="field"><label>番号（塾からもらった数字）</label>
+      <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
+      <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div></div>
+    <div class="field online-only" id="campusField"><label>校舎（初めての人だけ選んでね）</label>
+      <select id="campusSel">
+        <option value="">選んでね</option>
+        <option value="麻布">麻布</option>
+        <option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option>
+        <option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select></div>
+    <button class="btn" id="loginBtn">始める / 続きから</button>
+    <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="home" class="screen">
+    <div class="topbar">
+      <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
+    </div>
+    <div class="collection">
+      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">19</span></span></div>
+      <div class="hbadge-grid" id="homeBadgeGrid"></div>
+    </div>
+    <div class="mode-list">
+      <button class="mode-card" id="modeBadge">
+        <span class="mc-emoji">🏅</span>
+        <span class="mc-body"><span class="mc-title">称号モード</span><span class="mc-desc">時代・分野を選んで、まだマスターしていない問題に挑戦</span></span>
+      </button>
+      <button class="mode-card" id="modeDaily">
+        <span class="mc-emoji" id="modeDailyEmoji">📅</span>
+        <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
+      </button>
+      <button class="mode-card" id="modeReview" style="display:none">
+        <span class="mc-emoji">🔁</span>
+        <span class="mc-body"><span class="mc-title">復習モード <span id="reviewCount" class="rev-badge"></span></span><span class="mc-desc">今日の30問でまちがえた問題。正解すると消えるよ</span></span>
+      </button>
+      <button class="mode-card" id="modeRank">
+        <span class="mc-emoji">🏆</span>
+        <span class="mc-body"><span class="mc-title">ランキング</span><span class="mc-desc">週間・月間の塾内ポイント対戦</span></span>
+      </button>
+    </div>
+    <div class="toolrow">
+      <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- クイズ -->
+  <section id="quiz" class="screen">
+    <div class="qtop">
+      <button id="quitBtn">✕</button>
+      <div class="qbar"><i id="qProg"></i></div>
+      <div class="qcount" id="qCount">1/10</div>
+    </div>
+    <div class="stage-pill" id="stagePill">ステップ1・4択から選ぶ</div>
+    <div class="qcard">
+      <span class="qtag" id="qTag">県別編</span>
+      <img id="qImg" class="qimg" style="display:none" alt="">
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像が開けないよ（先生にお知らせしてね）</div>
+      <div class="qtext" id="qText">問題文</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを 全部 選んでね</div>
+    </div>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback">
+      <div class="ft" id="fTitle"></div>
+      <div class="fn" id="fNote"></div>
+    </div>
+    <div class="qfoot">
+      <button class="btn" id="checkBtn" disabled>答え合わせ</button>
+      <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="done" class="screen">
+    <div class="big">🎉</div>
+    <h2>今日の分 クリア！</h2>
+    <div class="reward">
+      <div>解いた問題<b id="dCards">10</b></div>
+      <div>正解<b id="dCorrect">8</b></div>
+      <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
+    </div>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 連続記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへ戻る</button>
+    <button class="btn secondary" id="againBtn">もう一セットやる</button>
+  </section>
+
+  <!-- 取り込み -->
+  <section id="import" class="screen">
+    <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
+    <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,時代,…）のままでOK。</p>
+    <label class="dz" for="csvFile">📄 CSVファイルを選ぶ
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
+    <p class="hint" style="text-align:center">または下に貼り付け</p>
+    <textarea id="csvText" placeholder="id,編,時代,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
+    <div id="impMsg" style="min-height:18px"></div>
+    <button class="btn" id="doImport">この内容で問題を入れ替える</button>
+    <button class="linkbtn" id="resetCards">最初のサンプル問題に戻す</button>
+  </section>
+
+  <!-- 選んで学習（地方・分野べつ） -->
+  <section id="pick" class="screen">
+    <div class="qtop"><button id="pickBack">✕</button><h2>🏅 称号モード</h2></div>
+    <p class="hint" style="margin:2px 0 4px">時代・分野を選んで、まだマスターしていない問題に挑戦！</p>
+    <h3 class="pick-h">⏳ 時代で選ぶ</h3>
+    <div class="pick-grid" id="pickRegion"></div>
+    <h3 class="pick-h">🏅 分野で選ぶ</h3>
+    <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- ランキング -->
+  <section id="ranking" class="screen">
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 ランキング</h2></div>
+    <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
+    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankPeriodTabs">
+      <button class="rtab active" data-period="week">今週</button>
+      <button class="rtab" data-period="month">今月</button>
+    </div>
+    <div class="rank-tabs" id="rankTabs">
+      <button class="rtab active" data-campus="">全員</button>
+      <button class="rtab" data-campus="麻布">麻布</button>
+      <button class="rtab" data-campus="渋谷">渋谷</button>
+      <button class="rtab" data-campus="四谷">四谷</button>
+      <button class="rtab" data-campus="新宿">新宿</button>
+      <button class="rtab" data-campus="自由が丘">自由が丘</button>
+    </div>
+    <div id="rankList"></div>
+    <div class="rank-legend"><span class="star gold">★</span> 月間チャンピオン　<span class="star silver">★</span> 週間チャンピオン</div>
+    <button class="btn secondary" id="rankReload">🔄 最新にする</button>
+  </section>
+
+  <!-- 称号 -->
+  <section id="badges" class="screen">
+    <div class="qtop"><button id="badgesBack">✕</button><h2>🏅 称号</h2></div>
+    <div class="badge-sum" id="badgeSum"></div>
+    <div class="badge-grid" id="badgeGrid"></div>
+  </section>
+
+  <footer>ミルバト社会 v1 ・ 進捗はこの端末に保存されます</footer>
+</div>
+
+<script>
+/* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
+const COLOR = { "県別編":"var(--green)", "自然編":"var(--blue)", "産業編":"var(--orange)" };
+const DEFAULT_CARDS = [
+  {"id": "jomon-doki", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "縄文時代に食べ物の煮炊きや保存に使われた土器は？", "a": ["縄文土器"], "choices": ["弥生土器", "埴輪", "土偶", "縄文土器"], "note": "厚手で黒褐色。縄目の文様。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-dogu", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "縄文時代に作られた、まじないに使われたとされる土製の人形は？", "a": ["土偶"], "choices": ["埴輪", "銅鐸", "土器", "土偶"], "note": "女性型が多い。豊作や安産を祈った。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-tateana", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "縄文時代の人々が住んでいた、地面を掘って作った住居は？", "a": ["たて穴住居"], "choices": ["高床倉庫", "寝殿造", "書院造", "たて穴住居"], "note": "", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-kaizuka", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "当時の人々が食べた貝がらなどを捨てた場所で、遺跡になったものは？", "a": ["貝塚"], "choices": ["古墳", "前方後円墳", "環濠集落", "貝塚"], "note": "モースが大森貝塚を発見。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-sannai", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "青森県にある、日本最大級の縄文時代の遺跡は？", "a": ["三内丸山遺跡"], "choices": ["登呂遺跡", "吉野ヶ里遺跡", "岩宿遺跡", "三内丸山遺跡"], "note": "世界文化遺産。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-life", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "縄文時代の主な暮らしは、狩り・漁と何だった？", "a": ["採集"], "choices": ["稲作", "畑作", "牧畜", "採集"], "note": "木の実などを集めた。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "jomon-iwajuku", "comp": "歴史編", "pref": "縄文時代", "cat": "政治・できごと", "type": "single", "q": "相沢忠洋が打製石器を発見し、日本の旧石器時代の存在を示した遺跡は？", "a": ["岩宿遺跡"], "choices": ["登呂遺跡", "三内丸山遺跡", "大森貝塚", "岩宿遺跡"], "note": "群馬県。", "region": "縄文時代", "badgeCat": "政治・できごと"},
+  {"id": "jomon-anticism", "comp": "歴史編", "pref": "縄文時代", "cat": "文化", "type": "single", "q": "縄文時代、身分の上下は基本的にどうだった？", "a": ["貧富の差はほとんどなかった"], "choices": ["天皇が支配した", "貴族が支配した", "武士が支配した", "貧富の差はほとんどなかった"], "note": "むらのなかで平等に近かった。", "region": "縄文時代", "badgeCat": "文化"},
+  {"id": "yayoi-inasaku", "comp": "歴史編", "pref": "弥生時代", "cat": "政治・できごと", "type": "single", "q": "弥生時代に大陸から伝わり、人々の生活を大きく変えた農業は？", "a": ["稲作"], "choices": ["畑作", "牧畜", "採集", "稲作"], "note": "むらやくにが生まれるきっかけ。", "region": "弥生時代", "badgeCat": "政治・できごと"},
+  {"id": "yayoi-doki", "comp": "歴史編", "pref": "弥生時代", "cat": "文化", "type": "single", "q": "弥生時代の、薄手でかための赤褐色の土器は？", "a": ["弥生土器"], "choices": ["縄文土器", "須恵器", "土偶", "弥生土器"], "note": "", "region": "弥生時代", "badgeCat": "文化"},
+  {"id": "yayoi-takayuka", "comp": "歴史編", "pref": "弥生時代", "cat": "文化", "type": "single", "q": "弥生時代に収穫した米をたくわえた、湿気を防ぐ建物は？", "a": ["高床倉庫"], "choices": ["たて穴住居", "寝殿造", "正倉院", "高床倉庫"], "note": "ねずみ返しがある。", "region": "弥生時代", "badgeCat": "文化"},
+  {"id": "yayoi-doutaku", "comp": "歴史編", "pref": "弥生時代", "cat": "文化", "type": "single", "q": "弥生時代に祭りで使われたとされる青銅器は？", "a": ["銅鐸"], "choices": ["土偶", "埴輪", "縄文土器", "銅鐸"], "note": "", "region": "弥生時代", "badgeCat": "文化"},
+  {"id": "yayoi-toro", "comp": "歴史編", "pref": "弥生時代", "cat": "文化", "type": "single", "q": "静岡県にある、水田のあとが見つかった弥生時代の遺跡は？", "a": ["登呂遺跡"], "choices": ["岩宿遺跡", "三内丸山遺跡", "大森貝塚", "登呂遺跡"], "note": "", "region": "弥生時代", "badgeCat": "文化"},
+  {"id": "yayoi-yoshinogari", "comp": "歴史編", "pref": "弥生時代", "cat": "政治・できごと", "type": "single", "q": "佐賀県にある、周囲を濠で囲んだ弥生時代の環濠集落の遺跡は？", "a": ["吉野ヶ里遺跡"], "choices": ["登呂遺跡", "三内丸山遺跡", "岩宿遺跡", "吉野ヶ里遺跡"], "note": "くにの成立を示す。", "region": "弥生時代", "badgeCat": "政治・できごと"},
+  {"id": "yayoi-himiko", "comp": "歴史編", "pref": "弥生時代", "cat": "人物", "type": "single", "q": "「魏志」倭人伝に記された、邪馬台国の女王は？", "a": ["卑弥呼"], "choices": ["推古天皇", "持統天皇", "額田王", "卑弥呼"], "note": "まじないで国を治めた。魏に使いを送る。", "region": "弥生時代", "badgeCat": "人物"},
+  {"id": "yayoi-yamatai", "comp": "歴史編", "pref": "弥生時代", "cat": "外交・戦い", "type": "single", "q": "卑弥呼が魏に使いを送り、皇帝から与えられた称号は？", "a": ["親魏倭王"], "choices": ["漢委奴国王", "日本国王", "征夷大将軍", "親魏倭王"], "note": "「魏志」倭人伝。", "region": "弥生時代", "badgeCat": "外交・戦い"},
+  {"id": "kofun-zenpo", "comp": "歴史編", "pref": "古墳時代", "cat": "文化", "type": "single", "q": "前が四角、後ろが円い形をした、大王の墓に多い古墳は？", "a": ["前方後円墳"], "choices": ["円墳", "方墳", "貝塚", "前方後円墳"], "note": "", "region": "古墳時代", "badgeCat": "文化"},
+  {"id": "kofun-daisen", "comp": "歴史編", "pref": "古墳時代", "cat": "文化", "type": "single", "q": "大阪府にある日本最大の前方後円墳（仁徳天皇陵とされる）は？", "a": ["大仙古墳"], "choices": ["石舞台古墳", "高松塚古墳", "五色塚古墳", "大仙古墳"], "note": "百舌鳥・古市古墳群。世界文化遺産。", "region": "古墳時代", "badgeCat": "文化"},
+  {"id": "kofun-haniwa", "comp": "歴史編", "pref": "古墳時代", "cat": "文化", "type": "single", "q": "古墳のまわりや上に並べられた素焼きの土製品は？", "a": ["埴輪"], "choices": ["土偶", "銅鐸", "土器", "埴輪"], "note": "人・動物・家などの形。", "region": "古墳時代", "badgeCat": "文化"},
+  {"id": "kofun-yamato", "comp": "歴史編", "pref": "古墳時代", "cat": "政治・できごと", "type": "single", "q": "近畿地方を中心に、大王を中心として成立した政権は？", "a": ["大和政権"], "choices": ["幕府", "朝廷", "摂関政治", "大和政権"], "note": "大和朝廷とも。", "region": "古墳時代", "badgeCat": "政治・できごと"},
+  {"id": "kofun-toraijin", "comp": "歴史編", "pref": "古墳時代", "cat": "外交・戦い", "type": "single", "q": "大陸から日本へ移り住み、技術や漢字・仏教を伝えた人々は？", "a": ["渡来人"], "choices": ["遣唐使", "国司", "防人", "渡来人"], "note": "須恵器・機織り・漢字など。", "region": "古墳時代", "badgeCat": "外交・戦い"},
+  {"id": "kofun-daiou", "comp": "歴史編", "pref": "古墳時代", "cat": "人物", "type": "single", "q": "大和政権の王を指す呼び名は？", "a": ["大王"], "choices": ["天皇", "将軍", "関白", "大王"], "note": "のちの天皇。", "region": "古墳時代", "badgeCat": "人物"},
+  {"id": "asuka-shotoku", "comp": "歴史編", "pref": "飛鳥時代", "cat": "人物", "type": "single", "q": "推古天皇の摂政として、天皇中心の国づくりを進めた人物は？", "a": ["聖徳太子"], "choices": ["中大兄皇子", "蘇我馬子", "中臣鎌足", "聖徳太子"], "note": "厩戸皇子。", "region": "飛鳥時代", "badgeCat": "人物"},
+  {"id": "asuka-junikai", "comp": "歴史編", "pref": "飛鳥時代", "cat": "政治・できごと", "type": "single", "q": "聖徳太子が家柄によらず能力で役人を登用するため定めた制度は？", "a": ["冠位十二階"], "choices": ["十七条の憲法", "律令", "墾田永年私財法", "冠位十二階"], "note": "603年。", "region": "飛鳥時代", "badgeCat": "政治・できごと"},
+  {"id": "asuka-kenpo", "comp": "歴史編", "pref": "飛鳥時代", "cat": "政治・できごと", "type": "single", "q": "聖徳太子が役人の心構えを示すために定めたものは？", "a": ["十七条の憲法"], "choices": ["冠位十二階", "大宝律令", "御成敗式目", "十七条の憲法"], "note": "604年。「和をもって貴しとなす」。", "region": "飛鳥時代", "badgeCat": "政治・できごと"},
+  {"id": "asuka-kenzuishi", "comp": "歴史編", "pref": "飛鳥時代", "cat": "外交・戦い", "type": "single", "q": "聖徳太子が隋の進んだ文化を学ぶため送った使者は？", "a": ["遣隋使"], "choices": ["遣唐使", "遣明使", "朝鮮通信使", "遣隋使"], "note": "小野妹子を派遣。", "region": "飛鳥時代", "badgeCat": "外交・戦い"},
+  {"id": "asuka-horyuji", "comp": "歴史編", "pref": "飛鳥時代", "cat": "文化", "type": "single", "q": "聖徳太子が建てた、現存する世界最古の木造建築の寺は？", "a": ["法隆寺"], "choices": ["東大寺", "唐招提寺", "平等院", "法隆寺"], "note": "飛鳥文化。世界文化遺産。", "region": "飛鳥時代", "badgeCat": "文化"},
+  {"id": "asuka-taika", "comp": "歴史編", "pref": "飛鳥時代", "cat": "政治・できごと", "type": "single", "q": "645年、中大兄皇子と中臣鎌足が蘇我氏をたおして始めた政治改革は？", "a": ["大化の改新"], "choices": ["建武の新政", "大宝律令", "墾田永年私財法", "大化の改新"], "note": "公地公民。", "region": "飛鳥時代", "badgeCat": "政治・できごと"},
+  {"id": "asuka-nakatomi", "comp": "歴史編", "pref": "飛鳥時代", "cat": "人物", "type": "single", "q": "中大兄皇子とともに大化の改新を進め、のちに藤原姓を与えられた人物は？", "a": ["中臣鎌足"], "choices": ["蘇我馬子", "小野妹子", "行基", "中臣鎌足"], "note": "藤原氏の祖。", "region": "飛鳥時代", "badgeCat": "人物"},
+  {"id": "asuka-hakusukinoe", "comp": "歴史編", "pref": "飛鳥時代", "cat": "外交・戦い", "type": "single", "q": "663年、日本が百済を助けて唐・新羅の連合軍に敗れた戦いは？", "a": ["白村江の戦い"], "choices": ["壬申の乱", "長篠の戦い", "元寇", "白村江の戦い"], "note": "", "region": "飛鳥時代", "badgeCat": "外交・戦い"},
+  {"id": "asuka-jinshin", "comp": "歴史編", "pref": "飛鳥時代", "cat": "政治・できごと", "type": "single", "q": "天智天皇の死後、あとつぎをめぐって672年に起きた争いは？", "a": ["壬申の乱"], "choices": ["保元の乱", "応仁の乱", "承久の乱", "壬申の乱"], "note": "勝った大海人皇子が天武天皇に。", "region": "飛鳥時代", "badgeCat": "政治・できごと"},
+  {"id": "asuka-taiho", "comp": "歴史編", "pref": "飛鳥時代", "cat": "政治・できごと", "type": "single", "q": "701年に完成した、日本の律令政治の基本となった法律は？", "a": ["大宝律令"], "choices": ["十七条の憲法", "御成敗式目", "武家諸法度", "大宝律令"], "note": "", "region": "飛鳥時代", "badgeCat": "政治・できごと"},
+  {"id": "nara-heijokyo", "comp": "歴史編", "pref": "奈良時代", "cat": "政治・できごと", "type": "single", "q": "710年、唐の長安にならって奈良につくられた都は？", "a": ["平城京"], "choices": ["平安京", "藤原京", "難波京", "平城京"], "note": "", "region": "奈良時代", "badgeCat": "政治・できごと"},
+  {"id": "nara-shomu", "comp": "歴史編", "pref": "奈良時代", "cat": "人物", "type": "single", "q": "仏教の力で国を守ろうと、東大寺に大仏をつくらせた天皇は？", "a": ["聖武天皇"], "choices": ["天武天皇", "桓武天皇", "推古天皇", "聖武天皇"], "note": "", "region": "奈良時代", "badgeCat": "人物"},
+  {"id": "nara-daibutsu", "comp": "歴史編", "pref": "奈良時代", "cat": "文化", "type": "single", "q": "聖武天皇が国ごとに国分寺を建て、都に建てた大仏がある寺は？", "a": ["東大寺"], "choices": ["法隆寺", "唐招提寺", "延暦寺", "東大寺"], "note": "大仏づくりに行基が協力。", "region": "奈良時代", "badgeCat": "文化"},
+  {"id": "nara-gyoki", "comp": "歴史編", "pref": "奈良時代", "cat": "人物", "type": "single", "q": "民間で布教し、大仏づくりに協力した僧は？", "a": ["行基"], "choices": ["鑑真", "最澄", "空海", "行基"], "note": "", "region": "奈良時代", "badgeCat": "人物"},
+  {"id": "nara-ganjin", "comp": "歴史編", "pref": "奈良時代", "cat": "人物", "type": "single", "q": "何度も遭難しながら来日し、正しい仏教の教えを伝えた唐の僧は？", "a": ["鑑真"], "choices": ["行基", "最澄", "空海", "鑑真"], "note": "唐招提寺を建てた。", "region": "奈良時代", "badgeCat": "人物"},
+  {"id": "nara-shosoin", "comp": "歴史編", "pref": "奈良時代", "cat": "文化", "type": "single", "q": "東大寺にある、聖武天皇の遺品などを納めた宝物庫は？", "a": ["正倉院"], "choices": ["法隆寺", "平等院", "金閣", "正倉院"], "note": "校倉造。シルクロードの品。", "region": "奈良時代", "badgeCat": "文化"},
+  {"id": "nara-kojiki", "comp": "歴史編", "pref": "奈良時代", "cat": "文化", "type": "single", "q": "奈良時代につくられた、日本最古の歴史書は？", "a": ["古事記"], "choices": ["日本書紀", "万葉集", "風土記", "古事記"], "note": "712年。", "region": "奈良時代", "badgeCat": "文化"},
+  {"id": "nara-manyoshu", "comp": "歴史編", "pref": "奈良時代", "cat": "文化", "type": "single", "q": "天皇から農民まで幅広い人々の歌を集めた、奈良時代の和歌集は？", "a": ["万葉集"], "choices": ["古今和歌集", "新古今和歌集", "源氏物語", "万葉集"], "note": "", "region": "奈良時代", "badgeCat": "文化"},
+  {"id": "nara-konden", "comp": "歴史編", "pref": "奈良時代", "cat": "政治・できごと", "type": "single", "q": "743年、開墾した土地の永久私有を認めた法律は？", "a": ["墾田永年私財法"], "choices": ["班田収授法", "公地公民", "楽市楽座", "墾田永年私財法"], "note": "荘園が広がるきっかけ。", "region": "奈良時代", "badgeCat": "政治・できごと"},
+  {"id": "nara-handen", "comp": "歴史編", "pref": "奈良時代", "cat": "政治・できごと", "type": "single", "q": "戸籍にもとづき人々に口分田を与えた土地制度は？", "a": ["班田収授法"], "choices": ["墾田永年私財法", "楽市楽座", "地租改正", "班田収授法"], "note": "", "region": "奈良時代", "badgeCat": "政治・できごと"},
+  {"id": "heian-heiankyo", "comp": "歴史編", "pref": "平安時代", "cat": "政治・できごと", "type": "single", "q": "794年、桓武天皇が政治を立て直すため京都に移した都は？", "a": ["平安京"], "choices": ["平城京", "藤原京", "鎌倉", "平安京"], "note": "", "region": "平安時代", "badgeCat": "政治・できごと"},
+  {"id": "heian-kanmu", "comp": "歴史編", "pref": "平安時代", "cat": "人物", "type": "single", "q": "律令政治を立て直そうと平安京へ都を移した天皇は？", "a": ["桓武天皇"], "choices": ["聖武天皇", "天武天皇", "後醍醐天皇", "桓武天皇"], "note": "", "region": "平安時代", "badgeCat": "人物"},
+  {"id": "heian-saicho", "comp": "歴史編", "pref": "平安時代", "cat": "人物", "type": "single", "q": "比叡山に延暦寺を建て、天台宗を広めた僧は？", "a": ["最澄"], "choices": ["空海", "行基", "鑑真", "最澄"], "note": "", "region": "平安時代", "badgeCat": "人物"},
+  {"id": "heian-kukai", "comp": "歴史編", "pref": "平安時代", "cat": "人物", "type": "single", "q": "高野山に金剛峯寺を建て、真言宗を広めた僧は？", "a": ["空海"], "choices": ["最澄", "行基", "法然", "空海"], "note": "弘法大師。", "region": "平安時代", "badgeCat": "人物"},
+  {"id": "heian-fujiwara", "comp": "歴史編", "pref": "平安時代", "cat": "政治・できごと", "type": "single", "q": "娘を天皇のきさきにして勢力をのばした藤原氏の政治は？", "a": ["摂関政治"], "choices": ["院政", "幕府政治", "律令政治", "摂関政治"], "note": "摂政・関白の地位を独占。", "region": "平安時代", "badgeCat": "政治・できごと"},
+  {"id": "heian-michinaga", "comp": "歴史編", "pref": "平安時代", "cat": "人物", "type": "single", "q": "「この世をば…」の歌をよみ、摂関政治の全盛期を築いた人物は？", "a": ["藤原道長"], "choices": ["藤原鎌足", "平清盛", "菅原道真", "藤原道長"], "note": "", "region": "平安時代", "badgeCat": "人物"},
+  {"id": "heian-kentoshi", "comp": "歴史編", "pref": "平安時代", "cat": "外交・戦い", "type": "single", "q": "894年、菅原道真の意見で停止された、唐への使者は？", "a": ["遣唐使"], "choices": ["遣隋使", "遣明使", "南蛮貿易", "遣唐使"], "note": "国風文化が生まれるきっかけ。", "region": "平安時代", "badgeCat": "外交・戦い"},
+  {"id": "heian-kana", "comp": "歴史編", "pref": "平安時代", "cat": "文化", "type": "single", "q": "遣唐使停止後に発達した、日本独自の文字は？", "a": ["かな文字"], "choices": ["漢字", "ローマ字", "甲骨文字", "かな文字"], "note": "国風文化。", "region": "平安時代", "badgeCat": "文化"},
+  {"id": "heian-genji", "comp": "歴史編", "pref": "平安時代", "cat": "文化", "type": "single", "q": "紫式部が書いた、かな文字による長編物語は？", "a": ["源氏物語"], "choices": ["枕草子", "徒然草", "方丈記", "源氏物語"], "note": "", "region": "平安時代", "badgeCat": "文化"},
+  {"id": "heian-makura", "comp": "歴史編", "pref": "平安時代", "cat": "文化", "type": "single", "q": "清少納言が書いた、宮中の生活をつづった随筆は？", "a": ["枕草子"], "choices": ["源氏物語", "徒然草", "土佐日記", "枕草子"], "note": "", "region": "平安時代", "badgeCat": "文化"},
+  {"id": "heian-byodoin", "comp": "歴史編", "pref": "平安時代", "cat": "文化", "type": "single", "q": "藤原頼通が宇治に建てた、浄土信仰を表す阿弥陀堂は？", "a": ["平等院鳳凰堂"], "choices": ["中尊寺金色堂", "東大寺", "法隆寺", "平等院鳳凰堂"], "note": "十円玉の絵。", "region": "平安時代", "badgeCat": "文化"},
+  {"id": "heian-insei", "comp": "歴史編", "pref": "平安時代", "cat": "政治・できごと", "type": "single", "q": "白河上皇が天皇の位をゆずったあとも政治を行ったしくみは？", "a": ["院政"], "choices": ["摂関政治", "幕府政治", "律令政治", "院政"], "note": "1086年開始。", "region": "平安時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-yoritomo", "comp": "歴史編", "pref": "鎌倉時代", "cat": "人物", "type": "single", "q": "1192年に征夷大将軍となり、鎌倉幕府を開いた武士は？", "a": ["源頼朝"], "choices": ["平清盛", "足利尊氏", "徳川家康", "源頼朝"], "note": "武家政権の始まり。", "region": "鎌倉時代", "badgeCat": "人物"},
+  {"id": "kamakura-kiyomori", "comp": "歴史編", "pref": "鎌倉時代", "cat": "人物", "type": "single", "q": "武士として初めて太政大臣となり、日宋貿易を行った人物は？", "a": ["平清盛"], "choices": ["源頼朝", "北条時宗", "足利義満", "平清盛"], "note": "平治の乱で勝利。", "region": "鎌倉時代", "badgeCat": "人物"},
+  {"id": "kamakura-shugo", "comp": "歴史編", "pref": "鎌倉時代", "cat": "政治・できごと", "type": "single", "q": "源頼朝が国ごとに置いた、軍事・警察の役職は？", "a": ["守護"], "choices": ["地頭", "国司", "老中", "守護"], "note": "荘園には地頭を置いた。", "region": "鎌倉時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-jito", "comp": "歴史編", "pref": "鎌倉時代", "cat": "政治・できごと", "type": "single", "q": "荘園や公領ごとに置かれ、年貢の取り立てを行った役職は？", "a": ["地頭"], "choices": ["守護", "国司", "代官", "地頭"], "note": "", "region": "鎌倉時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-goonhoko", "comp": "歴史編", "pref": "鎌倉時代", "cat": "政治・できごと", "type": "single", "q": "将軍と御家人の間の、土地を仲立ちとした主従関係は？", "a": ["御恩と奉公"], "choices": ["下剋上", "楽市楽座", "参勤交代", "御恩と奉公"], "note": "", "region": "鎌倉時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-jokyu", "comp": "歴史編", "pref": "鎌倉時代", "cat": "外交・戦い", "type": "single", "q": "1221年、後鳥羽上皇が幕府をたおそうとして失敗した戦いは？", "a": ["承久の乱"], "choices": ["壬申の乱", "応仁の乱", "保元の乱", "承久の乱"], "note": "六波羅探題が置かれた。", "region": "鎌倉時代", "badgeCat": "外交・戦い"},
+  {"id": "kamakura-goseibai", "comp": "歴史編", "pref": "鎌倉時代", "cat": "政治・できごと", "type": "single", "q": "1232年、北条泰時が定めた武士のための法律は？", "a": ["御成敗式目"], "choices": ["十七条の憲法", "武家諸法度", "大宝律令", "御成敗式目"], "note": "貞永式目。", "region": "鎌倉時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-tokimune", "comp": "歴史編", "pref": "鎌倉時代", "cat": "人物", "type": "single", "q": "元寇のときの鎌倉幕府の執権は？", "a": ["北条時宗"], "choices": ["北条泰時", "源頼朝", "足利尊氏", "北条時宗"], "note": "", "region": "鎌倉時代", "badgeCat": "人物"},
+  {"id": "kamakura-genko", "comp": "歴史編", "pref": "鎌倉時代", "cat": "外交・戦い", "type": "single", "q": "2度にわたる元（モンゴル）の襲来をまとめて何という？", "a": ["元寇"], "choices": ["白村江の戦い", "応仁の乱", "壬申の乱", "元寇"], "note": "文永の役・弘安の役。", "region": "鎌倉時代", "badgeCat": "外交・戦い"},
+  {"id": "kamakura-kamikaze", "comp": "歴史編", "pref": "鎌倉時代", "cat": "外交・戦い", "type": "single", "q": "元寇のとき、元軍を退けた大きな要因の一つとされる自然現象は？", "a": ["暴風雨"], "choices": ["地震", "ききん", "洪水", "暴風雨"], "note": "「神風」と呼ばれた。", "region": "鎌倉時代", "badgeCat": "外交・戦い"},
+  {"id": "kamakura-hojo", "comp": "歴史編", "pref": "鎌倉時代", "cat": "政治・できごと", "type": "single", "q": "源氏の将軍がとだえたあと、幕府の実権をにぎった一族の役職は？", "a": ["執権"], "choices": ["管領", "老中", "関白", "執権"], "note": "北条氏。執権政治。", "region": "鎌倉時代", "badgeCat": "政治・できごと"},
+  {"id": "kamakura-shinbutsu", "comp": "歴史編", "pref": "鎌倉時代", "cat": "文化", "type": "single", "q": "法然が開いた、念仏を唱えれば救われると説いた宗派は？", "a": ["浄土宗"], "choices": ["浄土真宗", "日蓮宗", "禅宗", "浄土宗"], "note": "鎌倉新仏教。", "region": "鎌倉時代", "badgeCat": "文化"},
+  {"id": "muromachi-takauji", "comp": "歴史編", "pref": "室町時代", "cat": "人物", "type": "single", "q": "1338年に征夷大将軍となり、室町幕府を開いた人物は？", "a": ["足利尊氏"], "choices": ["足利義満", "源頼朝", "織田信長", "足利尊氏"], "note": "", "region": "室町時代", "badgeCat": "人物"},
+  {"id": "muromachi-kenmu", "comp": "歴史編", "pref": "室町時代", "cat": "政治・できごと", "type": "single", "q": "後醍醐天皇が武士をおさえ天皇中心の政治を目指した政治は？", "a": ["建武の新政"], "choices": ["大化の改新", "摂関政治", "院政", "建武の新政"], "note": "2年余りで失敗。", "region": "室町時代", "badgeCat": "政治・できごと"},
+  {"id": "muromachi-yoshimitsu", "comp": "歴史編", "pref": "室町時代", "cat": "人物", "type": "single", "q": "室町幕府3代将軍で、南北朝を統一し金閣を建てた人物は？", "a": ["足利義満"], "choices": ["足利尊氏", "足利義政", "足利義昭", "足利義満"], "note": "日明貿易を始めた。", "region": "室町時代", "badgeCat": "人物"},
+  {"id": "muromachi-kinkaku", "comp": "歴史編", "pref": "室町時代", "cat": "文化", "type": "single", "q": "足利義満が京都の北山に建てた、金ぱりの建物は？", "a": ["金閣"], "choices": ["銀閣", "平等院", "東大寺", "金閣"], "note": "北山文化。", "region": "室町時代", "badgeCat": "文化"},
+  {"id": "muromachi-nichimin", "comp": "歴史編", "pref": "室町時代", "cat": "外交・戦い", "type": "single", "q": "足利義満が始めた、正式な貿易船に合い札を持たせた明との貿易は？", "a": ["勘合貿易"], "choices": ["南蛮貿易", "朱印船貿易", "日宋貿易", "勘合貿易"], "note": "倭寇と区別。", "region": "室町時代", "badgeCat": "外交・戦い"},
+  {"id": "muromachi-yoshimasa", "comp": "歴史編", "pref": "室町時代", "cat": "人物", "type": "single", "q": "銀閣を建てた室町幕府8代将軍は？", "a": ["足利義政"], "choices": ["足利義満", "足利尊氏", "足利義昭", "足利義政"], "note": "", "region": "室町時代", "badgeCat": "人物"},
+  {"id": "muromachi-ginkaku", "comp": "歴史編", "pref": "室町時代", "cat": "文化", "type": "single", "q": "足利義政が京都の東山に建てた、質素で落ち着いた建物は？", "a": ["銀閣"], "choices": ["金閣", "平等院", "法隆寺", "銀閣"], "note": "東山文化。書院造。", "region": "室町時代", "badgeCat": "文化"},
+  {"id": "muromachi-shoin", "comp": "歴史編", "pref": "室町時代", "cat": "文化", "type": "single", "q": "銀閣と同じ、たたみ・障子・床の間をもつ、今の和室のもとになった建築は？", "a": ["書院造"], "choices": ["寝殿造", "校倉造", "数寄屋造", "書院造"], "note": "", "region": "室町時代", "badgeCat": "文化"},
+  {"id": "muromachi-onin", "comp": "歴史編", "pref": "室町時代", "cat": "外交・戦い", "type": "single", "q": "1467年、将軍のあとつぎ争いから京都で始まった戦乱は？", "a": ["応仁の乱"], "choices": ["承久の乱", "壬申の乱", "保元の乱", "応仁の乱"], "note": "戦国時代のきっかけ。", "region": "室町時代", "badgeCat": "外交・戦い"},
+  {"id": "muromachi-gekokujo", "comp": "歴史編", "pref": "室町時代", "cat": "政治・できごと", "type": "single", "q": "身分の下の者が実力で上の者に打ち勝つ、戦国時代の風潮は？", "a": ["下剋上"], "choices": ["御恩と奉公", "参勤交代", "楽市楽座", "下剋上"], "note": "", "region": "室町時代", "badgeCat": "政治・できごと"},
+  {"id": "muromachi-teppo", "comp": "歴史編", "pref": "室町時代", "cat": "外交・戦い", "type": "single", "q": "1543年、種子島に漂着したポルトガル人が伝えたものは？", "a": ["鉄砲"], "choices": ["キリスト教", "羅針盤", "活版印刷", "鉄砲"], "note": "", "region": "室町時代", "badgeCat": "外交・戦い"},
+  {"id": "muromachi-xavier", "comp": "歴史編", "pref": "室町時代", "cat": "外交・戦い", "type": "single", "q": "1549年に鹿児島に来て、日本にキリスト教を伝えた宣教師は？", "a": ["ザビエル"], "choices": ["ペリー", "コロンブス", "マゼラン", "ザビエル"], "note": "フランシスコ・ザビエル。", "region": "室町時代", "badgeCat": "外交・戦い"},
+  {"id": "azuchi-nobunaga", "comp": "歴史編", "pref": "安土桃山時代", "cat": "人物", "type": "single", "q": "室町幕府をほろぼし、天下統一を目前にした戦国大名は？", "a": ["織田信長"], "choices": ["豊臣秀吉", "徳川家康", "武田信玄", "織田信長"], "note": "", "region": "安土桃山時代", "badgeCat": "人物"},
+  {"id": "azuchi-okehazama", "comp": "歴史編", "pref": "安土桃山時代", "cat": "外交・戦い", "type": "single", "q": "1560年、織田信長が今川義元を破った戦いは？", "a": ["桶狭間の戦い"], "choices": ["長篠の戦い", "関ヶ原の戦い", "壇ノ浦の戦い", "桶狭間の戦い"], "note": "", "region": "安土桃山時代", "badgeCat": "外交・戦い"},
+  {"id": "azuchi-nagashino", "comp": "歴史編", "pref": "安土桃山時代", "cat": "外交・戦い", "type": "single", "q": "1575年、織田・徳川連合軍が鉄砲を活用して武田軍を破った戦いは？", "a": ["長篠の戦い"], "choices": ["桶狭間の戦い", "関ヶ原の戦い", "本能寺の変", "長篠の戦い"], "note": "", "region": "安土桃山時代", "badgeCat": "外交・戦い"},
+  {"id": "azuchi-honnoji", "comp": "歴史編", "pref": "安土桃山時代", "cat": "外交・戦い", "type": "single", "q": "1582年、明智光秀が織田信長をたおした事件は？", "a": ["本能寺の変"], "choices": ["桶狭間の戦い", "応仁の乱", "関ヶ原の戦い", "本能寺の変"], "note": "", "region": "安土桃山時代", "badgeCat": "外交・戦い"},
+  {"id": "azuchi-hideyoshi", "comp": "歴史編", "pref": "安土桃山時代", "cat": "人物", "type": "single", "q": "織田信長の後をつぎ、天下統一を成しとげた人物は？", "a": ["豊臣秀吉"], "choices": ["徳川家康", "織田信長", "明智光秀", "豊臣秀吉"], "note": "", "region": "安土桃山時代", "badgeCat": "人物"},
+  {"id": "azuchi-kenchi", "comp": "歴史編", "pref": "安土桃山時代", "cat": "政治・できごと", "type": "single", "q": "豊臣秀吉が全国の田畑の面積・収穫高を調べた政策は？", "a": ["太閤検地"], "choices": ["刀狩", "楽市楽座", "参勤交代", "太閤検地"], "note": "", "region": "安土桃山時代", "badgeCat": "政治・できごと"},
+  {"id": "azuchi-katanagari", "comp": "歴史編", "pref": "安土桃山時代", "cat": "政治・できごと", "type": "single", "q": "豊臣秀吉が一揆を防ぐため農民から武器を取り上げた政策は？", "a": ["刀狩"], "choices": ["太閤検地", "楽市楽座", "参勤交代", "刀狩"], "note": "兵農分離。", "region": "安土桃山時代", "badgeCat": "政治・できごと"},
+  {"id": "azuchi-chosen", "comp": "歴史編", "pref": "安土桃山時代", "cat": "外交・戦い", "type": "single", "q": "豊臣秀吉が明の征服を目指して2度にわたり出兵した国は？", "a": ["朝鮮"], "choices": ["琉球", "台湾", "ロシア", "朝鮮"], "note": "文禄・慶長の役。", "region": "安土桃山時代", "badgeCat": "外交・戦い"},
+  {"id": "azuchi-momoyama", "comp": "歴史編", "pref": "安土桃山時代", "cat": "文化", "type": "single", "q": "豪華で雄大な、この時代の文化を代表する城で、姫路城のような天守を持つ文化は？", "a": ["桃山文化"], "choices": ["東山文化", "北山文化", "国風文化", "桃山文化"], "note": "狩野永徳。", "region": "安土桃山時代", "badgeCat": "文化"},
+  {"id": "edo-ieyasu", "comp": "歴史編", "pref": "江戸時代", "cat": "人物", "type": "single", "q": "1603年に征夷大将軍となり、江戸幕府を開いた人物は？", "a": ["徳川家康"], "choices": ["豊臣秀吉", "織田信長", "徳川家光", "徳川家康"], "note": "", "region": "江戸時代", "badgeCat": "人物"},
+  {"id": "edo-sekigahara", "comp": "歴史編", "pref": "江戸時代", "cat": "外交・戦い", "type": "single", "q": "1600年、徳川家康が石田三成らを破り天下の実権をにぎった戦いは？", "a": ["関ヶ原の戦い"], "choices": ["長篠の戦い", "桶狭間の戦い", "本能寺の変", "関ヶ原の戦い"], "note": "「天下分け目の戦い」。", "region": "江戸時代", "badgeCat": "外交・戦い"},
+  {"id": "edo-bukeshohatto", "comp": "歴史編", "pref": "江戸時代", "cat": "政治・できごと", "type": "single", "q": "江戸幕府が大名を統制するために定めた法律は？", "a": ["武家諸法度"], "choices": ["御成敗式目", "十七条の憲法", "公事方御定書", "武家諸法度"], "note": "", "region": "江戸時代", "badgeCat": "政治・できごと"},
+  {"id": "edo-sankin", "comp": "歴史編", "pref": "江戸時代", "cat": "政治・できごと", "type": "single", "q": "徳川家光が定めた、大名を1年おきに江戸と領地に住まわせた制度は？", "a": ["参勤交代"], "choices": ["刀狩", "楽市楽座", "太閤検地", "参勤交代"], "note": "大名の出費がかさんだ。", "region": "江戸時代", "badgeCat": "政治・できごと"},
+  {"id": "edo-iemitsu", "comp": "歴史編", "pref": "江戸時代", "cat": "人物", "type": "single", "q": "参勤交代を制度化し、鎖国を完成させた江戸幕府3代将軍は？", "a": ["徳川家光"], "choices": ["徳川家康", "徳川吉宗", "徳川慶喜", "徳川家光"], "note": "", "region": "江戸時代", "badgeCat": "人物"},
+  {"id": "edo-sakoku", "comp": "歴史編", "pref": "江戸時代", "cat": "外交・戦い", "type": "single", "q": "江戸幕府が外国との貿易・交流を制限した政策をまとめて何という？", "a": ["鎖国"], "choices": ["開国", "攘夷", "富国強兵", "鎖国"], "note": "", "region": "江戸時代", "badgeCat": "外交・戦い"},
+  {"id": "edo-dejima", "comp": "歴史編", "pref": "江戸時代", "cat": "外交・戦い", "type": "single", "q": "鎖国中、長崎でオランダとの貿易が許された人工島は？", "a": ["出島"], "choices": ["対馬", "琉球", "平戸", "出島"], "note": "", "region": "江戸時代", "badgeCat": "外交・戦い"},
+  {"id": "edo-genroku", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "上方（京都・大阪）中心に、町人が担い手となった元禄期の文化は？", "a": ["元禄文化"], "choices": ["化政文化", "桃山文化", "国風文化", "元禄文化"], "note": "", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-chikamatsu", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "元禄文化で人形浄瑠璃・歌舞伎の脚本を書いた人物は？", "a": ["近松門左衛門"], "choices": ["松尾芭蕉", "井原西鶴", "歌川広重", "近松門左衛門"], "note": "", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-basho", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "「奥の細道」を著し、俳諧を大成した元禄文化の人物は？", "a": ["松尾芭蕉"], "choices": ["近松門左衛門", "杉田玄白", "本居宣長", "松尾芭蕉"], "note": "", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-yoshimune", "comp": "歴史編", "pref": "江戸時代", "cat": "人物", "type": "single", "q": "享保の改革を行い、目安箱を設けた江戸幕府8代将軍は？", "a": ["徳川吉宗"], "choices": ["徳川家光", "徳川家康", "徳川慶喜", "徳川吉宗"], "note": "", "region": "江戸時代", "badgeCat": "人物"},
+  {"id": "edo-kansei", "comp": "歴史編", "pref": "江戸時代", "cat": "政治・できごと", "type": "single", "q": "朱子学を重視し倹約を進めた、松平定信の改革は？", "a": ["寛政の改革"], "choices": ["享保の改革", "天保の改革", "建武の新政", "寛政の改革"], "note": "", "region": "江戸時代", "badgeCat": "政治・できごと"},
+  {"id": "edo-tempo", "comp": "歴史編", "pref": "江戸時代", "cat": "政治・できごと", "type": "single", "q": "水野忠邦が行った、株仲間の解散などを含む改革は？", "a": ["天保の改革"], "choices": ["寛政の改革", "享保の改革", "大化の改新", "天保の改革"], "note": "", "region": "江戸時代", "badgeCat": "政治・できごと"},
+  {"id": "edo-oshio", "comp": "歴史編", "pref": "江戸時代", "cat": "外交・戦い", "type": "single", "q": "1837年、ききんに苦しむ人々を救おうと元幕府役人が大阪で起こした乱は？", "a": ["大塩平八郎の乱"], "choices": ["島原の乱", "応仁の乱", "承久の乱", "大塩平八郎の乱"], "note": "", "region": "江戸時代", "badgeCat": "外交・戦い"},
+  {"id": "edo-sugita", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "「解体新書」を出版し、蘭学の発展に貢献した人物は？", "a": ["杉田玄白"], "choices": ["本居宣長", "伊能忠敬", "近松門左衛門", "杉田玄白"], "note": "前野良沢らと翻訳。", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-ino", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "全国を測量し、正確な日本地図を作った人物は？", "a": ["伊能忠敬"], "choices": ["杉田玄白", "本居宣長", "間宮林蔵", "伊能忠敬"], "note": "", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-motoori", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "「古事記伝」を著し、国学を大成した人物は？", "a": ["本居宣長"], "choices": ["杉田玄白", "伊能忠敬", "滝沢馬琴", "本居宣長"], "note": "", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-kasei", "comp": "歴史編", "pref": "江戸時代", "cat": "文化", "type": "single", "q": "江戸中心に町人文化が栄えた、化政期の文化は？", "a": ["化政文化"], "choices": ["元禄文化", "桃山文化", "飛鳥文化", "化政文化"], "note": "浮世絵の錦絵。", "region": "江戸時代", "badgeCat": "文化"},
+  {"id": "edo-perry", "comp": "歴史編", "pref": "江戸時代", "cat": "外交・戦い", "type": "single", "q": "1853年に浦賀に来航し、日本に開国をせまったアメリカの使者は？", "a": ["ペリー"], "choices": ["ザビエル", "ハリス", "マゼラン", "ペリー"], "note": "翌年日米和親条約。", "region": "江戸時代", "badgeCat": "外交・戦い"},
+  {"id": "meiji-taisei", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "1867年、徳川慶喜が政権を朝廷に返したできごとは？", "a": ["大政奉還"], "choices": ["王政復古", "廃藩置県", "版籍奉還", "大政奉還"], "note": "江戸幕府の終わり。", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-ishin", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "江戸幕府がたおれ、新政府による政治・社会の改革をまとめて何という？", "a": ["明治維新"], "choices": ["建武の新政", "大化の改新", "文明開化", "明治維新"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-gokajo", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "1868年、新政府が示した政治の基本方針は？", "a": ["五箇条の御誓文"], "choices": ["大日本帝国憲法", "十七条の憲法", "御成敗式目", "五箇条の御誓文"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-haihan", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "1871年、藩を廃止し県を置いて中央集権を進めた政策は？", "a": ["廃藩置県"], "choices": ["版籍奉還", "地租改正", "参勤交代", "廃藩置県"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-chiso", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "地価の3%を現金で納めさせ、政府の財政を安定させた改革は？", "a": ["地租改正"], "choices": ["廃藩置県", "殖産興業", "徴兵令", "地租改正"], "note": "1873年。", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-chohei", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "1873年、満20歳以上の男子に兵役を義務づけた法令は？", "a": ["徴兵令"], "choices": ["地租改正", "廃藩置県", "教育勅語", "徴兵令"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-bunmei", "comp": "歴史編", "pref": "明治時代", "cat": "文化", "type": "single", "q": "西洋の文化が取り入れられ生活が大きく変わったことを何という？", "a": ["文明開化"], "choices": ["明治維新", "富国強兵", "殖産興業", "文明開化"], "note": "れんが街・ガス灯・洋服。", "region": "明治時代", "badgeCat": "文化"},
+  {"id": "meiji-fukoku", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "経済を発展させ軍隊を強くする、明治政府のスローガンは？", "a": ["富国強兵"], "choices": ["文明開化", "殖産興業", "王政復古", "富国強兵"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-tomioka", "comp": "歴史編", "pref": "明治時代", "cat": "文化", "type": "single", "q": "殖産興業の一環で群馬県につくられた官営模範工場は？", "a": ["富岡製糸場"], "choices": ["八幡製鉄所", "出島", "造船所", "富岡製糸場"], "note": "世界文化遺産。", "region": "明治時代", "badgeCat": "文化"},
+  {"id": "meiji-fukuzawa", "comp": "歴史編", "pref": "明治時代", "cat": "人物", "type": "single", "q": "「学問のすゝめ」を著し、人間の平等を説いた思想家は？", "a": ["福沢諭吉"], "choices": ["大久保利通", "西郷隆盛", "板垣退助", "福沢諭吉"], "note": "", "region": "明治時代", "badgeCat": "人物"},
+  {"id": "meiji-jiyuminken", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "板垣退助らが国会開設を求めて起こした運動は？", "a": ["自由民権運動"], "choices": ["尊王攘夷運動", "文明開化", "富国強兵", "自由民権運動"], "note": "", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-kenpo", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "1889年に発布された、天皇が主権を持つ憲法は？", "a": ["大日本帝国憲法"], "choices": ["日本国憲法", "五箇条の御誓文", "十七条の憲法", "大日本帝国憲法"], "note": "伊藤博文が中心。", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "meiji-ito", "comp": "歴史編", "pref": "明治時代", "cat": "人物", "type": "single", "q": "初代内閣総理大臣となり、憲法制定に力を尽くした人物は？", "a": ["伊藤博文"], "choices": ["大隈重信", "板垣退助", "西郷隆盛", "伊藤博文"], "note": "", "region": "明治時代", "badgeCat": "人物"},
+  {"id": "meiji-nisshin", "comp": "歴史編", "pref": "明治時代", "cat": "外交・戦い", "type": "single", "q": "1894年、朝鮮をめぐって日本と清が戦った戦争は？", "a": ["日清戦争"], "choices": ["日露戦争", "西南戦争", "太平洋戦争", "日清戦争"], "note": "下関条約。", "region": "明治時代", "badgeCat": "外交・戦い"},
+  {"id": "meiji-shimonoseki", "comp": "歴史編", "pref": "明治時代", "cat": "外交・戦い", "type": "single", "q": "日清戦争の講和条約で、日本が得た賠償金と領土（台湾など）を定めたものは？", "a": ["下関条約"], "choices": ["ポーツマス条約", "日米和親条約", "ベルサイユ条約", "下関条約"], "note": "", "region": "明治時代", "badgeCat": "外交・戦い"},
+  {"id": "meiji-nichiro", "comp": "歴史編", "pref": "明治時代", "cat": "外交・戦い", "type": "single", "q": "1904年、満州・韓国をめぐって日本とロシアが戦った戦争は？", "a": ["日露戦争"], "choices": ["日清戦争", "太平洋戦争", "第一次世界大戦", "日露戦争"], "note": "ポーツマス条約。", "region": "明治時代", "badgeCat": "外交・戦い"},
+  {"id": "meiji-kanketsu", "comp": "歴史編", "pref": "明治時代", "cat": "外交・戦い", "type": "single", "q": "1911年、小村寿太郎が回復に成功した、関税に関する不平等条約の内容は？", "a": ["関税自主権"], "choices": ["治外法権", "領事裁判権", "最恵国待遇", "関税自主権"], "note": "陸奥宗光は領事裁判権を撤廃。", "region": "明治時代", "badgeCat": "外交・戦い"},
+  {"id": "meiji-yahata", "comp": "歴史編", "pref": "明治時代", "cat": "政治・できごと", "type": "single", "q": "日清戦争の賠償金をもとに福岡県につくられた官営の製鉄所は？", "a": ["八幡製鉄所"], "choices": ["富岡製糸場", "造船所", "紡績工場", "八幡製鉄所"], "note": "世界文化遺産。", "region": "明治時代", "badgeCat": "政治・できごと"},
+  {"id": "taisho-ww1", "comp": "歴史編", "pref": "大正時代", "cat": "外交・戦い", "type": "single", "q": "1914年、ヨーロッパを主戦場に始まった世界規模の戦争は？", "a": ["第一次世界大戦"], "choices": ["第二次世界大戦", "日露戦争", "日清戦争", "第一次世界大戦"], "note": "日本は日英同盟を理由に参戦。", "region": "大正時代", "badgeCat": "外交・戦い"},
+  {"id": "taisho-versailles", "comp": "歴史編", "pref": "大正時代", "cat": "外交・戦い", "type": "single", "q": "第一次世界大戦の講和会議で結ばれた条約は？", "a": ["ベルサイユ条約"], "choices": ["ポーツマス条約", "下関条約", "日米和親条約", "ベルサイユ条約"], "note": "", "region": "大正時代", "badgeCat": "外交・戦い"},
+  {"id": "taisho-kokusai", "comp": "歴史編", "pref": "大正時代", "cat": "外交・戦い", "type": "single", "q": "第一次世界大戦後、世界平和のためにつくられた国際組織は？", "a": ["国際連盟"], "choices": ["国際連合", "日英同盟", "三国同盟", "国際連盟"], "note": "新渡戸稲造が事務局次長。", "region": "大正時代", "badgeCat": "外交・戦い"},
+  {"id": "taisho-democracy", "comp": "歴史編", "pref": "大正時代", "cat": "政治・できごと", "type": "single", "q": "大正期に高まった、民主主義を求める風潮を何という？", "a": ["大正デモクラシー"], "choices": ["文明開化", "自由民権運動", "富国強兵", "大正デモクラシー"], "note": "", "region": "大正時代", "badgeCat": "政治・できごと"},
+  {"id": "taisho-kome", "comp": "歴史編", "pref": "大正時代", "cat": "政治・できごと", "type": "single", "q": "1918年、米の値上がりに対して富山県から全国に広がった騒動は？", "a": ["米騒動"], "choices": ["打ちこわし", "一揆", "大塩の乱", "米騒動"], "note": "", "region": "大正時代", "badgeCat": "政治・できごと"},
+  {"id": "taisho-futsu", "comp": "歴史編", "pref": "大正時代", "cat": "政治・できごと", "type": "single", "q": "1925年に成立した、満25歳以上の男子に選挙権を与えた法律は？", "a": ["普通選挙法"], "choices": ["治安維持法", "教育勅語", "徴兵令", "普通選挙法"], "note": "同年に治安維持法も。", "region": "大正時代", "badgeCat": "政治・できごと"},
+  {"id": "taisho-chian", "comp": "歴史編", "pref": "大正時代", "cat": "政治・できごと", "type": "single", "q": "1925年、共産主義などの運動を取りしまるために作られた法律は？", "a": ["治安維持法"], "choices": ["普通選挙法", "大日本帝国憲法", "教育勅語", "治安維持法"], "note": "", "region": "大正時代", "badgeCat": "政治・できごと"},
+  {"id": "taisho-kanto", "comp": "歴史編", "pref": "大正時代", "cat": "政治・できごと", "type": "single", "q": "1923年、東京・横浜に大きな被害を出した災害は？", "a": ["関東大震災"], "choices": ["阪神淡路大震災", "東日本大震災", "伊勢湾台風", "関東大震災"], "note": "", "region": "大正時代", "badgeCat": "政治・できごと"},
+  {"id": "showa-manshu", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1931年、日本軍が中国東北部で軍事行動を起こしたできごとは？", "a": ["満州事変"], "choices": ["日中戦争", "日露戦争", "太平洋戦争", "満州事変"], "note": "翌年満州国を建国。", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-nicchu", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1937年に始まった、日本と中国の全面戦争は？", "a": ["日中戦争"], "choices": ["満州事変", "日清戦争", "太平洋戦争", "日中戦争"], "note": "", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-taiheiyo", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1941年、真珠湾攻撃で始まった日本とアメリカなどの戦争は？", "a": ["太平洋戦争"], "choices": ["日露戦争", "日中戦争", "第一次世界大戦", "太平洋戦争"], "note": "", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-genbaku", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1945年8月、広島と長崎に投下された兵器は？", "a": ["原子爆弾"], "choices": ["水素爆弾", "焼夷弾", "ミサイル", "原子爆弾"], "note": "8月6日広島、9日長崎。", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-haisen", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "日本が連合国に降伏し、太平洋戦争が終わった年は？", "a": ["1945年"], "choices": ["1941年", "1939年", "1951年", "1945年"], "note": "8月15日。", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-kenpo", "comp": "歴史編", "pref": "昭和時代", "cat": "政治・できごと", "type": "single", "q": "1946年に公布された、国民主権・平和主義・基本的人権の尊重を三原則とする憲法は？", "a": ["日本国憲法"], "choices": ["大日本帝国憲法", "五箇条の御誓文", "教育基本法", "日本国憲法"], "note": "", "region": "昭和時代", "badgeCat": "政治・できごと"},
+  {"id": "showa-nochi", "comp": "歴史編", "pref": "昭和時代", "cat": "政治・できごと", "type": "single", "q": "戦後の民主化で、地主の土地を小作人に分けた改革は？", "a": ["農地改革"], "choices": ["地租改正", "殖産興業", "財閥解体", "農地改革"], "note": "", "region": "昭和時代", "badgeCat": "政治・できごと"},
+  {"id": "showa-sanfran", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1951年、日本が独立を回復した講和条約は？", "a": ["サンフランシスコ平和条約"], "choices": ["日米安全保障条約", "ポーツマス条約", "ベルサイユ条約", "サンフランシスコ平和条約"], "note": "同時に日米安保条約。", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-kokuren", "comp": "歴史編", "pref": "昭和時代", "cat": "外交・戦い", "type": "single", "q": "1956年、日ソ共同宣言の後に日本が加盟した国際組織は？", "a": ["国際連合"], "choices": ["国際連盟", "EU", "ASEAN", "国際連合"], "note": "", "region": "昭和時代", "badgeCat": "外交・戦い"},
+  {"id": "showa-kodo", "comp": "歴史編", "pref": "昭和時代", "cat": "政治・できごと", "type": "single", "q": "1950年代後半から続いた、日本経済の急成長を何という？", "a": ["高度経済成長"], "choices": ["バブル経済", "産業革命", "文明開化", "高度経済成長"], "note": "東京五輪・新幹線。", "region": "昭和時代", "badgeCat": "政治・できごと"},
+  {"id": "showa-olympic", "comp": "歴史編", "pref": "昭和時代", "cat": "政治・できごと", "type": "single", "q": "1964年、アジアで初めて日本で開かれた国際スポーツ大会は？", "a": ["東京オリンピック"], "choices": ["大阪万博", "札幌五輪", "長野五輪", "東京オリンピック"], "note": "東海道新幹線開通。", "region": "昭和時代", "badgeCat": "政治・できごと"},
+  {"id": "cross-bunka-heian", "comp": "歴史編", "pref": "横断", "cat": "文化", "type": "single", "q": "かな文字や源氏物語に代表される、遣唐使停止後の日本独自の文化は？", "a": ["国風文化"], "choices": ["飛鳥文化", "天平文化", "桃山文化", "国風文化"], "note": "平安時代。", "region": "横断", "badgeCat": "文化"},
+  {"id": "cross-bunka-tempyo", "comp": "歴史編", "pref": "横断", "cat": "文化", "type": "single", "q": "聖武天皇のころ、唐の影響を受けて栄えた奈良時代の文化は？", "a": ["天平文化"], "choices": ["国風文化", "飛鳥文化", "元禄文化", "天平文化"], "note": "正倉院・東大寺。", "region": "横断", "badgeCat": "文化"},
+  {"id": "cross-jomonyayoi", "comp": "歴史編", "pref": "横断", "cat": "文化", "type": "single", "q": "縄文土器と弥生土器、うすくてかたいのはどちら？", "a": ["弥生土器"], "choices": ["縄文土器", "須恵器", "土師器", "弥生土器"], "note": "縄文は厚手。", "region": "横断", "badgeCat": "文化"},
+  {"id": "cross-joyaku-fubyodo", "comp": "歴史編", "pref": "横断", "cat": "外交・戦い", "type": "single", "q": "日米修好通商条約で日本が認めさせられた、外国人の罪を裁けない権利は？", "a": ["領事裁判権"], "choices": ["関税自主権", "治外法権撤廃", "最恵国待遇", "領事裁判権"], "note": "治外法権。陸奥宗光が撤廃。", "region": "横断", "badgeCat": "外交・戦い"},
+  {"id": "cross-3taisen", "comp": "歴史編", "pref": "横断", "cat": "外交・戦い", "type": "single", "q": "日清・日露戦争の講和条約の組み合わせで正しいのは？", "a": ["日清＝下関条約"], "choices": ["日清＝ポーツマス条約", "日露＝下関条約", "日清＝ベルサイユ条約", "日清＝下関条約"], "note": "日露＝ポーツマス条約。", "region": "横断", "badgeCat": "外交・戦い"},
+  {"id": "cross-sensou-order", "comp": "歴史編", "pref": "横断", "cat": "外交・戦い", "type": "single", "q": "次のうち、最も古い戦争は？", "a": ["日清戦争"], "choices": ["日露戦争", "太平洋戦争", "日中戦争", "日清戦争"], "note": "日清(1894)→日露(1904)→日中(1937)→太平洋(1941)。", "region": "横断", "badgeCat": "外交・戦い"},
+  {"id": "cross-3kaikaku", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "享保の改革を行った将軍は？", "a": ["徳川吉宗"], "choices": ["松平定信", "水野忠邦", "徳川家光", "徳川吉宗"], "note": "寛政＝松平定信、天保＝水野忠邦。", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-kenpo2", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "大日本帝国憲法と日本国憲法、国民主権なのはどちら？", "a": ["日本国憲法"], "choices": ["大日本帝国憲法", "五箇条の御誓文", "十七条の憲法", "日本国憲法"], "note": "帝国憲法は天皇主権。", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-tochi", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "班田収授法と墾田永年私財法、土地の私有を認めたのはどちら？", "a": ["墾田永年私財法"], "choices": ["班田収授法", "地租改正", "太閤検地", "墾田永年私財法"], "note": "743年。荘園の広がり。", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-bakufu", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "鎌倉・室町・江戸の3つの幕府を開いた人物の組み合わせは？", "a": ["鎌倉＝源頼朝"], "choices": ["鎌倉＝足利尊氏", "室町＝徳川家康", "江戸＝源頼朝", "鎌倉＝源頼朝"], "note": "室町＝足利尊氏、江戸＝徳川家康。", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-jinbutsu-daibutsu", "comp": "歴史編", "pref": "横断", "cat": "人物", "type": "single", "q": "奈良の大仏をつくらせた天皇は？", "a": ["聖武天皇"], "choices": ["桓武天皇", "天武天皇", "推古天皇", "聖武天皇"], "note": "", "region": "横断", "badgeCat": "人物"},
+  {"id": "cross-jinbutsu-tenka", "comp": "歴史編", "pref": "横断", "cat": "人物", "type": "single", "q": "「天下統一」を最終的に成しとげたのは？", "a": ["豊臣秀吉"], "choices": ["織田信長", "徳川家康", "武田信玄", "豊臣秀吉"], "note": "信長は目前で倒れた。", "region": "横断", "badgeCat": "人物"},
+  {"id": "cross-jinbutsu-sou", "comp": "歴史編", "pref": "横断", "cat": "人物", "type": "single", "q": "真言宗を開いた僧は？", "a": ["空海"], "choices": ["最澄", "行基", "法然", "空海"], "note": "最澄＝天台宗。", "region": "横断", "badgeCat": "人物"},
+  {"id": "cross-jinbutsu-shosetsu", "comp": "歴史編", "pref": "横断", "cat": "人物", "type": "single", "q": "「源氏物語」の作者は？", "a": ["紫式部"], "choices": ["清少納言", "紀貫之", "松尾芭蕉", "紫式部"], "note": "清少納言＝枕草子。", "region": "横断", "badgeCat": "人物"},
+  {"id": "cross-jinbutsu-kaikoku", "comp": "歴史編", "pref": "横断", "cat": "人物", "type": "single", "q": "日本に開国をせまり浦賀に来航したのは？", "a": ["ペリー"], "choices": ["ザビエル", "ハリス", "コロンブス", "ペリー"], "note": "", "region": "横断", "badgeCat": "人物"},
+  {"id": "cross-era-order1", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "次のうち、最も古い時代は？", "a": ["飛鳥時代"], "choices": ["奈良時代", "平安時代", "鎌倉時代", "飛鳥時代"], "note": "飛鳥→奈良→平安→鎌倉。", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-era-order2", "comp": "歴史編", "pref": "横断", "cat": "政治・できごと", "type": "single", "q": "江戸時代の次に来る時代は？", "a": ["明治時代"], "choices": ["大正時代", "昭和時代", "室町時代", "明治時代"], "note": "", "region": "横断", "badgeCat": "政治・できごと"},
+  {"id": "cross-toji", "comp": "歴史編", "pref": "横断", "cat": "文化", "type": "single", "q": "室町時代に建てられた、金ぱくの建物は？", "a": ["金閣"], "choices": ["銀閣", "平等院鳳凰堂", "東大寺", "金閣"], "note": "銀閣も室町。金＝義満、銀＝義政。", "region": "横断", "badgeCat": "文化"},
+];
+/* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
+const PREF_REGION = {
+  "縄文時代": "縄文時代",
+  "弥生時代": "弥生時代",
+  "古墳時代": "古墳時代",
+  "飛鳥時代": "飛鳥時代",
+  "奈良時代": "奈良時代",
+  "平安時代": "平安時代",
+  "鎌倉時代": "鎌倉時代",
+  "室町時代": "室町時代",
+  "安土桃山時代": "安土桃山時代",
+  "江戸時代": "江戸時代",
+  "明治時代": "明治時代",
+  "大正時代": "大正時代",
+  "昭和時代": "昭和時代",
+  "横断": "横断"
+};
+const CAT_BADGE = {};
+function regionOf(pref){ return PREF_REGION[pref] || "横断"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "政治・できごと"; }
+function enrichCards(cards){
+  cards.forEach(c=>{
+    if(!c.region) c.region = regionOf(c.pref);
+    if(!c.badgeCat) c.badgeCat = badgeCatOf(c.cat);
+  });
+  return cards;
+}
+
+let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards() を呼ぶと定数が未初期化で常にDEFAULT_CARDSに落ちるバグがあった
+
+/* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
+function buildMap(mset){
+  // 47都道府県タイルマップ。1県=1マス。地理配置に沿わせた簡略地図。
+  // mset に含まれる県（マスター済み）は緑に塗られる。
+  const T = {"北海道": {"c": 11, "r": 0, "s": "北海"}, "青森県": {"c": 10, "r": 2, "s": "青森"}, "秋田県": {"c": 9, "r": 3, "s": "秋田"}, "岩手県": {"c": 10, "r": 3, "s": "岩手"}, "山形県": {"c": 9, "r": 4, "s": "山形"}, "宮城県": {"c": 10, "r": 4, "s": "宮城"}, "福島県": {"c": 10, "r": 5, "s": "福島"}, "群馬県": {"c": 9, "r": 6, "s": "群馬"}, "栃木県": {"c": 10, "r": 6, "s": "栃木"}, "茨城県": {"c": 11, "r": 6, "s": "茨城"}, "埼玉県": {"c": 9, "r": 7, "s": "埼玉"}, "東京都": {"c": 10, "r": 7, "s": "東京"}, "千葉県": {"c": 11, "r": 7, "s": "千葉"}, "神奈川県": {"c": 10, "r": 8, "s": "神奈"}, "新潟県": {"c": 8, "r": 5, "s": "新潟"}, "富山県": {"c": 7, "r": 6, "s": "富山"}, "長野県": {"c": 8, "r": 6, "s": "長野"}, "石川県": {"c": 6, "r": 6, "s": "石川"}, "福井県": {"c": 6, "r": 7, "s": "福井"}, "山梨県": {"c": 8, "r": 7, "s": "山梨"}, "岐阜県": {"c": 7, "r": 7, "s": "岐阜"}, "静岡県": {"c": 8, "r": 8, "s": "静岡"}, "愛知県": {"c": 7, "r": 8, "s": "愛知"}, "滋賀県": {"c": 6, "r": 8, "s": "滋賀"}, "三重県": {"c": 6, "r": 9, "s": "三重"}, "京都府": {"c": 5, "r": 7, "s": "京都"}, "奈良県": {"c": 5, "r": 9, "s": "奈良"}, "大阪府": {"c": 5, "r": 8, "s": "大阪"}, "兵庫県": {"c": 4, "r": 8, "s": "兵庫"}, "和歌山県": {"c": 5, "r": 10, "s": "和歌"}, "鳥取県": {"c": 3, "r": 7, "s": "鳥取"}, "島根県": {"c": 2, "r": 7, "s": "島根"}, "岡山県": {"c": 3, "r": 8, "s": "岡山"}, "広島県": {"c": 2, "r": 8, "s": "広島"}, "山口県": {"c": 1, "r": 8, "s": "山口"}, "香川県": {"c": 3, "r": 9, "s": "香川"}, "徳島県": {"c": 4, "r": 9, "s": "徳島"}, "愛媛県": {"c": 2, "r": 9, "s": "愛媛"}, "高知県": {"c": 3, "r": 10, "s": "高知"}, "福岡県": {"c": 1, "r": 9, "s": "福岡"}, "佐賀県": {"c": 0, "r": 9, "s": "佐賀"}, "大分県": {"c": 1, "r": 10, "s": "大分"}, "長崎県": {"c": 0, "r": 10, "s": "長崎"}, "熊本県": {"c": 1, "r": 11, "s": "熊本"}, "宮崎県": {"c": 2, "r": 11, "s": "宮崎"}, "鹿児島県": {"c": 1, "r": 12, "s": "鹿児"}, "沖縄県": {"c": 0, "r": 13, "s": "沖縄"}};
+  const CELL=20, GAP=2.5, PAD=6;
+  let maxC=0,maxR=0;
+  for(const k in T){ if(T[k].c>maxC)maxC=T[k].c; if(T[k].r>maxR)maxR=T[k].r; }
+  const W = PAD*2 + (maxC+1)*(CELL+GAP);
+  const H = PAD*2 + (maxR+1)*(CELL+GAP);
+  let cells="";
+  for(const name in T){
+    const t=T[name];
+    const x=PAD+t.c*(CELL+GAP), y=PAD+t.r*(CELL+GAP);
+    const on=mset.has(name);
+    const fill=on?"var(--green)":"#e7e2d4";
+    const tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3.5" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+3.2}" text-anchor="middle" font-size="7.3" fill="${tcol}" font-weight="700">${t.s}</text></g>`;
+  }
+  return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
+}
+
+/* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
+const DAILY_GOAL=10;
+const LS_CARDS="rekitan_cards";
+const userKey=(n,p)=>"rekitan_user_"+n+"_"+p;
+let state=null;
+
+function loadCards(){
+  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  return DEFAULT_CARDS.slice();
+}
+CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0,review:[],daily30Date:""};}
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function loadState(n,p){
+  try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
+  return null;
+}
+function dayGap(a,b){
+  // "YYYY-M-D"文字列の日数差。Safariは"2026-7-11"をDate()で解釈できないため手動パース
+  const p=s=>{const[y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
+  return Math.round((p(b)-p(a))/864e5);
+}
+function rolloverDay(){
+  // 日付が変わっていたら「今日の学習」をリセット。
+  // 前回の記録日に30問未完了、または丸1日以上あいていたら連続記録を0に戻す
+  const t=todayStr();
+  if(state.lastDay!==t){
+    if(dayGap(state.lastDay,t)>=2 || !state.streakedToday) state.streak=0;
+    state.doneToday=0; state.streakedToday=false; state.lastDay=t;
+  }
+}
+
+/* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
+/* stage: 0=4択, 1=文字を並べ替え。の2段階（入力ステージは廃止）。reps（連続正解数）で決まる */
+function stageOf(r){
+  if(!r||r.reps<=0) return 0;
+  return 1;
+}
+function schedule(id,correct){
+  const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
+  if(correct){
+    r.reps+=1;
+    if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
+    r.ef=Math.min(2.6,r.ef+0.05);
+    if(r.reps>=3)r.mastered=true;
+    r.everCorrect=true; // ポイント制用：一度でも正解したことがある印（初正解の判定に使う）
+  }else{
+    r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
+    r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
+    r.wrong=(r.wrong||0)+1; // 苦手復習用：まちがえた回数を記録
+  }
+  r.due=Date.now()+r.interval*864e5;
+  state.reviews[id]=r;
+}
+function masteredCount(){const s=new Set();CARDS.forEach(c=>{const r=state.reviews[c.id];if(r&&r.mastered)s.add(c.pref);});return s;}
+function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastered).length;}
+
+/* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
+const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
+const BADGES = [
+  {key:"era_0", name:"縄文マスター", emoji:"🏺", type:"region", match:"縄文時代"},
+  {key:"era_1", name:"弥生マスター", emoji:"🌾", type:"region", match:"弥生時代"},
+  {key:"era_2", name:"古墳マスター", emoji:"🗿", type:"region", match:"古墳時代"},
+  {key:"era_3", name:"飛鳥マスター", emoji:"🛕", type:"region", match:"飛鳥時代"},
+  {key:"era_4", name:"奈良マスター", emoji:"🙏", type:"region", match:"奈良時代"},
+  {key:"era_5", name:"平安マスター", emoji:"🎎", type:"region", match:"平安時代"},
+  {key:"era_6", name:"鎌倉マスター", emoji:"🗡️", type:"region", match:"鎌倉時代"},
+  {key:"era_7", name:"室町マスター", emoji:"🍵", type:"region", match:"室町時代"},
+  {key:"era_8", name:"安土桃山マスター", emoji:"🏯", type:"region", match:"安土桃山時代"},
+  {key:"era_9", name:"江戸マスター", emoji:"🎭", type:"region", match:"江戸時代"},
+  {key:"era_10", name:"明治マスター", emoji:"🚂", type:"region", match:"明治時代"},
+  {key:"era_11", name:"大正マスター", emoji:"🎩", type:"region", match:"大正時代"},
+  {key:"era_12", name:"昭和マスター", emoji:"📺", type:"region", match:"昭和時代"},
+  {key:"politics", name:"政治・できごとマスター", emoji:"🏛️", type:"badgeCat", match:"政治・できごと"},
+  {key:"person", name:"人物マスター", emoji:"👑", type:"badgeCat", match:"人物"},
+  {key:"culture", name:"文化マスター", emoji:"🎨", type:"badgeCat", match:"文化"},
+  {key:"war", name:"外交・戦いマスター", emoji:"⚔️", type:"badgeCat", match:"外交・戦い"},
+];
+const FINAL_BADGE = {key:"doctor", name:"歴史博士", emoji:"🎓"};
+// 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
+// 解放判定・歴史博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
+function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
+function activeBadges(){return BADGES.filter(badgeActive);}
+
+// 称号ごとの進捗 {total, mastered, ratio, earned}
+function badgeProgress(b){
+  const group = CARDS.filter(c => b.type==="region" ? c.region===b.match : c.badgeCat===b.match);
+  const total = group.length;
+  let mastered = 0;
+  group.forEach(c=>{const r=state.reviews[c.id]; if(r&&r.mastered)mastered++;});
+  const ratio = total ? mastered/total : 0;
+  return {total, mastered, ratio, earned: total>0 && ratio>=BADGE_THRESHOLD};
+}
+// 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
+function refreshBadges(){
+  if(!state.badges)state.badges={};
+  const act=activeBadges(), fresh=[];
+  act.forEach(b=>{
+    if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
+  });
+  if(act.length && act.every(b=>state.badges[b.key]) && !state.badges[FINAL_BADGE.key]){
+    state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
+  }
+  if(fresh.length){saveState();celebrate(fresh);}
+  return state.badges;
+}
+function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
+let celebrateQueue=[], celebrating=false;
+function celebrate(badges){ celebrateQueue.push(...badges); if(!celebrating) nextCelebration(); }
+function nextCelebration(){
+  const b=celebrateQueue.shift();
+  if(!b){celebrating=false;return;}
+  celebrating=true;
+  const isDoctor=b.key===FINAL_BADGE.key;
+  const colors=["#4f9d69","#e08a3c","#d8a93a","#3f7cc4","#d9534f","#9a6fc4"];
+  let conf="";
+  const n=isDoctor?90:45;
+  for(let i=0;i<n;i++){ // 疑似ランダム配置（indexから決める）
+    conf+=`<i style="left:${(i*37)%100}%;background:${colors[i%colors.length]};animation-delay:${(i%20)*0.13}s;animation-duration:${2.2+(i%7)*0.3}s;width:${6+(i%3)*3}px"></i>`;
+  }
+  const ov=document.createElement('div');
+  ov.className="celebrate"+(isDoctor?" doctor":"");
+  ov.innerHTML=`<div class="conf">${conf}</div>
+    <div class="cbody">
+      <div class="cemoji">${b.emoji}</div>
+      <div class="ctitle">${isDoctor?"最後の称号":"新しい称号"}</div>
+      <div class="cname">${b.name}</div>
+      <div class="cget">${isDoctor?"全部の称号を 集めたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップで閉じる</div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
+  ov.onclick=close;
+  setTimeout(close, isDoctor?9000:4500);
+}
+
+/* ===== 5. 画面 ===== */
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+
+$('loginBtn').onclick=async()=>{
+  const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
+  $('loginMsg').textContent="";
+  if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
+  $('loginBtn').disabled=true;
+  try{
+    let onlineOk=false, srvCampus="", srvWeek=0;
+    if(ONLINE()){
+      $('loginMsg').textContent="通信中…";
+      try{
+        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        if(!r.ok&&r.reason==='not_found'){
+          if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
+          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          r.week_score=0;
+        }else if(!r.ok&&r.reason==='suspended'){
+          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";return;
+        }else if(!r.ok){
+          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";return;
+        }
+        onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+      }catch(e){ /* サーバに届かない → オフラインで続行 */ }
+    }
+    const existing=loadState(n,p);
+    state=existing||freshState(n,p);
+    if(!state.badges)state.badges={};
+    if(state.weekPending==null)state.weekPending=0;
+    state.online=onlineOk;
+    if(onlineOk){
+      state.campus=srvCampus;
+      state.weekScore=srvWeek;
+      if(!existing){
+        // この端末に記録がない → サーバのバックアップから復元を試みる
+        try{
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
+          if(pr.ok&&pr.data){
+            const d=pr.data;
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{
+              if(d[k]!=null)state[k]=d[k];
+            });
+          }
+        }catch(e){}
+      }
+    }
+    $('loginMsg').textContent="";
+    rolloverDay(); refreshBadges(); saveState();
+    renderHome(); show('home');
+    flushScore();
+  }finally{ $('loginBtn').disabled=false; }
+};
+$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+
+function renderHome(){
+  rolloverDay();
+  $('hiNick').textContent=state.nick;
+  $('streakN').textContent=state.streak;
+  refreshBadges();
+  renderHomeBadges();
+  // ランキングはオンライン時のみ入口を出す
+  $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
+  // 今日の30問：クリア済みなら見た目を変える
+  const dailyDone = state.daily30Date===todayStr();
+  $('modeDaily').classList.toggle('done',dailyDone);
+  $('modeDailyEmoji').textContent = dailyDone ? "✅" : "📅";
+  $('modeDailyTitle').textContent = dailyDone ? "今日の30問（クリア済み）" : "今日の30問";
+  $('modeDailyDesc').textContent = dailyDone ? "また明日ちょうせんできるよ。今日は復習や称号モードをどうぞ" : "全範囲からランダム約30問。毎日やって🔥連続をのばそう";
+  // 復習モード：たまっている間だけ入口を出す
+  const nrev = reviewCards().length;
+  $('modeReview').style.display = nrev>0 ? "" : "none";
+  $('reviewCount').textContent = nrev>0 ? nrev+"問" : "";
+}
+
+// ホーム上部の称号コレクション：獲得＝カラーで光る／未獲得＝グレー の2状態だけ
+function renderHomeBadges(){
+  const items=BADGES.concat([FINAL_BADGE]);
+  let html="";
+  items.forEach(b=>{
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const isFinal=b.key===FINAL_BADGE.key;
+    const short=b.name.replace("マスター","");
+    html+=`<button class="hbadge ${isFinal?'final ':''}${earned?'earned':'locked'}" data-key="${b.key}">
+      <span class="hb-emoji">${b.emoji}</span><span class="hb-name">${short}</span></button>`;
+  });
+  $('homeBadgeGrid').innerHTML=html;
+  $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
+  $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
+  $('collTotal').textContent=BADGES.length+1; // 19称号＋歴史博士＝20
+}
+$('modeBadge').onclick=()=>{renderPick();show('pick');};
+$('modeDaily').onclick=()=>startQuiz('DAILY30');
+$('modeReview').onclick=()=>startQuiz('REVIEW');
+$('modeRank').onclick=()=>{show('ranking');renderPeriodTabs();renderRankTabs();loadRanking();};
+
+/* ===== 称号画面 ===== */
+function renderBadges(){
+  refreshBadges(); saveState();
+  const got=earnedBadgeCount();
+  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 歴史博士 達成！</span>':'（全部集めると「歴史博士」）'}`;
+  let html="";
+  BADGES.forEach(b=>{
+    if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
+      html+=`<div class="badge locked" style="filter:grayscale(.6)">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="bname">${b.name}</div>
+        <div class="bmeta">準備中・お楽しみに！</div>
+      </div>`;
+      return;
+    }
+    const p=badgeProgress(b);
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const pct=Math.round(p.ratio*100);
+    const meta = earned
+      ? `ゲット！ ${state.badges[b.key]}`
+      : (p.total ? `あと${Math.max(0,Math.ceil(p.total*BADGE_THRESHOLD)-p.mastered)}問でゲット` : "問題なし");
+    html+=`<div class="badge ${earned?'earned':'locked'}">
+      <div class="bemoji">${b.emoji}</div>
+      <div class="bname">${b.name}</div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+      <div class="bmeta">${p.mastered}/${p.total}　${meta}</div>
+    </div>`;
+  });
+  const fEarned=!!(state.badges&&state.badges[FINAL_BADGE.key]);
+  html+=`<div class="badge final ${fEarned?'earned':'locked'}">
+    <div class="bemoji">${FINAL_BADGE.emoji}</div>
+    <div class="bname">${FINAL_BADGE.name}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号全てでゲット'}</div>
+  </div>`;
+  $('badgeGrid').innerHTML=html;
+}
+$('badgesBack').onclick=()=>{renderHome();show('home');};
+
+/* ===== 選んで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+function renderPick(){
+  const mk=(b,comp)=>{
+    const p=badgeProgress(b);
+    const done=p.total>0&&p.mastered>=p.total;
+    return `<button class="pick-btn ${done?'done':''}" data-comp="${comp}">
+      <span class="pe">${b.emoji}</span>
+      <span><span class="pn">${b.match}</span><span class="pp">${p.mastered}/${p.total}${done?'　パーフェクト！':''}</span></span>
+    </button>`;
+  };
+  $('pickRegion').innerHTML=BADGES.filter(b=>b.type==="region").map(b=>mk(b,"R:"+b.match)).join("");
+  $('pickCat').innerHTML=BADGES.filter(b=>b.type==="badgeCat"&&badgeActive(b)).map(b=>mk(b,"B:"+b.match)).join("");
+  document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
+}
+$('pickBack').onclick=()=>{renderHome();show('home');};
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+function cardInGroup(c,comp){
+  if(comp==="ALL")return true;
+  if(comp.startsWith("R:"))return c.region===comp.slice(2);
+  if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  return c.comp===comp;
+}
+function dueCards(comp){
+  const now=Date.now();
+  return CARDS.filter(c=>{
+    if(!cardInGroup(c,comp))return false;
+    const r=state.reviews[c.id];
+    if(!r)return true;
+    if(r.mastered&&r.due>now)return false;
+    return r.due?r.due<=now:true;
+  });
+}
+
+/* ===== 6. クイズ進行（3ステージ） ===== */
+let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+    .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
+}
+const DAILY30=30; // 今日の30問の枚数
+function reviewCards(){ // 今日の30問で間違えた問題（過去分もたまる）。正解すると外れる
+  return (state.review||[]).map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+}
+function startQuiz(comp){
+  let pool;
+  if(comp==="DAILY30"){
+    if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
+    // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
+    pool=shuffle(CARDS.slice()).slice(0,DAILY30);
+  }else if(comp==="REVIEW"){
+    // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
+    pool=reviewCards();
+    if(pool.length===0){alert("復習する問題はないよ！今日の30問をがんばろう😊");return;}
+  }else if(comp&&(comp.startsWith("R:")||comp.startsWith("B:"))){
+    // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
+    pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
+    if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
+  }else if(comp==="NIGATE"){
+    pool=nigateCards().slice(0,DAILY_GOAL);
+  }else{
+    pool=dueCards(comp);
+    if(pool.length===0)pool=CARDS.filter(c=>cardInGroup(c,comp));
+    pool=shuffle(pool).slice(0,DAILY_GOAL);
+  }
+  if(pool.length===0){renderHome();show('home');return;}
+  session={queue:pool,idx:0,correct:0,total:pool.length,comp};
+  renderQuestion(); show('quiz');
+}
+const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を並べる","ステップ3・漢字で入力"];
+
+function renderQuestion(){
+  const c=session.queue[session.idx];
+  picked=new Set(); answered=false; slotChars=[];
+  // multiと画像つきカードは常に4択（画像問題はステージ進行させない）
+  stage = (c.type==="multi"||c.image) ? 0 : stageOf(state.reviews[c.id]);
+  $('qProg').style.width=(session.idx/session.total*100)+"%";
+  $('qCount').textContent=(session.idx+1)+"/"+session.total;
+  $('stagePill').textContent = c.type==="multi" ? "複数選ぶ問題" : (c.image ? "画像を見て選ぶ問題" : STAGE_LABEL[stage]);
+  $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
+  $('qText').textContent=c.q; // 都道府県名(qPref)は表示しない（答えが分かってしまうため）
+  const im=$('qImg'); $('qImgMiss').style.display="none";
+  if(c.image){
+    im.alt="（画像："+c.q+"）";
+    im.onerror=()=>{im.style.display="none";$('qImgMiss').style.display="";};
+    im.src="images/"+c.image; im.style.display="";
+  }else{ im.style.display="none"; im.removeAttribute('src'); }
+  $('qMultiHint').style.display=c.type==="multi"?"block":"none";
+  $('feedback').className="feedback";
+  $('checkBtn').textContent="答え合わせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('dontknow').style.display="block";
+
+  if(stage===0) renderChoices(c);
+  else if(stage===1) renderTiles(c);
+  else renderInput(c);
+}
+
+function renderChoices(c){
+  // 取り込みCSV由来のテキストをHTMLとして解釈しないよう、DOM APIで組み立てる（XSS対策）
+  const ch=shuffle(c.choices);
+  const wrap=document.createElement('div');wrap.className='choices';
+  ch.forEach(o=>{
+    const b=document.createElement('button');b.className='choice';b.dataset.opt=o;
+    const mk=document.createElement('span');mk.className='mk';mk.textContent=c.type==="multi"?"☐":"";
+    const tx=document.createElement('span');tx.textContent=o;
+    b.append(mk,tx);b.onclick=()=>onPick(b,c.type);
+    wrap.appendChild(b);
+  });
+  const host=$('answerArea');host.innerHTML="";host.appendChild(wrap);
+}
+function onPick(btn,type){
+  if(answered)return;const opt=btn.dataset.opt;
+  if(type==="single"){
+    $('answerArea').querySelectorAll('.choice').forEach(x=>{x.classList.remove('sel');x.querySelector('.mk').textContent="";});
+    picked=new Set([opt]);btn.classList.add('sel');
+  }else{
+    if(picked.has(opt)){picked.delete(opt);btn.classList.remove('sel');btn.querySelector('.mk').textContent="☐";}
+    else{picked.add(opt);btn.classList.add('sel');btn.querySelector('.mk').textContent="✓";}
+  }
+  $('checkBtn').disabled=picked.size===0;
+}
+
+/* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+function renderTiles(c){
+  const ans=c.a[0];
+  const ansChars=ans.split("");
+  // ダミー文字：他の選択肢から文字を拝借
+  let pool=[];
+  c.choices.forEach(o=>{if(o!==ans)pool.push(...o.split(""));});
+  pool=pool.filter(ch=>!ansChars.includes(ch));
+  const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
+  const tiles=shuffle([...ansChars,...dummies]);
+  let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
+  $('answerArea').innerHTML=html;
+  renderSlots(ansChars.length);
+  const tw=$('tiles');
+  tiles.forEach((ch,i)=>{
+    const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
+    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    tw.appendChild(b);
+  });
+}
+function renderSlots(n){
+  const host=$('slots');host.innerHTML="";
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+      d.onclick=()=>{if(answered)return;
+        // タップで戻す（最後の1つ）
+        const removed=slotChars.splice(i,1)[0];
+        // 対応するタイルのusedを1つ解除
+        const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
+        if(t)t.classList.remove('used');
+        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+    }else{d.className="slot empty";d.textContent="";}
+    host.appendChild(d);
+  }
+}
+
+/* ステージ3：漢字入力 */
+function renderInput(c){
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="答えを入力">
+    <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
+  const inp=$('txtIn');
+  inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
+  setTimeout(()=>inp.focus(),100);
+}
+
+/* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
+function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
+
+$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+
+function checkAnswer(){
+  const c=session.queue[session.idx];
+  if(!answered){
+    let correct=false;
+    if(stage===0){
+      const aset=new Set(c.a);
+      correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
+    }else if(stage===1){
+      correct = slotChars.join("")===c.a[0];
+    }else{
+      const v=$('txtIn').value;
+      correct = norm(v)===norm(c.a[0]);
+    }
+    judge(correct);
+  }else{
+    session.idx++;
+    if(session.idx<session.total)renderQuestion(); else finishSession();
+  }
+}
+
+function judge(correct){
+  const c=session.queue[session.idx];
+  answered=true; $('dontknow').style.display="none";
+  // 表示の色付け
+  if(stage===0){
+    const aset=new Set(c.a);
+    $('answerArea').querySelectorAll('.choice').forEach(b=>{
+      const o=b.dataset.opt;b.disabled=true;
+      if(aset.has(o)){b.classList.remove('sel');b.classList.add('correct');b.querySelector('.mk').textContent="✓";}
+      else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
+    });
+  }
+  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=1点
+  const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
+  const isDaily = session.comp==="DAILY30";
+  schedule(c.id,correct);
+  state.accTotal++;
+  if(correct){
+    session.correct++; state.accCorrect++; state.xp+=10;
+    const pts = isDaily ? 10 : (firstCorrect ? 10 : 1);
+    state.weekPending=(state.weekPending||0)+pts;
+    if(session)session.points=(session.points||0)+pts;
+  }
+  // 復習リスト：今日の30問で間違えた問題をためる／正解したら（どのモードでも）その問題を外す
+  if(!state.review)state.review=[];
+  if(isDaily && !correct){ if(!state.review.includes(c.id))state.review.push(c.id); }
+  if(correct){ const i=state.review.indexOf(c.id); if(i>=0)state.review.splice(i,1); }
+  state.doneToday++;
+  refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
+  saveState();
+  const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
+  $('fTitle').innerHTML=correct?"正解！ <span class='xp-pop'>+10 XP</span>":"惜しい！もう一度覚えよう";
+  // 答え・覚え方メモはCSV由来テキストなのでDOM APIで挿入（XSS対策）
+  const fn=$('fNote');fn.innerHTML="";
+  if(!correct){
+    fn.append("答え：");
+    const b=document.createElement('b');b.textContent=c.a.join("・");
+    fn.append(b,document.createElement('br'));
+  }
+  fn.append(c.note||"");
+  $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
+  $('checkBtn').disabled=false;
+}
+
+$('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+function finishSession(){
+  let up=false;
+  // 今日の30問を1セット完了：ストリーク+1（1日1回）＋今日はもうできない印
+  if(session.comp==="DAILY30"){
+    state.daily30Date=todayStr();
+    if(!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  }
+  refreshBadges();
+  saveState();
+  flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  $('dCards').textContent=session.total;
+  $('dCorrect').textContent=session.correct;
+  $('dXp').textContent="+"+(session.correct*10);
+  $('dStreakMsg').textContent=up
+    ? `🔥 連続 ${state.streak}日 になったよ！`
+    : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  show('done');
+}
+$('backHome').onclick=()=>{renderHome();show('home');};
+$('againBtn').onclick=()=>{startQuiz(session.comp);};
+
+/* ===== 7. CSV取り込み ===== */
+$('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
+$('impBack').onclick=()=>{renderHome();show('home');};
+$('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題に戻しました</span>';};
+
+$('doImport').onclick=()=>{
+  const txt=$('csvText').value.trim();
+  if(!txt){$('impMsg').innerHTML='<span class="err-msg">CSVが空です</span>';return;}
+  try{
+    const cards=parseCSV(txt);
+    if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
+  }catch(err){
+    // 例外メッセージにCSV断片が混ざることがあるためテキストとして表示（XSS対策）
+    const s=document.createElement('span');s.className='err-msg';s.textContent='読み込みエラー：'+err.message;
+    const m=$('impMsg');m.innerHTML="";m.appendChild(s);
+  }
+};
+
+/* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
+function parseCSV(text){
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch==='\r'){} else cur+=ch; }
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  if(rows.length<2)return [];
+  const head=rows[0].map(h=>h.trim());
+  const idx=name=>head.indexOf(name);
+  const ci={id:idx("id"),comp:idx("編"),pref:idx("時代"),cat:idx("カテゴリ"),type:idx("出題タイプ"),q:idx("問題文"),a:idx("正解"),choices:idx("選択肢"),note:idx("覚え方メモ"),tag:idx("タグ"),region:idx("時代称号"),badgeCat:idx("分野称号"),image:idx("画像")}; // 画像列はオプショナル（無い12列CSVでも動く）
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.join("").trim()==="")continue;
+    const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
+    const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
+    const type=get("type")==="multi"?"multi":"single";
+    const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
+    let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
+    a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
+    const region=get("region")||regionOf(get("pref"));
+    const badgeCat=get("badgeCat")||badgeCatOf(get("cat"));
+    const card={id,comp:get("comp")||"県別編",pref:get("pref"),cat:get("cat"),type,q:qq,a,choices,note:get("note"),region,badgeCat};
+    const image=get("image"); if(image)card.image=image;
+    out.push(card);
+  }
+  return out;
+}
+
+$('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
+
+/* ===== 8. ランキングバトル（Supabase） =====
+   下の2つを埋めるとオンライン機能（登録・週間ランキング・進捗バックアップ）が有効になる。
+   空のままなら従来どおり端末内のみで動く。
+   ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
+   ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
+     このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
+   ・番号：生徒のログイン認証はbcryptハッシュ照合。平文の番号は「発行済み番号表」にだけ残り、
+     講師（管理ページ／管理パスワード）からのみ参照できる（生徒・anon keyからは一切見えない）。
+     講師はニックネーム↔番号を照合し、塾のスプレッドシート（番号↔氏名）で誰かを特定する。
+   ・本名などの個人情報はアプリ／DBに保存しない。通信はHTTPS。 */
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+
+function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+// ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
+(function initLoginUI(){
+  const on=ONLINE();
+  document.querySelectorAll('.online-only').forEach(el=>{
+    el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
+  });
+})();
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+  return res.json();
+}
+const REG_ERR={
+  bad_nick:"ニックネームは1〜12文字で入れてね",
+  bad_campus:"校舎を選んでね",
+  bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"
+};
+
+/* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
+async function flushScore(){
+  if(!state||!state.online||!ONLINE())return;
+  while(state.weekPending>0){
+    const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
+    try{
+      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send});
+      if(!r.ok)break;
+      // サーバが実際に加算できた分（granted）だけ減らす。日次上限で一部切り捨てられた分は消さずに翌日送る
+      const granted=(r.granted!=null)?r.granted:send; // granted未対応の旧サーバとの互換
+      state.weekPending-=granted; state.weekScore=r.week_score; saveState();
+      if(granted<send)break; // 日次上限に到達→残りは明日
+    }catch(e){break;}
+  }
+}
+
+/* 進捗バックアップ：番号(pin)は送るデータに含めない */
+async function syncProgress(){
+  if(!state||!state.online||!ONLINE())return;
+  const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+    accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
+    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+}
+
+/* ランキング画面 */
+let rankCampus="", rankPeriod="week";
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
+// チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
+function starHtml(gold,silver){
+  let h="";
+  if(gold>0)  h+=`<span class="star gold" title="月間チャンピオン">★</span>${gold>1?'<span class="stx">×'+gold+'</span>':''}`;
+  if(silver>0)h+=`${h?' ':''}<span class="star silver" title="週間チャンピオン">★</span>${silver>1?'<span class="stx">×'+silver+'</span>':''}`;
+  return h;
+}
+$('rankBack').onclick=()=>{renderHome();show('home');};
+$('rankReload').onclick=()=>loadRanking();
+function renderPeriodTabs(){
+  $('rankPeriodTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.period===rankPeriod);
+    b.onclick=()=>{rankPeriod=b.dataset.period;renderPeriodTabs();loadRanking();};
+  });
+}
+function renderRankTabs(){
+  $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.campus===rankCampus);
+    b.onclick=()=>{rankCampus=b.dataset.campus;renderRankTabs();loadRanking();};
+  });
+}
+async function loadRanking(){
+  const isMonth=rankPeriod==='month';
+  $('rankNote').innerHTML=(isMonth?'今月の 点数 で 勝負！':'今週の 点数 で 勝負！')
+    +'<span id="rankReset"></span>';
+  if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
+  await flushScore();
+  $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
+  try{
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod});
+    if(!rows.length){
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
+        +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
+      return;
+    }
+    const medal=["🥇","🥈","🥉"];
+    $('rankList').innerHTML=rows.map(r=>{
+      const me=state&&r.nick===state.nick;
+      const st=starHtml(r.monthly_wins||0,r.weekly_wins||0);
+      return `<div class="rank-row${me?' me':''}">
+        <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
+        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}点</span></div>`;
+    }).join("");
+  }catch(e){
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">通信エラー。<br>しばらくしてから「最新にする」を押してね</div>';
+  }
+}
+</script>

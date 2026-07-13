@@ -1,0 +1,1170 @@
+<!--
+  ミルバト理科 v1 — 中学受験 理科・知識 暗記アプリ（旧りかたん）
+  ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
+  ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みはすべてRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
+  Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ミルバト理科｜知識編</title>
+<style>
+  :root{
+    --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
+    --green:#4f9d69; --blue:#3f7cc4; --orange:#e08a3c; --gold:#d8a93a;
+    --wrong:#d9534f; --ok:#4f9d69; --card:#fffdf8;
+    --shadow:0 2px 0 rgba(42,39,35,.08), 0 10px 24px -12px rgba(42,39,35,.35); --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    background:radial-gradient(circle at 20% -10%, #fffaf0 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #eef5ee 0%, transparent 45%), var(--paper);
+    color:var(--ink);min-height:100%;display:flex;justify-content:center}
+  #app{width:100%;max-width:460px;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  .screen{flex:1;display:none;flex-direction:column;padding:20px 18px 28px}
+  .screen.active{display:flex;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:30px;margin:0;letter-spacing:.04em}
+  .brandsub{color:var(--ink-soft);font-size:13px;margin-top:2px;letter-spacing:.12em}
+  #login{justify-content:center;gap:18px;text-align:center}
+  .logo{font-size:64px;line-height:1}
+  .field{text-align:left;margin-top:6px}
+  .field label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px;letter-spacing:.05em}
+  .field input{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:18px;background:var(--card);font-family:inherit;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--green)}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:700;font-family:inherit;
+    cursor:pointer;width:100%;color:#fff;background:var(--green);box-shadow:0 3px 0 #3c7d52;
+    transition:transform .05s, box-shadow .05s;letter-spacing:.05em}
+  .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
+  .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
+  .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .btn[disabled]{opacity:.5}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .greet{font-size:14px;color:var(--ink-soft)}
+  .greet b{color:var(--ink);font-size:18px}
+  .streak{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid var(--line);
+    border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px}
+  .streak .fire{font-size:17px}
+  .map-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:16px 14px 8px;margin-bottom:16px;position:relative;overflow:hidden}
+  .map-wrap h2{margin:0 0 2px;font-size:15px;letter-spacing:.05em}
+  .map-wrap .sub{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+  svg.jpmap{width:100%;height:auto;display:block}
+  .mapnote{font-size:11px;color:var(--ink-soft);text-align:center;padding:6px 0 2px}
+  .stat-row{display:flex;gap:10px;margin-bottom:16px}
+  .stat{flex:1;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px;text-align:center}
+  .stat .num{font-size:24px;font-weight:800}
+  .stat .lbl{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+  .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .goal .gt{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+  .bar{height:12px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .5s}
+  .deck-pick{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .deck{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);
+    border-radius:16px;padding:14px;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .deck:active{transform:scale(.99)}
+  .deck .dot{width:14px;height:14px;border-radius:5px;flex:none}
+  .deck .dn{font-weight:700;font-size:16px}
+  .deck .dd{font-size:12px;color:var(--ink-soft)}
+  .deck .due{margin-left:auto;font-size:12px;background:#fbeede;color:var(--orange);
+    border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+  .deck .due.zero{background:#eef2ee;color:var(--ink-soft)}
+  .toolrow{display:flex;gap:8px;margin-top:12px}
+  .toolrow .btn{padding:11px;font-size:13px}
+  #quiz{padding-top:14px}
+  .qtop{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .qtop button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-soft);padding:4px}
+  .qbar{flex:1;height:10px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .qbar > i{display:block;height:100%;width:0;background:var(--green);transition:width .3s}
+  .qcount{font-size:13px;color:var(--ink-soft);font-weight:700}
+  .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:4px 10px;border-radius:999px;background:#eef2ee;color:var(--ink-soft);margin-bottom:10px}
+  .qcard{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px}
+  .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    padding:4px 10px;border-radius:999px;margin-bottom:10px;color:#fff}
+  .qpref{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+  .qtext{font-size:21px;font-weight:700;line-height:1.5}
+  .qmulti-hint{margin-top:8px;font-size:12px;color:var(--orange);font-weight:700}
+  .choices{display:flex;flex-direction:column;gap:10px}
+  .choice{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:15px 16px;
+    font-size:17px;font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;color:var(--ink);transition:.12s}
+  .choice:active{transform:scale(.99)}
+  .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choice.sel{border-color:var(--blue);background:#eef4fb}
+  .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
+  .choice.correct{border-color:var(--ok);background:#eef7f0}
+  .choice.correct .mk{background:var(--ok);border-color:var(--ok)}
+  .choice.wrong{border-color:var(--wrong);background:#fcefee}
+  .choice.wrong .mk{background:var(--wrong);border-color:var(--wrong)}
+  .choice[disabled]{cursor:default}
+  /* 文字を選ぶ・入力 */
+  .answer-slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:54px;
+    padding:12px;border:2px dashed var(--line);border-radius:14px;margin-bottom:14px;background:#fff}
+  .slot{min-width:44px;height:44px;border-radius:10px;background:#eef4fb;border:2px solid var(--blue);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;cursor:pointer}
+  .slot.empty{background:#f3eee2;border:2px dashed var(--line);cursor:default}
+  .tiles{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tile{min-width:44px;height:48px;padding:0 10px;border-radius:12px;background:var(--card);
+    border:2px solid var(--line);font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+  .tile:active{transform:scale(.96)}
+  .tile.used{opacity:.25;pointer-events:none}
+  .text-input{width:100%;padding:16px;border:2px solid var(--line);border-radius:14px;font-size:24px;
+    font-family:inherit;text-align:center;color:var(--ink);background:#fff}
+  .text-input:focus{outline:none;border-color:var(--green)}
+  .input-help{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .feedback{border-radius:var(--r);padding:16px;margin-top:16px;display:none}
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.good{background:#eef7f0;border:2px solid var(--ok)}
+  .feedback.bad{background:#fcefee;border:2px solid var(--wrong)}
+  .feedback .ft{font-weight:800;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .feedback.good .ft{color:var(--ok)}
+  .feedback.bad .ft{color:var(--wrong)}
+  .feedback .fn{font-size:14px;color:var(--ink);line-height:1.6}
+  .qfoot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px}
+  .linkbtn{background:none;border:none;color:var(--ink-soft);font-size:13px;font-family:inherit;
+    cursor:pointer;text-decoration:underline;padding:4px}
+  #done{justify-content:center;text-align:center;gap:14px}
+  #done .big{font-size:72px;line-height:1}
+  #done h2{font-size:26px;margin:0}
+  #done .reward{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;display:flex;justify-content:space-around}
+  #done .reward div{font-size:13px;color:var(--ink-soft)}
+  #done .reward b{display:block;font-size:26px;color:var(--ink);margin-top:2px}
+  .xp-pop{color:var(--gold);font-weight:800}
+  /* 取り込み画面 */
+  #import{gap:14px}
+  #import h2{margin:0;font-size:22px}
+  #import textarea{width:100%;height:200px;border:2px solid var(--line);border-radius:14px;
+    padding:12px;font-family:monospace;font-size:12px;background:#fff;color:var(--ink)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--ink-soft);font-size:14px;background:#fff}
+  .ok-msg{color:var(--ok);font-weight:700;font-size:14px}
+  .err-msg{color:var(--wrong);font-weight:700;font-size:14px}
+  /* 称号画面 */
+  #badges{gap:0}
+  #badges .qtop{margin-bottom:6px}
+  #badges h2{margin:0;font-size:22px}
+  .badge-sum{font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;text-align:center;
+    box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .badge.locked{opacity:.55;filter:grayscale(.8)}
+  .badge .bemoji{font-size:34px;line-height:1}
+  .badge .bname{font-size:13px;font-weight:700;line-height:1.3}
+  .badge .bbar{width:100%;height:8px;border-radius:999px;background:#ece6d8;overflow:hidden;margin-top:4px}
+  .badge .bbar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--blue))}
+  .badge .bmeta{font-size:11px;color:var(--ink-soft)}
+  .badge.earned{border-color:var(--green)}
+  .badge.earned .bmeta{color:var(--green);font-weight:700}
+  .badge.final{grid-column:1 / -1;background:linear-gradient(135deg,#fff8e8,#fef0d8);border-color:var(--gold)}
+  .badge.final.locked{filter:grayscale(.7)}
+  .badge.final .bemoji{font-size:42px}
+  .badge.final .bname{font-size:16px}
+  footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 画像つきカード */
+  .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
+  .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
+  /* 称号獲得のお祝い（音なし） */
+  .celebrate{position:fixed;inset:0;z-index:99;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .celebrate.out{opacity:0;transition:opacity .25s}
+  @keyframes cel-in{from{opacity:0}to{opacity:1}}
+  .celebrate .conf{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .celebrate .conf i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;opacity:.9;animation:conf-fall linear infinite}
+  @keyframes conf-fall{0%{transform:translateY(-6vh) rotate(0deg)}100%{transform:translateY(108vh) rotate(720deg)}}
+  .celebrate .cbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:28px 40px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:80%}
+  @keyframes cel-pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  .celebrate .cemoji{font-size:62px;line-height:1.2;animation:cel-bounce 1.2s ease-in-out infinite}
+  @keyframes cel-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .celebrate .ctitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .celebrate .cname{font-size:22px;font-weight:800;margin-top:2px}
+  .celebrate .cget{color:var(--orange);font-weight:800;font-size:16px;margin-top:6px}
+  .celebrate .chint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  .celebrate.doctor .cemoji{font-size:76px}
+  .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* えらんで学習 */
+  .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
+    border-radius:12px;padding:10px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 2px 0 rgba(42,39,35,.06)}
+  .pick-btn:active{transform:translateY(2px);box-shadow:none}
+  .pick-btn .pe{font-size:22px;flex-shrink:0}
+  .pick-btn .pn{font-weight:700;font-size:13px;display:block;color:var(--ink)}
+  .pick-btn .pp{font-size:10px;color:var(--ink-soft)}
+  .pick-btn.done{border-color:var(--green);background:#eef7f0}
+  .pick-btn.done .pp{color:var(--green);font-weight:700}
+  /* ランキング */
+  .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
+  .field select:focus{outline:none;border-color:var(--green)}
+  .rank-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .rtab{flex:1 1 30%;padding:9px 2px;border:1.5px solid var(--line);border-radius:10px;background:#fff;
+    font-size:12px;font-weight:700;color:var(--ink-soft);font-family:inherit;cursor:pointer;white-space:nowrap}
+  .rtab.active{border-color:var(--green);color:var(--green);background:#eef7f0}
+  .rank-note{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:4px}
+  .rank-me{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 14px;
+    margin:10px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .rank-me b{color:var(--green);font-size:18px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff}
+  .rank-row.me{border-color:var(--green);background:#eef7f0}
+  .rank-row .rno{width:40px;text-align:center;font-weight:800;font-size:15px;flex-shrink:0}
+  .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
+  .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
+  .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+</style>
+
+<div id="app">
+  <!-- ログイン -->
+  <section id="login" class="screen active">
+    <div class="logo">🔬</div>
+    <div><h1>ミルバト理科</h1><div class="brandsub">生物・地学・物理化学（中学受験）</div></div>
+    <div class="field"><label>ニックネーム</label>
+      <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
+      <div class="hint">本名はつかわず、すきな名前にしてね</div></div>
+    <div class="field"><label>番号（塾からもらった数字）</label>
+      <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
+      <div class="hint">先生からもらった数字だよ。ほかの人には教えないでね</div></div>
+    <div class="field" id="campusField"><label>校舎（はじめての人だけえらんでね）</label>
+      <select id="campusSel">
+        <option value="">えらんでね</option>
+        <option value="麻布">麻布</option>
+        <option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option>
+        <option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select></div>
+    <button class="btn" id="loginBtn">はじめる / つづきから</button>
+    <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="home" class="screen">
+    <div class="topbar">
+      <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日れんぞく</div>
+    </div>
+    <div class="map-wrap">
+      <h2>りか コレクション マップ</h2>
+      <div class="sub">マスターした分野が緑にそまっていくよ</div>
+      <div id="mapHost"></div>
+      <div class="mapnote"><span id="masterN">0</span> / <span id="mapTotal">-</span> 分野をマスター</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="sCards">0</div><div class="lbl">おぼえたカード</div></div>
+      <div class="stat"><div class="num" id="sXp">0</div><div class="lbl">XP</div></div>
+      <div class="stat"><div class="num" id="sAcc">–</div><div class="lbl">せいかい率</div></div>
+    </div>
+    <div class="goal">
+      <div class="gt"><span>きょうのゴール</span><span><b id="goalNow">0</b> / <span id="goalMax">10</span> 問</span></div>
+      <div class="bar"><i id="goalBar"></i></div>
+    </div>
+    <div class="deck-pick" id="deckPick"></div>
+    <div class="toolrow">
+      <button class="btn secondary" id="rankBtn" style="display:none">🏆 ランキング</button>
+      <button class="btn secondary" id="badgesBtn">🏅 称号 <span id="badgeCountPill" style="font-weight:800"></span></button>
+    </div>
+    <div class="toolrow">
+      <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- クイズ -->
+  <section id="quiz" class="screen">
+    <div class="qtop">
+      <button id="quitBtn">✕</button>
+      <div class="qbar"><i id="qProg"></i></div>
+      <div class="qcount" id="qCount">1/10</div>
+    </div>
+    <div class="stage-pill" id="stagePill">ステップ1・4たくからえらぶ</div>
+    <div class="qcard">
+      <span class="qtag" id="qTag">県別編</span>
+      <div class="qpref" id="qPref">香川県</div>
+      <img id="qImg" class="qimg" style="display:none" alt="">
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像がひらけないよ（先生におしらせしてね）</div>
+      <div class="qtext" id="qText">問題文</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを ぜんぶ えらんでね</div>
+    </div>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback">
+      <div class="ft" id="fTitle"></div>
+      <div class="fn" id="fNote"></div>
+    </div>
+    <div class="qfoot">
+      <button class="btn" id="checkBtn" disabled>こたえあわせ</button>
+      <button class="linkbtn" id="dontknow">わからない（答えを見る）</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="done" class="screen">
+    <div class="big">🎉</div>
+    <h2>きょうのぶん クリア！</h2>
+    <div class="reward">
+      <div>といた問題<b id="dCards">10</b></div>
+      <div>せいかい<b id="dCorrect">8</b></div>
+      <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
+    </div>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 れんぞく記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへもどる</button>
+    <button class="btn secondary" id="againBtn">もうひとセットやる</button>
+  </section>
+
+  <!-- 取り込み -->
+  <section id="import" class="screen">
+    <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
+    <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,都道府県,…）のままでOK。</p>
+    <label class="dz" for="csvFile">📄 CSVファイルをえらぶ
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
+    <p class="hint" style="text-align:center">または下に貼り付け</p>
+    <textarea id="csvText" placeholder="id,編,都道府県,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
+    <div id="impMsg" style="min-height:18px"></div>
+    <button class="btn" id="doImport">この内容で問題を入れかえる</button>
+    <button class="linkbtn" id="resetCards">さいしょのサンプル問題にもどす</button>
+  </section>
+
+  <!-- えらんで学習（地方・分野べつ） -->
+  <section id="pick" class="screen">
+    <div class="qtop"><button id="pickBack">✕</button><h2>🎯 えらんで学習</h2></div>
+    <p class="hint" style="margin:2px 0 4px">称号をねらって、分野やテーマをえらんで学習しよう</p>
+    <h3 class="pick-h">🔬 ぶんやで えらぶ</h3>
+    <div class="pick-grid" id="pickRegion"></div>
+    <h3 class="pick-h">🏅 テーマで えらぶ</h3>
+    <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- ランキング -->
+  <section id="ranking" class="screen">
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 今週のランキング</h2></div>
+    <div class="rank-note">今週の せいかい数 で しょうぶ！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>きみの今週のせいかい</span><span><b id="myWeekScore">0</b> 問</span></div>
+    <div class="rank-tabs" id="rankTabs">
+      <button class="rtab active" data-campus="">ぜんいん</button>
+      <button class="rtab" data-campus="麻布">麻布</button>
+      <button class="rtab" data-campus="渋谷">渋谷</button>
+      <button class="rtab" data-campus="四谷">四谷</button>
+      <button class="rtab" data-campus="新宿">新宿</button>
+      <button class="rtab" data-campus="自由が丘">自由が丘</button>
+    </div>
+    <div id="rankList"></div>
+    <button class="btn secondary" id="rankReload">🔄 さいしんにする</button>
+  </section>
+
+  <!-- 称号 -->
+  <section id="badges" class="screen">
+    <div class="qtop"><button id="badgesBack">✕</button><h2>🏅 称号</h2></div>
+    <div class="badge-sum" id="badgeSum"></div>
+    <div class="badge-grid" id="badgeGrid"></div>
+  </section>
+
+  <footer>ミルバト理科 v1 ・ 進捗はこの端末に保存されます</footer>
+</div>
+
+<script>
+/* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
+const COLOR = { "生物編":"var(--green)", "地学編":"var(--blue)", "物化編":"var(--orange)" };
+const DEFAULT_CARDS = [
+  {"id": "rk-hatsuga", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "multi", "q": "種子が発芽するのに必要な条件を ぜんぶ えらんでね", "a": ["水", "空気", "適当な温度"], "choices": ["水", "空気", "適当な温度", "日光"], "note": "日光と肥料は発芽には不要！", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-youso", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "種子の養分（デンプン）があるか調べる薬品は？", "a": ["ヨウ素液"], "choices": ["ヨウ素液", "石灰水", "BTB液", "アルコール"], "note": "デンプンにつけると青むらさき色になる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-shiyou", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "インゲンマメの種子で、発芽の養分をたくわえている部分は？", "a": ["子葉"], "choices": ["子葉", "はい", "種皮", "根"], "note": "", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-hana4", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "花のつくりで、いちばん外側にあるのは？", "a": ["がく"], "choices": ["がく", "花びら", "おしべ", "めしべ"], "note": "外側から がく→花びら→おしべ→めしべ。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-jufun", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "めしべの先に花粉がつくことを何という？", "a": ["受粉"], "choices": ["受粉", "蒸散", "発芽", "光合成"], "note": "受粉すると実ができ、種子ができる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-hechima", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "ヘチマの花で、実になるのはどちらの花？", "a": ["め花"], "choices": ["め花", "お花", "両方", "どちらでもない"], "note": "め花のもとのふくらみが実になる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-fubaika", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "マツやトウモロコシのように、花粉が風で運ばれる花を何という？", "a": ["風媒花"], "choices": ["風媒花", "虫媒花", "両性花", "完全花"], "note": "虫が運ぶのは虫媒花（ヘチマやアブラナなど）。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-doukan", "comp": "生物編", "pref": "植物のつくり", "cat": "植物", "type": "single", "q": "根から取り入れた水が通る、くきの中の管は？", "a": ["道管"], "choices": ["道管", "師管", "気孔", "維管束"], "note": "葉でつくられた養分が通るのは師管。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-kougousei", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "multi", "q": "光合成に必要なものを ぜんぶ えらんでね", "a": ["日光", "水", "二酸化炭素"], "choices": ["日光", "水", "二酸化炭素", "酸素"], "note": "できるのはデンプンと酸素。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-kougousei2", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "single", "q": "光合成でできるのは、デンプンと何？", "a": ["酸素"], "choices": ["酸素", "二酸化炭素", "ちっ素", "水素"], "note": "", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-kikou", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "single", "q": "葉にある、水蒸気が出ていく小さな穴を何という？", "a": ["気孔"], "choices": ["気孔", "道管", "師管", "葉緑体"], "note": "気孔は葉の裏側に多い。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-jousan", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "single", "q": "植物の体から、水が水蒸気となって出ていくことを何という？", "a": ["蒸散"], "choices": ["蒸散", "光合成", "呼吸", "受粉"], "note": "", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-youryokutai", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "single", "q": "光合成が行われる、葉の中の緑色のつぶは？", "a": ["葉緑体"], "choices": ["葉緑体", "気孔", "道管", "子葉"], "note": "", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-etanol", "comp": "生物編", "pref": "光合成と蒸散", "cat": "植物", "type": "single", "q": "ヨウ素液で調べる前に、葉を温めたエタノールに入れると葉はどうなる？", "a": ["緑色がぬける"], "choices": ["緑色がぬける", "青くなる", "とける", "かたくなる"], "note": "色をぬくと、ヨウ素液の色の変化が見やすくなる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "rk-konchu3", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "こん虫の体は頭・むね・はらの3つ。あし6本はどこについている？", "a": ["むね"], "choices": ["むね", "はら", "頭", "あしはない"], "note": "あし6本もはね4枚も、すべて むね につく。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-kanzen", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "multi", "q": "さなぎになる（完全変態の）こん虫を ぜんぶ えらんでね", "a": ["チョウ", "カブトムシ", "ハチ"], "choices": ["チョウ", "カブトムシ", "ハチ", "バッタ"], "note": "バッタやセミ、トンボはさなぎにならない（不完全変態）。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-fukanzen", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "さなぎの時期がない育ち方を何という？", "a": ["不完全変態"], "choices": ["不完全変態", "完全変態", "脱皮", "羽化"], "note": "バッタ・セミ・トンボ・カマキリなど。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-monshiro", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "モンシロチョウの幼虫（あおむし）が食べる葉は？", "a": ["キャベツ"], "choices": ["キャベツ", "ミカン", "クワ", "サクラ"], "note": "", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-ageha", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "アゲハの幼虫が食べる葉は？", "a": ["ミカン"], "choices": ["ミカン", "キャベツ", "クワ", "カキ"], "note": "サンショウの葉も食べる。モンシロチョウとまちがえないで。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-kumo", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "クモがこん虫のなかまでないのは、あしが何本だから？", "a": ["8本"], "choices": ["8本", "6本", "10本", "4本"], "note": "こん虫はあし6本。ダンゴムシは14本。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-kimon", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "こん虫が呼吸するための、はらにある穴は？", "a": ["気門"], "choices": ["気門", "気孔", "えら", "肺"], "note": "植物の「気孔」とまちがえないで。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-semi", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "セミの幼虫は、どこで育つ？", "a": ["土の中"], "choices": ["土の中", "水の中", "木の上", "葉の裏"], "note": "数年間、土の中で育つ。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-yago", "comp": "生物編", "pref": "昆虫", "cat": "昆虫", "type": "single", "q": "トンボの幼虫を何という？", "a": ["やご"], "choices": ["やご", "ぼうふら", "あおむし", "うじ"], "note": "ぼうふらは蚊の幼虫。やごは水の中で育つ。", "region": "生物", "badgeCat": "昆虫"},
+  {"id": "rk-medaka-osu", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "メダカのおすは、どのひれに切れこみがあることで見分ける？", "a": ["せびれ"], "choices": ["せびれ", "むなびれ", "おびれ", "はらびれ"], "note": "おすは せびれに切れこみ、しりびれが平行四辺形。", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-medaka-egg", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "メダカのたまごは、水温25度で何日くらいでかえる？", "a": ["約10日"], "choices": ["約10日", "約3日", "約30日", "約60日"], "note": "", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-sakana-kokyu", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "魚は何で呼吸している？", "a": ["えら"], "choices": ["えら", "肺", "皮ふ", "気門"], "note": "", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-kaeru", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "カエルのように、子は水中・親は陸上でも生活する動物のなかまは？", "a": ["両生類"], "choices": ["両生類", "は虫類", "ほ乳類", "魚類"], "note": "子はえら呼吸、親は肺と皮ふで呼吸。", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-honyu", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "子を母乳で育てる動物のなかまは？", "a": ["ほ乳類"], "choices": ["ほ乳類", "鳥類", "は虫類", "両生類"], "note": "クジラもイルカもコウモリも、ほ乳類！", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-shokumotsu", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "「植物→草食動物→肉食動物」のような、食べる・食べられるのつながりを何という？", "a": ["食物連鎖"], "choices": ["食物連鎖", "生存競争", "共生", "寄生"], "note": "", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-plankton", "comp": "生物編", "pref": "動物と魚", "cat": "動物", "type": "single", "q": "水中にただよう小さな生き物をまとめて何という？", "a": ["プランクトン"], "choices": ["プランクトン", "ミジンコ", "アメーバ", "バクテリア"], "note": "ミジンコはプランクトンの一種。", "region": "生物", "badgeCat": "動物"},
+  {"id": "rk-daeki", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "だ液が消化するのは？", "a": ["デンプン"], "choices": ["デンプン", "タンパク質", "脂肪", "ビタミン"], "note": "デンプンを麦芽糖に変える。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-ieki", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "胃液が主に消化するのは？", "a": ["タンパク質"], "choices": ["タンパク質", "デンプン", "脂肪", "水分"], "note": "", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-shocho", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "消化された養分を主に吸収する臓器は？", "a": ["小腸"], "choices": ["小腸", "大腸", "胃", "食道"], "note": "内側は「じゅう毛」でおおわれている。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-daicho", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "大腸の主なはたらきは？", "a": ["水分を吸収する"], "choices": ["水分を吸収する", "養分を吸収する", "食べ物を消化する", "血液を送る"], "note": "", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-shinzo", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "心臓には部屋がいくつある？", "a": ["4つ"], "choices": ["4つ", "2つ", "3つ", "6つ"], "note": "2つの心房と2つの心室。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-haiko", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "肺で血液に取り入れられる気体は？", "a": ["酸素"], "choices": ["酸素", "二酸化炭素", "ちっ素", "水蒸気"], "note": "二酸化炭素を出して、酸素を取り入れる。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-hakuiki", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "はく息に、吸う息より多くふくまれる気体は？", "a": ["二酸化炭素"], "choices": ["二酸化炭素", "酸素", "ちっ素", "水素"], "note": "ちっ素の割合はほとんど変わらない。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-kansetsu", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "骨と骨のつなぎ目を何という？", "a": ["関節"], "choices": ["関節", "筋肉", "けん", "軟骨"], "note": "", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-junban", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "食べ物が通る順として正しいのは？", "a": ["口→食道→胃→小腸→大腸"], "choices": ["口→食道→胃→小腸→大腸", "口→胃→食道→小腸→大腸", "口→食道→小腸→胃→大腸", "口→食道→胃→大腸→小腸"], "note": "", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-kanzou", "comp": "生物編", "pref": "人のからだ", "cat": "人体", "type": "single", "q": "養分をたくわえたり、体に害のあるものを分解したりする臓器は？", "a": ["かん臓"], "choices": ["かん臓", "じん臓", "すい臓", "ぼうこう"], "note": "じん臓は尿をつくる臓器。", "region": "生物", "badgeCat": "人のからだ"},
+  {"id": "rk-taiyo", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "太陽は、どの方角からのぼる？", "a": ["東"], "choices": ["東", "西", "南", "北"], "note": "東からのぼり、南の空を通って西にしずむ。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-nanchu", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "太陽が真南にきて、いちばん高くなることを何という？", "a": ["南中"], "choices": ["南中", "日の出", "日食", "公転"], "note": "", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-kage", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "朝、棒のかげはどの方角にできる？", "a": ["西"], "choices": ["西", "東", "南", "北"], "note": "かげは太陽の反対側。朝は太陽が東にあるから、かげは西。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-michikake", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "月の満ち欠けの順として正しいのは？", "a": ["新月→三日月→上弦の月→満月"], "choices": ["新月→三日月→上弦の月→満月", "新月→上弦の月→三日月→満月", "満月→三日月→新月→上弦の月", "新月→下弦の月→三日月→満月"], "note": "約29.5日でひと回り。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-mangetsu", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "満月が東からのぼるのは、いつごろ？", "a": ["夕方"], "choices": ["夕方", "明け方", "真夜中", "正午"], "note": "満月は夕方のぼって、真夜中に南中する。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-jougen", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "夕方、南の空に見える半月は？", "a": ["上弦の月"], "choices": ["上弦の月", "下弦の月", "満月", "新月"], "note": "下弦の月は明け方に南の空。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-nisshoku", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "日食が起こるのは、月が何のとき？", "a": ["新月"], "choices": ["新月", "満月", "上弦の月", "三日月"], "note": "太陽-月-地球の順に一直線に並ぶ。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-gesshoku", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "月食が起こるのは、月が何のとき？", "a": ["満月"], "choices": ["満月", "新月", "上弦の月", "下弦の月"], "note": "太陽-地球-月の順に並び、地球のかげに月が入る。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-tsukimen", "comp": "地学編", "pref": "太陽と月", "cat": "天体", "type": "single", "q": "月がいつも同じ面を地球に向けているのは、自転と公転の周期がどうだから？", "a": ["同じだから"], "choices": ["同じだから", "逆だから", "2倍だから", "関係ない"], "note": "", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-hokkyokusei", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "ほとんど動かない、北の空の星は？", "a": ["北極星"], "choices": ["北極星", "シリウス", "ベガ", "アンタレス"], "note": "こぐま座の2等星。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-hokuto", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "北斗七星は、何という星座の一部？", "a": ["おおぐま座"], "choices": ["おおぐま座", "こぐま座", "カシオペヤ座", "オリオン座"], "note": "こぐま座とまちがえないで。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-kasiopeya", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "W（ダブリュー）の形をした、北の空の星座は？", "a": ["カシオペヤ座"], "choices": ["カシオペヤ座", "おおぐま座", "オリオン座", "さそり座"], "note": "北極星をさがす手がかりになる。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-natsu3", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "multi", "q": "夏の大三角の星を ぜんぶ えらんでね", "a": ["ベガ", "デネブ", "アルタイル"], "choices": ["ベガ", "デネブ", "アルタイル", "シリウス"], "note": "こと座ベガ（織姫）、わし座アルタイル（彦星）、はくちょう座デネブ。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-fuyu3", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "multi", "q": "冬の大三角の星を ぜんぶ えらんでね", "a": ["ベテルギウス", "シリウス", "プロキオン"], "choices": ["ベテルギウス", "シリウス", "プロキオン", "リゲル"], "note": "リゲルはちがう！オリオン座ベテルギウス、おおいぬ座シリウス、こいぬ座プロキオン。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-orion", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "オリオン座の赤い一等星は？", "a": ["ベテルギウス"], "choices": ["ベテルギウス", "リゲル", "シリウス", "アンタレス"], "note": "リゲルは青白い一等星。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-sasori", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "さそり座の赤い一等星は？", "a": ["アンタレス"], "choices": ["アンタレス", "ベテルギウス", "ベガ", "デネブ"], "note": "夏の南の空に見える。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-hoshi15", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "星は、1時間に約何度動いて見える？", "a": ["15度"], "choices": ["15度", "30度", "5度", "60度"], "note": "24時間で360度→1時間で15度。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-sirius", "comp": "地学編", "pref": "星と星座", "cat": "天体", "type": "single", "q": "全天でいちばん明るい恒星は？", "a": ["シリウス"], "choices": ["シリウス", "北極星", "ベガ", "ベテルギウス"], "note": "おおいぬ座の一等星。", "region": "地学", "badgeCat": "天体"},
+  {"id": "rk-hyakuyou", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "百葉箱のとびらは、どの方角に向いている？", "a": ["北"], "choices": ["北", "南", "東", "西"], "note": "開けたとき直射日光が入らないように。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-hyakuyou2", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "百葉箱が白くぬられている理由は？", "a": ["日光を反射するため"], "choices": ["日光を反射するため", "よごれを防ぐため", "雨をはじくため", "目立たせるため"], "note": "中の温度が上がらないようにしている。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-kumoryo", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "空全体を10としたとき、「晴れ」は雲の量がいくつまで？", "a": ["8"], "choices": ["8", "5", "6", "9"], "note": "0〜8が晴れ（0〜1は快晴）、9〜10がくもり。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-taifu", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "台風が日本にやってくるのは、主にいつ？", "a": ["夏から秋"], "choices": ["夏から秋", "春から夏", "冬", "梅雨の時期"], "note": "南の海上で発生して北上する。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-hensei", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "日本の天気が西から東へ変わるのは、上空にふく何という風のため？", "a": ["偏西風"], "choices": ["偏西風", "季節風", "台風", "海風"], "note": "", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-yuyake", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "「夕焼けの次の日は晴れ」といわれるのは、天気がどちらの方角から変わるから？", "a": ["西"], "choices": ["西", "東", "南", "北"], "note": "夕焼け＝西の空が晴れている＝晴れがやってくる。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-sekiran", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "かみなりや夕立を降らせる、たてに大きく発達した雲は？", "a": ["積乱雲"], "choices": ["積乱雲", "巻雲", "乱層雲", "積雲"], "note": "入道雲ともいう。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-baiu", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "6月ごろ、雨やくもりの日が続く時期を何という？", "a": ["梅雨"], "choices": ["梅雨", "台風", "秋雨", "木枯らし"], "note": "", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-kanshitsu", "comp": "地学編", "pref": "天気", "cat": "天気", "type": "single", "q": "乾湿計で、かん球としっ球の温度の差が大きいほど、湿度は？", "a": ["低い"], "choices": ["低い", "高い", "変わらない", "50%になる"], "note": "かわいているほど、しっ球の温度が下がる。", "region": "地学", "badgeCat": "天気"},
+  {"id": "rk-chisou", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "ふつう、地層は上と下のどちらが古い？", "a": ["下"], "choices": ["下", "上", "同じ", "わからない"], "note": "下から順に積もっていくから。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-tsubu", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "れき・砂・どろを、つぶの大きい順に並べると？", "a": ["れき→砂→どろ"], "choices": ["れき→砂→どろ", "どろ→砂→れき", "砂→れき→どろ", "れき→どろ→砂"], "note": "れきは直径2mm以上。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-oki", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "川が海に流れこむとき、河口からいちばん遠くまで運ばれるのは？", "a": ["どろ"], "choices": ["どろ", "れき", "砂", "石"], "note": "つぶが小さいほど遠くまで運ばれる。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-deigan", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "どろが固まってできた岩石は？", "a": ["でい岩"], "choices": ["でい岩", "砂岩", "れき岩", "石灰岩"], "note": "れき→れき岩、砂→砂岩、どろ→でい岩。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-sanyou", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "サンヨウチュウの化石が示す時代は？", "a": ["古生代"], "choices": ["古生代", "中生代", "新生代", "縄文時代"], "note": "", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-anmo", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "アンモナイトの化石が示す時代は？", "a": ["中生代"], "choices": ["中生代", "古生代", "新生代", "氷河時代"], "note": "恐竜と同じ時代。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-sango", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "サンゴの化石が見つかった地層は、昔どんな環境だったとわかる？", "a": ["あたたかくて浅い海"], "choices": ["あたたかくて浅い海", "冷たくて深い海", "湖", "川の上流"], "note": "昔の環境を示す化石＝示相化石。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-kazanbai", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "火山灰の層があると、昔そのころ何があったとわかる？", "a": ["火山の噴火"], "choices": ["火山の噴火", "地震", "洪水", "津波"], "note": "", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-danso", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "地層が大きな力でずれたものを何という？", "a": ["断層"], "choices": ["断層", "しゅう曲", "侵食", "堆積"], "note": "おし曲げられたものは「しゅう曲」。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-shindo", "comp": "地学編", "pref": "大地と化石", "cat": "大地", "type": "single", "q": "地震の「ゆれの大きさ」を表すのは？", "a": ["震度"], "choices": ["震度", "マグニチュード", "震源", "震央"], "note": "マグニチュードは地震そのものの規模。", "region": "地学", "badgeCat": "大地"},
+  {"id": "rk-litmus-a", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "青色リトマス紙を赤色に変えるのは、何性の水溶液？", "a": ["酸性"], "choices": ["酸性", "アルカリ性", "中性", "どれでもない"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-litmus-b", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "赤色リトマス紙を青色に変えるのは、何性の水溶液？", "a": ["アルカリ性"], "choices": ["アルカリ性", "酸性", "中性", "どれでもない"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-btb", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "BTB液は、酸性で何色になる？", "a": ["黄色"], "choices": ["黄色", "青色", "緑色", "赤色"], "note": "酸性：黄、中性：緑、アルカリ性：青。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-ensan", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "塩酸は、何という気体が水にとけたもの？", "a": ["塩化水素"], "choices": ["塩化水素", "二酸化炭素", "アンモニア", "水素"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-tansan", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "炭酸水は、何という気体が水にとけたもの？", "a": ["二酸化炭素"], "choices": ["二酸化炭素", "酸素", "塩化水素", "ちっ素"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-sekkaisui", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "石灰水は何性？", "a": ["アルカリ性"], "choices": ["アルカリ性", "酸性", "中性", "弱酸性"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-jouhatsu", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "食塩水を蒸発させると、あとに何が残る？", "a": ["食塩"], "choices": ["食塩", "何も残らない", "水", "白いけむり"], "note": "塩酸やアンモニア水は気体がとけた水溶液なので、何も残らない。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-youkaido", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "水の温度を上げると、とける量が大きくふえるのは？", "a": ["ミョウバン"], "choices": ["ミョウバン", "食塩", "でんぷん", "砂"], "note": "食塩は温度を上げても、とける量がほとんど変わらない。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-chuwa", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "塩酸と水酸化ナトリウム水溶液を混ぜて、たがいの性質を打ち消し合うことを何という？", "a": ["中和"], "choices": ["中和", "蒸発", "ろ過", "溶解"], "note": "ちょうど中和すると、食塩と水ができる。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-alumi", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "塩酸にも水酸化ナトリウム水溶液にもとける金属は？", "a": ["アルミニウム"], "choices": ["アルミニウム", "鉄", "銅", "金"], "note": "鉄は塩酸にはとけるが、水酸化ナトリウム水溶液にはとけない。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-kinzoku-gas", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "塩酸に鉄やアルミニウムがとけるとき、出てくる気体は？", "a": ["水素"], "choices": ["水素", "酸素", "二酸化炭素", "塩化水素"], "note": "", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-roka", "comp": "物化編", "pref": "水溶液", "cat": "水溶液", "type": "single", "q": "水にとけていない固体を、ろ紙でこし分ける方法は？", "a": ["ろ過"], "choices": ["ろ過", "蒸発", "中和", "蒸留"], "note": "液はガラス棒に伝わらせて注ぐ。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "rk-sanso", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "ものを燃やすはたらきがある気体は？", "a": ["酸素"], "choices": ["酸素", "二酸化炭素", "ちっ素", "水素"], "note": "酸素自身は燃えない！「燃やすのを助ける」はたらき。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-sanso-make", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "酸素は、二酸化マンガンに何を加えてつくる？", "a": ["過酸化水素水"], "choices": ["過酸化水素水", "塩酸", "石灰水", "アンモニア水"], "note": "過酸化水素水はオキシドールともいう。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-co2-sekkai", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "二酸化炭素を通すと、白くにごる液体は？", "a": ["石灰水"], "choices": ["石灰水", "BTB液", "ヨウ素液", "食塩水"], "note": "二酸化炭素を見分ける方法として頻出。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-co2-make", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "二酸化炭素は、石灰石に何を加えてつくる？", "a": ["塩酸"], "choices": ["塩酸", "過酸化水素水", "水酸化ナトリウム水溶液", "食塩水"], "note": "", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-suiso", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "いちばん軽い気体で、燃えると水ができるのは？", "a": ["水素"], "choices": ["水素", "酸素", "ちっ素", "二酸化炭素"], "note": "", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-chisso", "comp": "物化編", "pref": "気体", "cat": "気体", "type": "single", "q": "空気の約78%をしめる気体は？", "a": ["ちっ素"], "choices": ["ちっ素", "酸素", "二酸化炭素", "水素"], "note": "酸素は約21%。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-moeru3", "comp": "物化編", "pref": "ものの燃え方", "cat": "燃焼", "type": "multi", "q": "ものが燃え続けるのに必要なものを ぜんぶ えらんでね", "a": ["燃えるもの", "酸素", "発火点以上の温度"], "choices": ["燃えるもの", "酸素", "発火点以上の温度", "二酸化炭素"], "note": "燃焼の3条件。どれか1つでも取り除くと火は消える。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-rousoku", "comp": "物化編", "pref": "ものの燃え方", "cat": "燃焼", "type": "single", "q": "ろうそくの炎で、いちばん温度が高いのは？", "a": ["外炎"], "choices": ["外炎", "内炎", "炎心", "しん"], "note": "いちばん明るいのは内炎。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-futa", "comp": "物化編", "pref": "ものの燃え方", "cat": "燃焼", "type": "single", "q": "燃えているろうそくに、びんのふたをすると火が消える理由は？", "a": ["新しい酸素が入らないから"], "choices": ["新しい酸素が入らないから", "二酸化炭素が火を消すから", "温度が下がるから", "ろうが冷えるから"], "note": "", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-mushiyaki", "comp": "物化編", "pref": "ものの燃え方", "cat": "燃焼", "type": "single", "q": "木を空気を断って熱する（蒸し焼きにする）とできるのは？", "a": ["木炭"], "choices": ["木炭", "灰", "二酸化炭素だけ", "何も残らない"], "note": "蒸し焼き＝乾留という。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-steel", "comp": "物化編", "pref": "ものの燃え方", "cat": "燃焼", "type": "single", "q": "スチールウール（鉄）を燃やすと、重さはどうなる？", "a": ["重くなる"], "choices": ["重くなる", "軽くなる", "変わらない", "なくなる"], "note": "酸素と結びつくため重くなる。紙や木は軽くなる。", "region": "化学", "badgeCat": "気体と燃焼"},
+  {"id": "rk-teko3", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "てこ", "type": "single", "q": "てこで、棒を支える動かない点を何という？", "a": ["支点"], "choices": ["支点", "力点", "作用点", "重心"], "note": "力を加える点＝力点、力がはたらく点＝作用点。", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-tsuriai", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "てこ", "type": "single", "q": "てこがつり合うのは「おもりの重さ×何」が左右で等しいとき？", "a": ["支点からの距離"], "choices": ["支点からの距離", "おもりの数", "棒の長さ", "おもりの大きさ"], "note": "", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-kuginuki", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "てこ", "type": "single", "q": "くぎぬきは、何が真ん中にある道具？", "a": ["支点"], "choices": ["支点", "力点", "作用点", "重心"], "note": "ピンセットは力点、せんぬきは作用点が真ん中。", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-furiko", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "ふりこ", "type": "single", "q": "ふりこが1往復する時間は、何によって決まる？", "a": ["ふりこの長さ"], "choices": ["ふりこの長さ", "おもりの重さ", "ふれはば", "おもりの形"], "note": "重さやふれはばを変えても、1往復の時間は変わらない！", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-furiko2", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "ふりこ", "type": "single", "q": "ふりこを長くすると、1往復の時間は？", "a": ["長くなる"], "choices": ["長くなる", "短くなる", "変わらない", "0になる"], "note": "", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-bane", "comp": "物化編", "pref": "てこ・ふりこ", "cat": "ばね", "type": "single", "q": "ばねののびは、加えた力の大きさに？", "a": ["比例する"], "choices": ["比例する", "反比例する", "関係ない", "2乗に比例する"], "note": "", "region": "物理", "badgeCat": "てこ・ふりこ"},
+  {"id": "rk-chokuretsu", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "かん電池2個を直列につなぐと、豆電球の明るさは1個のときと比べて？", "a": ["明るくなる"], "choices": ["明るくなる", "暗くなる", "変わらない", "消える"], "note": "", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-heiretsu", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "かん電池2個を並列につなぐと、豆電球の明るさは1個のときと比べて？", "a": ["変わらない"], "choices": ["変わらない", "明るくなる", "暗くなる", "消える"], "note": "明るさは変わらないが、長持ちする。", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-denjishaku", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "multi", "q": "電磁石を強くする方法を ぜんぶ えらんでね", "a": ["電流を強くする", "コイルの巻き数をふやす"], "choices": ["電流を強くする", "コイルの巻き数をふやす", "電池を並列にする", "鉄しんを抜く"], "note": "鉄しんを入れることでも強くなる。", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-denji-kyoku", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "電磁石のN極とS極を入れかえるには？", "a": ["電流の向きを逆にする"], "choices": ["電流の向きを逆にする", "巻き数をふやす", "電池をふやす", "鉄しんをかえる"], "note": "", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-houi", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "方位磁針のN極は、どの方角を指す？", "a": ["北"], "choices": ["北", "南", "東", "西"], "note": "", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-tsuden", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "電気を通すものは？", "a": ["鉄のくぎ"], "choices": ["鉄のくぎ", "ガラスのコップ", "わりばし", "消しゴム"], "note": "金属は電気を通す。", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-led", "comp": "物化編", "pref": "電気と磁石", "cat": "電気", "type": "single", "q": "豆電球より少ない電気で光るのは？", "a": ["発光ダイオード"], "choices": ["発光ダイオード", "蛍光灯", "電熱線", "モーター"], "note": "LEDともいう。", "region": "物理", "badgeCat": "電気"},
+  {"id": "rk-hansha", "comp": "物化編", "pref": "光と音", "cat": "光", "type": "single", "q": "鏡に当たった光がはね返ることを何という？", "a": ["反射"], "choices": ["反射", "屈折", "直進", "分解"], "note": "", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-kussetsu", "comp": "物化編", "pref": "光と音", "cat": "光", "type": "single", "q": "水の中のストローが折れ曲がって見えるのは、光の何のため？", "a": ["屈折"], "choices": ["屈折", "反射", "直進", "かげ"], "note": "光が水面で折れ曲がるから。", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-shoten", "comp": "物化編", "pref": "光と音", "cat": "光", "type": "single", "q": "虫めがね（凸レンズ）で日光を集めた点を何という？", "a": ["焦点"], "choices": ["焦点", "中心", "光点", "集点"], "note": "", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-shindou", "comp": "物化編", "pref": "光と音", "cat": "音", "type": "single", "q": "音が出ているものは、必ず何をしている？", "a": ["振動"], "choices": ["振動", "回転", "発熱", "発光"], "note": "", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-onsoku", "comp": "物化編", "pref": "光と音", "cat": "音", "type": "single", "q": "空気中を伝わる音の速さは、1秒間に約何m？", "a": ["約340m"], "choices": ["約340m", "約34m", "約3400m", "約30万km"], "note": "光はずっと速い（秒速約30万km）。", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-kaminari", "comp": "物化編", "pref": "光と音", "cat": "音", "type": "single", "q": "かみなりで、光ってから音が聞こえるまで時間がかかるのは？", "a": ["光のほうが速いから"], "choices": ["光のほうが速いから", "音のほうが速いから", "光が先に発生するから", "耳のほうがにぶいから"], "note": "", "region": "物理", "badgeCat": "光と音"},
+  {"id": "rk-takaioto", "comp": "物化編", "pref": "光と音", "cat": "音", "type": "single", "q": "高い音は、振動の何が多い？", "a": ["振動数"], "choices": ["振動数", "振幅", "重さ", "長さ"], "note": "大きい音は振幅が大きい。", "region": "物理", "badgeCat": "光と音"},
+];
+/* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
+const PREF_REGION = {
+  "北海道":"北海道",
+  "青森県":"東北","岩手県":"東北","宮城県":"東北","秋田県":"東北","山形県":"東北","福島県":"東北",
+  "茨城県":"関東","栃木県":"関東","群馬県":"関東","埼玉県":"関東","千葉県":"関東","東京都":"関東","神奈川県":"関東",
+  "新潟県":"中部","富山県":"中部","石川県":"中部","福井県":"中部","山梨県":"中部","長野県":"中部","岐阜県":"中部","静岡県":"中部","愛知県":"中部",
+  "三重県":"近畿","滋賀県":"近畿","京都府":"近畿","大阪府":"近畿","兵庫県":"近畿","奈良県":"近畿","和歌山県":"近畿",
+  "鳥取県":"中国四国","島根県":"中国四国","岡山県":"中国四国","広島県":"中国四国","山口県":"中国四国","徳島県":"中国四国","香川県":"中国四国","愛媛県":"中国四国","高知県":"中国四国",
+  "福岡県":"九州沖縄","佐賀県":"九州沖縄","長崎県":"九州沖縄","熊本県":"九州沖縄","大分県":"九州沖縄","宮崎県":"九州沖縄","鹿児島県":"九州沖縄","沖縄県":"九州沖縄",
+  // 県をまたぐ・広域の表記
+  "全国":"全国","太平洋":"全国","日本海":"全国",
+  "関東":"関東","東北":"東北","中部":"中部","近畿":"近畿","中国":"中国四国","四国":"中国四国"
+};
+const CAT_BADGE = {
+  "県庁所在地":"県庁所在地","道庁所在地":"県庁所在地","政令指定都市":"県庁所在地",
+  "河川":"水","湖":"水","海流":"水","海岸":"水","湾":"水",
+  "山地・山脈":"陸","山・台地・盆地":"陸","半島":"陸",
+  "特産品":"農業","畜産":"農業",
+  "漁港":"漁業","養殖":"漁業",   // 漁港・養殖は産業として「漁業」称号に寄せる
+  "林業":"林業",
+  "工業":"工業","工業都市":"工業","公害":"工業",
+  "伝統的工芸品":"伝統工芸品",
+  "日本三景":"その他","日本三名園":"その他"
+};
+function regionOf(pref){ return PREF_REGION[pref] || "全国"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "その他"; }
+function enrichCards(cards){
+  cards.forEach(c=>{
+    if(!c.region) c.region = regionOf(c.pref);
+    if(!c.badgeCat) c.badgeCat = badgeCatOf(c.cat);
+  });
+  return cards;
+}
+
+let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards() を呼ぶと定数が未初期化で常にDEFAULT_CARDSに落ちるバグがあった
+
+/* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
+function buildMap(mset){
+  // 教科版：カード(pref)からユニークな分野を拾って自動でタイルを並べる
+  const prefs=[...new Set(CARDS.map(c=>c.pref))];
+  const COLS=5, CELL=34, GAP=4, PAD=6;
+  const rows=Math.ceil(prefs.length/COLS);
+  const W=PAD*2+COLS*(CELL+GAP), H=PAD*2+rows*(CELL+GAP);
+  let cells="";
+  prefs.forEach((name,i)=>{
+    const x=PAD+(i%COLS)*(CELL+GAP), y=PAD+Math.floor(i/COLS)*(CELL+GAP);
+    const on=mset.has(name);
+    const fill=on?"var(--green)":"#e7e2d4", tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="6" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+4}" text-anchor="middle" font-size="11" fill="${tcol}" font-weight="700">${name.slice(0,2)}</text></g>`;
+  });
+  return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
+}
+
+/* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
+const DAILY_GOAL=10;
+const LS_CARDS="rikatan_cards";
+const userKey=(n,p)=>"rikatan_user_"+n+"_"+p;
+let state=null;
+
+function loadCards(){
+  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  return DEFAULT_CARDS.slice();
+}
+CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0};}
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function loadState(n,p){
+  try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
+  return null;
+}
+function rolloverDay(){
+  // 日付が変わっていたら「今日の学習」をリセット。前日にゴール未達ならストリークを途切れさせる簡易版
+  const t=todayStr();
+  if(state.lastDay!==t){
+    state.doneToday=0; state.streakedToday=false; state.lastDay=t;
+  }
+}
+
+/* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
+/* stage: 0=4択, 1=文字を選ぶ, 2=入力。reps（連続正解数）で決まる */
+function stageOf(r){
+  if(!r||r.reps<=0) return 0;
+  if(r.reps===1) return 1;
+  return 2;
+}
+function schedule(id,correct){
+  const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
+  if(correct){
+    r.reps+=1;
+    if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
+    r.ef=Math.min(2.6,r.ef+0.05);
+    if(r.reps>=3)r.mastered=true;
+  }else{
+    r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
+    r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
+    r.wrong=(r.wrong||0)+1; // にがて復習用：まちがえた回数を記録
+  }
+  r.due=Date.now()+r.interval*864e5;
+  state.reviews[id]=r;
+}
+function masteredCount(){const s=new Set();CARDS.forEach(c=>{const r=state.reviews[c.id];if(r&&r.mastered)s.add(c.pref);});return s;}
+function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastered).length;}
+
+/* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
+const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
+const BADGES = [
+  {key:"seibutsu", name:"生物マスター",       emoji:"🌱", type:"region", match:"生物"},
+  {key:"chigaku",  name:"地学マスター",       emoji:"🌋", type:"region", match:"地学"},
+  {key:"butsuri",  name:"物理マスター",       emoji:"⚡", type:"region", match:"物理"},
+  {key:"kagaku",   name:"化学マスター",       emoji:"🧪", type:"region", match:"化学"},
+  {key:"plant",    name:"植物マスター",       emoji:"🌻", type:"badgeCat", match:"植物"},
+  {key:"insect",   name:"昆虫マスター",       emoji:"🦋", type:"badgeCat", match:"昆虫"},
+  {key:"animal",   name:"動物マスター",       emoji:"🐟", type:"badgeCat", match:"動物"},
+  {key:"body",     name:"人のからだマスター", emoji:"🏃", type:"badgeCat", match:"人のからだ"},
+  {key:"tentai",   name:"天体マスター",       emoji:"🌙", type:"badgeCat", match:"天体"},
+  {key:"tenki",    name:"天気マスター",       emoji:"⛅", type:"badgeCat", match:"天気"},
+  {key:"daichi",   name:"大地マスター",       emoji:"⛰️", type:"badgeCat", match:"大地"},
+  {key:"suiyou",   name:"水溶液マスター",     emoji:"💧", type:"badgeCat", match:"水溶液"},
+  {key:"nensho",   name:"気体と燃焼マスター", emoji:"🔥", type:"badgeCat", match:"気体と燃焼"},
+  {key:"teko",     name:"てこ・ふりこマスター",emoji:"⚖️", type:"badgeCat", match:"てこ・ふりこ"},
+  {key:"denki",    name:"電気マスター",       emoji:"💡", type:"badgeCat", match:"電気"},
+  {key:"hikari",   name:"光と音マスター",     emoji:"🔦", type:"badgeCat", match:"光と音"},
+  {key:"diagram",  name:"図表マスター",       emoji:"📊", type:"badgeCat", match:"図表"},
+];
+const FINAL_BADGE = {key:"doctor", name:"理科博士", emoji:"🎓"};
+// 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
+// 解放判定・地理博士の条件・称号数の分母すべてから除外し、カードが入ると自動で有効になる
+function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
+function activeBadges(){return BADGES.filter(badgeActive);}
+
+// 称号ごとの進捗 {total, mastered, ratio, earned}
+function badgeProgress(b){
+  const group = CARDS.filter(c => b.type==="region" ? c.region===b.match : c.badgeCat===b.match);
+  const total = group.length;
+  let mastered = 0;
+  group.forEach(c=>{const r=state.reviews[c.id]; if(r&&r.mastered)mastered++;});
+  const ratio = total ? mastered/total : 0;
+  return {total, mastered, ratio, earned: total>0 && ratio>=BADGE_THRESHOLD};
+}
+// 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
+function refreshBadges(){
+  if(!state.badges)state.badges={};
+  const act=activeBadges(), fresh=[];
+  act.forEach(b=>{
+    if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
+  });
+  if(act.length && act.every(b=>state.badges[b.key]) && !state.badges[FINAL_BADGE.key]){
+    state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
+  }
+  if(fresh.length){saveState();celebrate(fresh);}
+  return state.badges;
+}
+function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
+let celebrateQueue=[], celebrating=false;
+function celebrate(badges){ celebrateQueue.push(...badges); if(!celebrating) nextCelebration(); }
+function nextCelebration(){
+  const b=celebrateQueue.shift();
+  if(!b){celebrating=false;return;}
+  celebrating=true;
+  const isDoctor=b.key===FINAL_BADGE.key;
+  const colors=["#4f9d69","#e08a3c","#d8a93a","#3f7cc4","#d9534f","#9a6fc4"];
+  let conf="";
+  const n=isDoctor?90:45;
+  for(let i=0;i<n;i++){ // 疑似ランダム配置（indexから決める）
+    conf+=`<i style="left:${(i*37)%100}%;background:${colors[i%colors.length]};animation-delay:${(i%20)*0.13}s;animation-duration:${2.2+(i%7)*0.3}s;width:${6+(i%3)*3}px"></i>`;
+  }
+  const ov=document.createElement('div');
+  ov.className="celebrate"+(isDoctor?" doctor":"");
+  ov.innerHTML=`<div class="conf">${conf}</div>
+    <div class="cbody">
+      <div class="cemoji">${b.emoji}</div>
+      <div class="ctitle">${isDoctor?"さいごの称号":"あたらしい称号"}</div>
+      <div class="cname">${b.name}</div>
+      <div class="cget">${isDoctor?"ぜんぶの称号を あつめたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップでとじる</div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
+  ov.onclick=close;
+  setTimeout(close, isDoctor?9000:4500);
+}
+
+/* ===== 5. 画面 ===== */
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+
+$('loginBtn').onclick=async()=>{
+  const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
+  $('loginMsg').textContent="";
+  if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8けた）で入れてね";return;}
+  $('loginBtn').disabled=true;
+  try{
+    let onlineOk=false, srvCampus="", srvWeek=0;
+    if(ONLINE()){
+      $('loginMsg').textContent="つうしん中…";
+      try{
+        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        if(!r.ok&&r.reason==='not_found'){
+          if(!campus){$('loginMsg').textContent="はじめての人は校舎をえらんでね";return;}
+          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          r.week_score=0;
+        }else if(!r.ok){
+          $('loginMsg').textContent="番号がちがうみたい。もういちど確かめてね";return;
+        }
+        onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+      }catch(e){ /* サーバに届かない → オフラインで続行 */ }
+    }
+    const existing=loadState(n,p);
+    state=existing||freshState(n,p);
+    if(!state.badges)state.badges={};
+    if(state.weekPending==null)state.weekPending=0;
+    state.online=onlineOk;
+    if(onlineOk){
+      state.campus=srvCampus;
+      state.weekScore=srvWeek;
+      if(!existing){
+        // この端末に記録がない → サーバのバックアップから復元を試みる
+        try{
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
+          if(pr.ok&&pr.data){
+            const d=pr.data;
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges"].forEach(k=>{
+              if(d[k]!=null)state[k]=d[k];
+            });
+          }
+        }catch(e){}
+      }
+    }
+    $('loginMsg').textContent="";
+    rolloverDay(); refreshBadges(); saveState();
+    renderHome(); show('home');
+    flushScore();
+  }finally{ $('loginBtn').disabled=false; }
+};
+$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+
+function renderHome(){
+  rolloverDay();
+  $('hiNick').textContent=state.nick;
+  $('streakN').textContent=state.streak;
+  const mset=masteredCount();
+  $('mapHost').innerHTML=buildMap(mset);
+  $('masterN').textContent=mset.size;
+  $('mapTotal').textContent=[...new Set(CARDS.map(c=>c.pref))].length;
+  $('sCards').textContent=masteredCards();
+  $('sXp').textContent=state.xp;
+  $('sAcc').textContent=state.accTotal?Math.round(state.accCorrect/state.accTotal*100)+"%":"–";
+  $('goalNow').textContent=Math.min(state.doneToday,DAILY_GOAL);
+  $('goalMax').textContent=DAILY_GOAL;
+  $('goalBar').style.width=Math.min(100,state.doneToday/DAILY_GOAL*100)+"%";
+  const comps=["生物編","地学編","物化編"],desc={"生物編":"植物・昆虫・人のからだ","地学編":"天体・天気・大地","物化編":"水溶液・気体・てこ・電気"};
+  let html="";
+  comps.forEach(c=>{
+    const due=dueCards(c).length, total=CARDS.filter(x=>x.comp===c).length;
+    if(total===0)return;
+    html+=`<button class="deck" data-comp="${c}"><span class="dot" style="background:${COLOR[c]}"></span>
+      <span><span class="dn">${c}</span><br><span class="dd">${desc[c]}・全${total}枚</span></span>
+      <span class="due ${due?'':'zero'}">${due?('学習 '+due+'枚'):'おわり'}</span></button>`;
+  });
+  html+=`<button class="deck" data-comp="ALL"><span class="dot" style="background:linear-gradient(135deg,var(--green),var(--blue),var(--orange))"></span>
+    <span><span class="dn">きょうのおすすめ</span><br><span class="dd">復習どきのカードをまぜて出題</span></span>
+    <span class="due">スタート</span></button>`;
+  html+=`<button class="deck" data-comp="PICK"><span class="dot" style="background:var(--gold)"></span>
+    <span><span class="dn">🎯 えらんで学習</span><br><span class="dd">分野・テーマごとに出題（称号ねらい）</span></span>
+    <span class="due">えらぶ</span></button>`;
+  const ng=nigateCards().length;
+  if(ng>0){ // まちがえた問題ができたときだけ出現する
+    html+=`<button class="deck" data-comp="NIGATE"><span class="dot" style="background:var(--wrong)"></span>
+      <span><span class="dn">🔥 にがて復習</span><br><span class="dd">まちがえた回数が多い問題から出すよ</span></span>
+      <span class="due">${Math.min(ng,DAILY_GOAL)}枚</span></button>`;
+  }
+  $('deckPick').innerHTML=html;
+  $('deckPick').querySelectorAll('.deck').forEach(b=>b.onclick=()=>{
+    if(b.dataset.comp==="PICK"){renderPick();show('pick');}
+    else startQuiz(b.dataset.comp);
+  });
+  refreshBadges();
+  $('badgeCountPill').textContent=earnedBadgeCount()+"/"+activeBadges().length;
+  $('rankBtn').style.display=(ONLINE()&&state.online)?"":"none";
+}
+
+/* ===== 称号画面 ===== */
+function renderBadges(){
+  refreshBadges(); saveState();
+  const got=earnedBadgeCount();
+  $('badgeSum').innerHTML=`あつめた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 '+FINAL_BADGE.name+' 達成！</span>':'（ぜんぶ集めると「'+FINAL_BADGE.name+'」）'}`;
+  let html="";
+  BADGES.forEach(b=>{
+    if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
+      html+=`<div class="badge locked" style="filter:grayscale(.6)">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="bname">${b.name}</div>
+        <div class="bmeta">じゅんびちゅう・おたのしみに！</div>
+      </div>`;
+      return;
+    }
+    const p=badgeProgress(b);
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const pct=Math.round(p.ratio*100);
+    const meta = earned
+      ? `ゲット！ ${state.badges[b.key]}`
+      : (p.total ? `あと${Math.max(0,Math.ceil(p.total*BADGE_THRESHOLD)-p.mastered)}問でゲット` : "問題なし");
+    html+=`<div class="badge ${earned?'earned':'locked'}">
+      <div class="bemoji">${b.emoji}</div>
+      <div class="bname">${b.name}</div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+      <div class="bmeta">${p.mastered}/${p.total}　${meta}</div>
+    </div>`;
+  });
+  const fEarned=!!(state.badges&&state.badges[FINAL_BADGE.key]);
+  html+=`<div class="badge final ${fEarned?'earned':'locked'}">
+    <div class="bemoji">${FINAL_BADGE.emoji}</div>
+    <div class="bname">${FINAL_BADGE.name}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号すべてでゲット'}</div>
+  </div>`;
+  $('badgeGrid').innerHTML=html;
+}
+$('badgesBtn').onclick=()=>{renderBadges();show('badges');};
+$('badgesBack').onclick=()=>{renderHome();show('home');};
+
+/* ===== えらんで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+function renderPick(){
+  const mk=(b,comp)=>{
+    const p=badgeProgress(b);
+    const done=p.total>0&&p.mastered>=p.total;
+    return `<button class="pick-btn ${done?'done':''}" data-comp="${comp}">
+      <span class="pe">${b.emoji}</span>
+      <span><span class="pn">${b.match}</span><span class="pp">${p.mastered}/${p.total}${done?'　パーフェクト！':''}</span></span>
+    </button>`;
+  };
+  $('pickRegion').innerHTML=BADGES.filter(b=>b.type==="region").map(b=>mk(b,"R:"+b.match)).join("");
+  $('pickCat').innerHTML=BADGES.filter(b=>b.type==="badgeCat"&&badgeActive(b)).map(b=>mk(b,"B:"+b.match)).join("");
+  document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
+}
+$('pickBack').onclick=()=>{renderHome();show('home');};
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+function cardInGroup(c,comp){
+  if(comp==="ALL")return true;
+  if(comp.startsWith("R:"))return c.region===comp.slice(2);
+  if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  return c.comp===comp;
+}
+function dueCards(comp){
+  const now=Date.now();
+  return CARDS.filter(c=>{
+    if(!cardInGroup(c,comp))return false;
+    const r=state.reviews[c.id];
+    if(!r)return true;
+    if(r.mastered&&r.due>now)return false;
+    return r.due?r.due<=now:true;
+  });
+}
+
+/* ===== 6. クイズ進行（3ステージ） ===== */
+let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+    .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
+}
+function startQuiz(comp){
+  let pool;
+  if(comp==="NIGATE"){
+    pool=nigateCards().slice(0,DAILY_GOAL);
+  }else{
+    pool=dueCards(comp);
+    if(pool.length===0)pool=CARDS.filter(c=>cardInGroup(c,comp));
+    pool=shuffle(pool).slice(0,DAILY_GOAL);
+  }
+  if(pool.length===0){renderHome();show('home');return;}
+  session={queue:pool,idx:0,correct:0,total:pool.length,comp};
+  renderQuestion(); show('quiz');
+}
+const STAGE_LABEL=["ステップ1・4たくからえらぶ","ステップ2・文字をならべる","ステップ3・自分で入力"];
+
+function renderQuestion(){
+  const c=session.queue[session.idx];
+  picked=new Set(); answered=false; slotChars=[];
+  // multiと画像つきカードは常に4択（画像問題はステージ進行させない）
+  stage = (c.type==="multi"||c.image) ? 0 : stageOf(state.reviews[c.id]);
+  $('qProg').style.width=(session.idx/session.total*100)+"%";
+  $('qCount').textContent=(session.idx+1)+"/"+session.total;
+  $('stagePill').textContent = c.type==="multi" ? "ふくすう選ぶ問題" : (c.image ? "画像を見てえらぶ問題" : STAGE_LABEL[stage]);
+  $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
+  $('qPref').textContent=c.pref; $('qText').textContent=c.q;
+  const im=$('qImg'); $('qImgMiss').style.display="none";
+  if(c.image){
+    im.alt="（画像："+c.q+"）";
+    im.onerror=()=>{im.style.display="none";$('qImgMiss').style.display="";};
+    im.src="images/"+c.image; im.style.display="";
+  }else{ im.style.display="none"; im.removeAttribute('src'); }
+  $('qMultiHint').style.display=c.type==="multi"?"block":"none";
+  $('feedback').className="feedback";
+  $('checkBtn').textContent="こたえあわせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('dontknow').style.display="block";
+
+  if(stage===0) renderChoices(c);
+  else if(stage===1) renderTiles(c);
+  else renderInput(c);
+}
+
+function renderChoices(c){
+  const ch=shuffle(c.choices);
+  let html='<div class="choices">';
+  ch.forEach(o=>{const mk=c.type==="multi"?"☐":"";html+=`<button class="choice" data-opt="${o}"><span class="mk">${mk}</span><span>${o}</span></button>`;});
+  html+='</div>';
+  $('answerArea').innerHTML=html;
+  $('answerArea').querySelectorAll('.choice').forEach(b=>b.onclick=()=>onPick(b,c.type));
+}
+function onPick(btn,type){
+  if(answered)return;const opt=btn.dataset.opt;
+  if(type==="single"){
+    $('answerArea').querySelectorAll('.choice').forEach(x=>{x.classList.remove('sel');x.querySelector('.mk').textContent="";});
+    picked=new Set([opt]);btn.classList.add('sel');
+  }else{
+    if(picked.has(opt)){picked.delete(opt);btn.classList.remove('sel');btn.querySelector('.mk').textContent="☐";}
+    else{picked.add(opt);btn.classList.add('sel');btn.querySelector('.mk').textContent="✓";}
+  }
+  $('checkBtn').disabled=picked.size===0;
+}
+
+/* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+function renderTiles(c){
+  const ans=c.a[0];
+  const ansChars=ans.split("");
+  // ダミー文字：他の選択肢から文字を拝借
+  let pool=[];
+  c.choices.forEach(o=>{if(o!==ans)pool.push(...o.split(""));});
+  pool=pool.filter(ch=>!ansChars.includes(ch));
+  const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
+  const tiles=shuffle([...ansChars,...dummies]);
+  let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
+  $('answerArea').innerHTML=html;
+  renderSlots(ansChars.length);
+  const tw=$('tiles');
+  tiles.forEach((ch,i)=>{
+    const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
+    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    tw.appendChild(b);
+  });
+}
+function renderSlots(n){
+  const host=$('slots');host.innerHTML="";
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+      d.onclick=()=>{if(answered)return;
+        // タップで戻す（最後の1つ）
+        const removed=slotChars.splice(i,1)[0];
+        // 対応するタイルのusedを1つ解除
+        const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
+        if(t)t.classList.remove('used');
+        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+    }else{d.className="slot empty";d.textContent="";}
+    host.appendChild(d);
+  }
+}
+
+/* ステージ3：漢字入力 */
+function renderInput(c){
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="こたえを入力">
+    <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
+  const inp=$('txtIn');
+  inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
+  setTimeout(()=>inp.focus(),100);
+}
+
+/* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
+function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
+
+$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+
+function checkAnswer(){
+  const c=session.queue[session.idx];
+  if(!answered){
+    let correct=false;
+    if(stage===0){
+      const aset=new Set(c.a);
+      correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
+    }else if(stage===1){
+      correct = slotChars.join("")===c.a[0];
+    }else{
+      const v=$('txtIn').value;
+      correct = norm(v)===norm(c.a[0]);
+    }
+    judge(correct);
+  }else{
+    session.idx++;
+    if(session.idx<session.total)renderQuestion(); else finishSession();
+  }
+}
+
+function judge(correct){
+  const c=session.queue[session.idx];
+  answered=true; $('dontknow').style.display="none";
+  // 表示の色付け
+  if(stage===0){
+    const aset=new Set(c.a);
+    $('answerArea').querySelectorAll('.choice').forEach(b=>{
+      const o=b.dataset.opt;b.disabled=true;
+      if(aset.has(o)){b.classList.remove('sel');b.classList.add('correct');b.querySelector('.mk').textContent="✓";}
+      else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
+    });
+  }
+  schedule(c.id,correct);
+  state.accTotal++; if(correct){session.correct++;state.accCorrect++;state.xp+=10;state.weekPending=(state.weekPending||0)+1;}
+  state.doneToday++;
+  refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
+  saveState();
+  const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
+  $('fTitle').innerHTML=correct?"せいかい！ <span class='xp-pop'>+10 XP</span>":"おしい！もういちど覚えよう";
+  $('fNote').innerHTML=(correct?"":("こたえ：<b>"+c.a.join("・")+"</b><br>"))+c.note;
+  $('checkBtn').textContent=session.idx+1<session.total?"つぎへ":"けっか をみる";
+  $('checkBtn').disabled=false;
+}
+
+$('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+function finishSession(){
+  let up=false;
+  if(state.doneToday>=DAILY_GOAL&&!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  refreshBadges();
+  saveState();
+  flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  $('dCards').textContent=session.total;
+  $('dCorrect').textContent=session.correct;
+  $('dXp').textContent="+"+(session.correct*10);
+  $('dStreakMsg').textContent=up?`🔥 れんぞく ${state.streak}日 になったよ！`:`きょうの学習 ${state.doneToday}問 ・ ゴールまであと ${Math.max(0,DAILY_GOAL-state.doneToday)}問`;
+  show('done');
+}
+$('backHome').onclick=()=>{renderHome();show('home');};
+$('againBtn').onclick=()=>{startQuiz(session.comp);};
+
+/* ===== 7. CSV取り込み ===== */
+$('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
+$('impBack').onclick=()=>{renderHome();show('home');};
+$('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題にもどしました</span>';};
+
+$('doImport').onclick=()=>{
+  const txt=$('csvText').value.trim();
+  if(!txt){$('impMsg').innerHTML='<span class="err-msg">CSVが空です</span>';return;}
+  try{
+    const cards=parseCSV(txt);
+    if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへもどってください。</span>';
+  }catch(err){$('impMsg').innerHTML='<span class="err-msg">読み込みエラー：'+err.message+'</span>';}
+};
+
+/* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
+function parseCSV(text){
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch==='\r'){} else cur+=ch; }
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  if(rows.length<2)return [];
+  const head=rows[0].map(h=>h.trim());
+  const idx=name=>head.indexOf(name);
+  const ci={id:idx("id"),comp:idx("編"),pref:idx("都道府県"),cat:idx("カテゴリ"),type:idx("出題タイプ"),q:idx("問題文"),a:idx("正解"),choices:idx("選択肢"),note:idx("覚え方メモ"),tag:idx("タグ"),region:idx("地方"),badgeCat:idx("称号カテゴリ"),image:idx("画像")}; // 画像列はオプショナル（無い12列CSVでも動く）
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.join("").trim()==="")continue;
+    const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
+    const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
+    const type=get("type")==="multi"?"multi":"single";
+    const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
+    let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
+    a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
+    const region=get("region")||regionOf(get("pref"));
+    const badgeCat=get("badgeCat")||badgeCatOf(get("cat"));
+    const card={id,comp:get("comp")||"県別編",pref:get("pref"),cat:get("cat"),type,q:qq,a,choices,note:get("note"),region,badgeCat};
+    const image=get("image"); if(image)card.image=image;
+    out.push(card);
+  }
+  return out;
+}
+
+$('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
+
+/* ===== 8. ランキングバトル（Supabase） =====
+   下の2つを埋めるとオンライン機能（登録・週間ランキング・進捗バックアップ）が有効になる。
+   空のままなら従来どおり端末内のみで動く。
+   ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
+   ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
+     このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
+   ・番号は平文でDBに保存されない（サーバ側でbcryptハッシュ化）。通信はHTTPS。 */
+const SUPABASE_URL = "";      // れい： "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY = ""; // れい： "eyJhbGciOi..."
+
+function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+  return res.json();
+}
+const REG_ERR={
+  bad_nick:"ニックネームは1〜12文字で入れてね",
+  bad_campus:"校舎をえらんでね",
+  bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+  nick_taken:"そのニックネームはもう使われているよ。べつの名前にしてね"
+};
+
+/* 週間スコア送信：正解のたびに weekPending にためて、まとめて送る（オフラインでも消えない） */
+async function flushScore(){
+  if(!state||!state.online||!ONLINE())return;
+  while(state.weekPending>0){
+    const send=Math.min(state.weekPending,30); // サーバ側の1回上限に合わせる
+    try{
+      const r=await rpc('add_correct',{p_nick:state.nick,p_number:state.pin,p_count:send});
+      if(!r.ok)break;
+      state.weekPending-=send; state.weekScore=r.week_score; saveState();
+    }catch(e){break;}
+  }
+}
+
+/* 進捗バックアップ：番号(pin)は送るデータに含めない */
+async function syncProgress(){
+  if(!state||!state.online||!ONLINE())return;
+  const d={xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+    accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+}
+
+/* ランキング画面 */
+let rankCampus="";
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
+$('rankBtn').onclick=()=>{show('ranking');renderRankTabs();loadRanking();};
+$('rankBack').onclick=()=>{renderHome();show('home');};
+$('rankReload').onclick=()=>loadRanking();
+function renderRankTabs(){
+  $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.campus===rankCampus);
+    b.onclick=()=>{rankCampus=b.dataset.campus;renderRankTabs();loadRanking();};
+  });
+}
+async function loadRanking(){
+  $('rankReset').textContent=" つぎのリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">よみこみ中…</div>';
+  await flushScore();
+  $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
+  try{
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null});
+    if(!rows.length){
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">今週はまだだれも記録がないよ。<br>1番のりのチャンス！</div>';
+      return;
+    }
+    const medal=["🥇","🥈","🥉"];
+    $('rankList').innerHTML=rows.map(r=>{
+      const me=state&&r.nick===state.nick;
+      return `<div class="rank-row${me?' me':''}">
+        <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
+        <span class="rnick">${esc(r.nick)}${me?' ★':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}問</span></div>`;
+    }).join("");
+  }catch(e){
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">つうしんエラー。<br>しばらくしてから「さいしんにする」を押してね</div>';
+  }
+}
+</script>
