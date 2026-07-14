@@ -9,7 +9,7 @@
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 16px 40px;}
   h1{font-size:34px;letter-spacing:2px;margin-top:8px;}
-  .sub{color:var(--sub);font-size:13px;margin:6px 0 26px;}
+  .sub{color:var(--sub);font-size:13px;margin:6px 0 26px;text-align:center;}
   .wrap{width:100%;max-width:440px;}
   .sec{margin-bottom:22px;}
   .sec h2{font-size:14px;color:var(--sub);letter-spacing:1px;margin:0 0 8px 4px;}
@@ -21,30 +21,96 @@
   .tile .desc{font-size:11px;color:var(--sub);margin-top:2px;}
   .tile.soon{opacity:.55;}
   .tile.soon .badge{font-size:10px;background:var(--line);border-radius:8px;padding:2px 7px;color:var(--sub);margin-left:auto;white-space:nowrap;}
+  /* ログインカード */
+  .login-card{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:22px 20px;}
+  .login-card label{display:block;font-size:13px;font-weight:700;margin:14px 0 6px;}
+  .login-card label:first-child{margin-top:0;}
+  .login-card input,.login-card select{width:100%;font-size:16px;padding:11px 12px;border:2px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);}
+  .login-card .hint{font-size:11px;color:var(--sub);margin-top:5px;}
+  .login-card button{width:100%;margin-top:20px;font-size:16px;font-weight:700;padding:13px;border:none;border-radius:14px;background:var(--green);color:#fff;cursor:pointer;}
+  .login-card button:active{opacity:.85;}
+  .err{color:#c0504d;font-size:12px;margin-top:10px;min-height:1em;}
+  /* ログイン後ヘッダー */
+  .who{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:18px;font-size:14px;}
+  .who b{font-size:16px;}
+  .who a{color:var(--sub);font-size:12px;text-decoration:underline;cursor:pointer;}
   footer{margin-top:auto;padding-top:30px;font-size:11px;color:var(--sub);}
+  .hidden{display:none!important;}
   @media (max-width:360px){.tiles{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
   <h1>ミルバト</h1>
-  <div class="sub">ココロミルの学習アプリ ─ やりたい教科を選んでね</div>
+  <div class="sub" id="subText">ココロミルの学習アプリ</div>
   <div class="wrap">
-    <div class="sec">
-      <h2>社会</h2>
-      <div class="tiles">
-        <a class="tile" href="./chiri/"><span class="emoji">🗾</span><span><span class="name">地理</span><div class="desc">都道府県・産業・自然</div></span></a>
-        <a class="tile" href="./rekishi/"><span class="emoji">📜</span><span><span class="name">歴史</span><div class="desc">縄文〜昭和</div></span></a>
-        <div class="tile soon"><span class="emoji">🏛️</span><span><span class="name">公民</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+
+    <!-- ログイン画面 -->
+    <div id="loginView" class="hidden">
+      <div class="login-card">
+        <label>ニックネーム</label>
+        <input id="nick" placeholder="れい：みかん" maxlength="12" autocomplete="off">
+        <div class="hint">本名は使わず、好きな名前にしてね。先生もこの名前を見るよ</div>
+        <label>番号（塾からもらった数字）</label>
+        <input id="pin" placeholder="れい：308417" inputmode="numeric" autocomplete="off">
+        <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div>
+        <label>校舎（初めての人だけ選んでね）</label>
+        <select id="campus">
+          <option value="">選んでね</option>
+          <option>麻布</option><option>渋谷</option><option>四谷</option><option>新宿</option><option>自由が丘</option>
+        </select>
+        <button id="startBtn">始める</button>
+        <div class="err" id="err"></div>
       </div>
     </div>
-    <div class="sec">
-      <h2>国語・理科</h2>
-      <div class="tiles">
-        <div class="tile soon"><span class="emoji">📖</span><span><span class="name">国語</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
-        <div class="tile soon"><span class="emoji">🔬</span><span><span class="name">理科</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+
+    <!-- 教科えらび -->
+    <div id="menuView" class="hidden">
+      <div class="who"><span>こんにちは <b id="whoNick"></b> さん</span><a id="logoutLink">ログアウト</a></div>
+      <div class="sec">
+        <h2>社会</h2>
+        <div class="tiles">
+          <a class="tile" href="./chiri/"><span class="emoji">🗾</span><span><span class="name">地理</span><div class="desc">都道府県・産業・自然</div></span></a>
+          <a class="tile" href="./rekishi/"><span class="emoji">📜</span><span><span class="name">歴史</span><div class="desc">縄文〜昭和</div></span></a>
+          <div class="tile soon"><span class="emoji">🏛️</span><span><span class="name">公民</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+        </div>
+      </div>
+      <div class="sec">
+        <h2>国語・理科</h2>
+        <div class="tiles">
+          <div class="tile soon"><span class="emoji">📖</span><span><span class="name">国語</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+          <div class="tile soon"><span class="emoji">🔬</span><span><span class="name">理科</span><div class="desc">じゅんびちゅう</div></span><span class="badge">近日</span></div>
+        </div>
       </div>
     </div>
+
   </div>
   <footer>ミルバト ・ ココロミル</footer>
+<script>
+(function(){
+  const KEY="mirubato_login";
+  const $=id=>document.getElementById(id);
+  function saved(){ try{return JSON.parse(localStorage.getItem(KEY)||"null");}catch(e){return null;} }
+  function render(){
+    const s=saved();
+    $("loginView").classList.toggle("hidden", !!s);
+    $("menuView").classList.toggle("hidden", !s);
+    $("subText").textContent = s ? "やりたい教科を選んでね" : "ニックネームと番号でログインしてね";
+    if(s) $("whoNick").textContent = s.nick;
+  }
+  $("startBtn").onclick=function(){
+    const nick=$("nick").value.trim(), pin=$("pin").value.trim(), campus=$("campus").value;
+    if(nick.length<1||nick.length>12){$("err").textContent="ニックネームは1〜12文字で入れてね";return;}
+    if(!/^\d{4,8}$/.test(pin)){$("err").textContent="番号は数字（4〜8桁）で入れてね";return;}
+    try{localStorage.setItem(KEY,JSON.stringify({nick:nick,pin:pin,campus:campus}));}catch(e){}
+    render();
+  };
+  $("logoutLink").onclick=function(){
+    try{localStorage.removeItem(KEY);}catch(e){}
+    $("nick").value="";$("pin").value="";$("campus").value="";$("err").textContent="";
+    render();
+  };
+  render();
+})();
+</script>
 </body>
 </html>

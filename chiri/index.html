@@ -988,7 +988,7 @@ $('loginBtn').onclick=async()=>{
       if(!existing){
         // この端末に記録がない → サーバのバックアップから復元を試みる
         try{
-          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p,p_subject:SUBJECT});
           if(pr.ok&&pr.data){
             const d=pr.data;
             ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{
@@ -999,12 +999,18 @@ $('loginBtn').onclick=async()=>{
       }
     }
     $('loginMsg').textContent="";
+    // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
+    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({nick:n,pin:p,campus:state.campus||campus||""}));}catch(e){}
     rolloverDay(); refreshBadges(); saveState();
     renderHome(); show('home');
     flushScore();
   }finally{ $('loginBtn').disabled=false; }
 };
-$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+$('logoutBtn').onclick=()=>{
+  state=null; $('nick').value="";$('pin').value="";$('campusSel').value="";
+  try{localStorage.removeItem(SHARED_LOGIN_KEY);}catch(e){} // 全教科からログアウト
+  location.href="../"; // ポータル（教科えらび）へ戻る
+};
 
 function renderHome(){
   rolloverDay();
@@ -1417,6 +1423,8 @@ $('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/
    ・本名などの個人情報はアプリ／DBに保存しない。通信はHTTPS。 */
 const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
+const SUBJECT = "chiri"; // 教科ID（サーバ側でランキング・進捗を教科ごとに分けるためのラベル）
+const SHARED_LOGIN_KEY = "mirubato_login"; // ポータルと共有するログイン情報（同一ドメインの全教科で共有）
 
 function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
 // ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
@@ -1425,6 +1433,15 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
   document.querySelectorAll('.online-only').forEach(el=>{
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
+  // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
+  try{
+    const saved=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    if(saved&&saved.nick&&saved.pin&&!state){
+      $('nick').value=saved.nick; $('pin').value=saved.pin;
+      if(saved.campus)$('campusSel').value=saved.campus;
+      setTimeout(()=>$('loginBtn').click(),0);
+    }
+  }catch(e){}
 })();
 async function rpc(fn,args){
   const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
@@ -1448,7 +1465,7 @@ async function flushScore(){
   while(state.weekPending>0){
     const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
     try{
-      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send});
+      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send,p_subject:SUBJECT});
       if(!r.ok)break;
       // サーバが実際に加算できた分（granted）だけ減らす。日次上限で一部切り捨てられた分は消さずに翌日送る
       const granted=(r.granted!=null)?r.granted:send; // granted未対応の旧サーバとの互換
@@ -1465,7 +1482,7 @@ async function syncProgress(){
     accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
     streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
     review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending};
-  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
 
 /* ランキング画面 */
@@ -1502,7 +1519,7 @@ async function loadRanking(){
   await flushScore();
   $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
   try{
-    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod});
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:SUBJECT});
     if(!rows.length){
       $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
         +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
