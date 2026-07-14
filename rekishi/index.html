@@ -773,6 +773,14 @@ function nextCelebration(){
 const $=id=>document.getElementById(id);
 function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
 
+// 共有ログイン情報が「いま認証に失敗した名前・番号」と同じなら削除する
+// （間違った情報のまま各教科で自動ログイン失敗を繰り返すのを防ぐ。別の情報なら消さない）
+function clearSharedIfMatches(n,p){
+  try{
+    const s=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    if(s&&s.nick===n&&s.pin===p)localStorage.removeItem(SHARED_LOGIN_KEY);
+  }catch(e){}
+}
 $('loginBtn').onclick=async()=>{
   const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
   $('loginMsg').textContent="";
@@ -784,16 +792,16 @@ $('loginBtn').onclick=async()=>{
     if(ONLINE()){
       $('loginMsg').textContent="通信中…";
       try{
-        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        let r=await rpc('login_player',{p_nick:n,p_number:p,p_subject:SUBJECT});
         if(!r.ok&&r.reason==='not_found'){
           if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
           r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
-          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";clearSharedIfMatches(n,p);return;}
           r.week_score=0;
         }else if(!r.ok&&r.reason==='suspended'){
           $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";return;
         }else if(!r.ok){
-          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";return;
+          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
         }
         onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
       }catch(e){ /* サーバに届かない → オフラインで続行 */ }
@@ -821,7 +829,7 @@ $('loginBtn').onclick=async()=>{
     }
     $('loginMsg').textContent="";
     // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
-    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({nick:n,pin:p,campus:state.campus||campus||""}));}catch(e){}
+    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verifiedAt:Date.now()}));}catch(e){}
     rolloverDay(); refreshBadges(); saveState();
     renderHome(); show('home');
     flushScore();

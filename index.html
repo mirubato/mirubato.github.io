@@ -88,8 +88,21 @@
 <script>
 (function(){
   const KEY="mirubato_login";
+  const SUPABASE_URL="https://ewvtwcidvqrhozlceypi.supabase.co";
+  const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
   const $=id=>document.getElementById(id);
+  const REG_ERR={bad_nick:"ニックネームは1〜12文字で入れてね",bad_campus:"初めての人は校舎を選んでね",
+    bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+    nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"};
+  async function rpc(fn,args){
+    const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{method:"POST",
+      headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+      body:JSON.stringify(args||{})});
+    if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+    return res.json();
+  }
   function saved(){ try{return JSON.parse(localStorage.getItem(KEY)||"null");}catch(e){return null;} }
+  function save(nick,pin,campus){ try{localStorage.setItem(KEY,JSON.stringify({sv:1,nick:nick,pin:pin,campus:campus,verifiedAt:Date.now()}));}catch(e){} }
   function render(){
     const s=saved();
     $("loginView").classList.toggle("hidden", !!s);
@@ -97,12 +110,33 @@
     $("subText").textContent = s ? "やりたい教科を選んでね" : "ニックネームと番号でログインしてね";
     if(s) $("whoNick").textContent = s.nick;
   }
-  $("startBtn").onclick=function(){
+  $("startBtn").onclick=async function(){
     const nick=$("nick").value.trim(), pin=$("pin").value.trim(), campus=$("campus").value;
+    $("err").textContent="";
     if(nick.length<1||nick.length>12){$("err").textContent="ニックネームは1〜12文字で入れてね";return;}
     if(!/^\d{4,8}$/.test(pin)){$("err").textContent="番号は数字（4〜8桁）で入れてね";return;}
-    try{localStorage.setItem(KEY,JSON.stringify({nick:nick,pin:pin,campus:campus}));}catch(e){}
-    render();
+    $("startBtn").disabled=true; $("startBtn").textContent="確認中…";
+    try{
+      // サーバで本人確認してから保存する（成功時だけログイン扱い）
+      let r=await rpc('login_player',{p_nick:nick,p_number:pin,p_subject:'chiri'});
+      if(!r.ok&&r.reason==='not_found'){
+        if(!campus){$("err").textContent="初めての人は校舎を選んでね";return;}
+        r=await rpc('register_player',{p_nick:nick,p_number:pin,p_campus:campus});
+        if(!r.ok){$("err").textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+      }else if(!r.ok&&r.reason==='suspended'){
+        $("err").textContent="このアカウントは 今 止まっているよ。先生に聞いてね";return;
+      }else if(!r.ok){
+        $("err").textContent="番号が違うみたい。もう一度確かめてね";return;
+      }
+      save(nick,pin,r.campus||campus);
+      render();
+    }catch(e){
+      // サーバに届かない（オフライン等）→ 各教科アプリ側のオフライン動作に任せて進む
+      save(nick,pin,campus);
+      render();
+    }finally{
+      $("startBtn").disabled=false; $("startBtn").textContent="始める";
+    }
   };
   $("logoutLink").onclick=function(){
     try{localStorage.removeItem(KEY);}catch(e){}
