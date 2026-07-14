@@ -799,7 +799,7 @@ $('loginBtn').onclick=async()=>{
           if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";clearSharedIfMatches(n,p);return;}
           r.week_score=0;
         }else if(!r.ok&&r.reason==='suspended'){
-          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";return;
+          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";clearSharedIfMatches(n,p);return;
         }else if(!r.ok){
           $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
         }
@@ -829,7 +829,8 @@ $('loginBtn').onclick=async()=>{
     }
     $('loginMsg').textContent="";
     // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
-    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verifiedAt:Date.now()}));}catch(e){}
+    // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
+    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
     rolloverDay(); refreshBadges(); saveState();
     renderHome(); show('home');
     flushScore();
@@ -1263,9 +1264,13 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
   // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
+  // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
   try{
     const saved=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
-    if(saved&&saved.nick&&saved.pin&&!state){
+    const valid=saved&&typeof saved.nick==="string"&&saved.nick.length>=1&&saved.nick.length<=12
+      &&/^\d{4,8}$/.test(saved.pin||"")&&(!saved.sv||saved.sv===1);
+    if(saved&&!valid)localStorage.removeItem(SHARED_LOGIN_KEY);
+    if(valid&&!state){
       $('nick').value=saved.nick; $('pin').value=saved.pin;
       if(saved.campus)$('campusSel').value=saved.campus;
       setTimeout(()=>$('loginBtn').click(),0);

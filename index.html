@@ -101,8 +101,19 @@
     if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
     return res.json();
   }
-  function saved(){ try{return JSON.parse(localStorage.getItem(KEY)||"null");}catch(e){return null;} }
-  function save(nick,pin,campus){ try{localStorage.setItem(KEY,JSON.stringify({sv:1,nick:nick,pin:pin,campus:campus,verifiedAt:Date.now()}));}catch(e){} }
+  // 保存形式: {sv:1, nick, pin, campus, verified:bool, verifiedAt}
+  // verified=true はサーバ認証済み。通信失敗時のオフライン保存は verified=false で区別する
+  function saved(){
+    try{
+      const s=JSON.parse(localStorage.getItem(KEY)||"null");
+      if(!s||typeof s.nick!=="string"||s.nick.length<1||s.nick.length>12||!/^\d{4,8}$/.test(s.pin||"")||(s.sv&&s.sv!==1)){
+        if(s)localStorage.removeItem(KEY); // 形式不正は破棄
+        return null;
+      }
+      return s;
+    }catch(e){return null;}
+  }
+  function save(nick,pin,campus,verified){ try{localStorage.setItem(KEY,JSON.stringify({sv:1,nick:nick,pin:pin,campus:campus,verified:!!verified,verifiedAt:verified?Date.now():0}));}catch(e){} }
   function render(){
     const s=saved();
     $("loginView").classList.toggle("hidden", !!s);
@@ -128,11 +139,11 @@
       }else if(!r.ok){
         $("err").textContent="番号が違うみたい。もう一度確かめてね";return;
       }
-      save(nick,pin,r.campus||campus);
+      save(nick,pin,r.campus||campus,true);
       render();
     }catch(e){
-      // サーバに届かない（オフライン等）→ 各教科アプリ側のオフライン動作に任せて進む
-      save(nick,pin,campus);
+      // サーバに届かない（オフライン等）→ 未認証(verified:false)として保存し、各教科アプリ側のオフライン動作に任せる
+      save(nick,pin,campus,false);
       render();
     }finally{
       $("startBtn").disabled=false; $("startBtn").textContent="始める";
@@ -144,6 +155,23 @@
     render();
   };
   render();
+  // 保存済みログイン情報の再確認: 未認証(verified:false)または12時間経過ならバックグラウンドで再認証。
+  // 停止・番号違い・未登録なら共有キーを破棄してログイン画面へ。通信失敗ならそのまま（オフライン容認）。
+  (async function reverify(){
+    const s=saved();
+    if(!s)return;
+    const stale=!s.verified||!s.verifiedAt||(Date.now()-s.verifiedAt)>12*60*60*1000;
+    if(!stale)return;
+    try{
+      const r=await rpc('login_player',{p_nick:s.nick,p_number:s.pin,p_subject:'chiri'});
+      if(r.ok){ save(s.nick,s.pin,r.campus||s.campus,true); }
+      else if(r.reason==='wrong_number'||r.reason==='not_found'||r.reason==='suspended'){
+        localStorage.removeItem(KEY);
+        render();
+        if(r.reason==='suspended')$("err").textContent="このアカウントは 今 止まっているよ。先生に聞いてね";
+      }
+    }catch(e){ /* オフライン → verified:falseのまま利用継続 */ }
+  })();
 })();
 </script>
 </body>
