@@ -1,14 +1,16 @@
 <!--
-  ミルバト社会・地理 先生用 管理ページ
-  ・生徒の一覧（ニックネーム・校舎・番号・今週スコア・状態）を確認
-  ・ニックネームの変更 / アカウントの停止・再開
+  ミルバト 先生用 管理ページ（地理・歴史・公民 共通。アカウントは全教科共通なのでここ1か所で管理できる）
+  ・生徒の一覧（ニックネーム・校舎・番号・今週スコア(教科別)・状態）を確認
+  ・ニックネームの変更 / アカウントの停止・再開（停止は全教科に効く）
   ・管理パスワードで保護（サーバ側でbcrypt照合）。番号(平文)はこのページでのみ見える。
   ・番号↔氏名は塾のスプレッドシートで管理。番号を照らし合わせて誰かを特定する。
+  ・教科別の今週点はサーバのadmin_list v5.2（SQL更新_v5.2_admin教科別.sql）が必要。
+    未適用の間は旧形式(week_score=地理のみ)で表示し、歴史・公民は「−」になる。
   設定：下の SUPABASE_URL / SUPABASE_ANON_KEY を chiri_app.html と同じ値にする。
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ミルバト社会・地理｜先生用 管理ページ</title>
+<title>ミルバト｜先生用 管理ページ</title>
 <style>
   :root{--paper:#f7f4ec;--ink:#2a2723;--ink-soft:#6b6457;--line:#e2dccc;--green:#4f9d69;
     --orange:#e08a3c;--wrong:#d9534f;--card:#fffdf8;--shadow:0 2px 0 rgba(42,39,35,.08),0 10px 24px -12px rgba(42,39,35,.35)}
@@ -46,8 +48,8 @@
   .foot{font-size:11px;color:var(--ink-soft);margin-top:10px;line-height:1.6}
 </style>
 
-<h1>🗾 ミルバト社会・地理 先生用 管理ページ</h1>
-<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます</div>
+<h1>🏫 ミルバト 先生用 管理ページ</h1>
+<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます（地理・歴史・公民 共通）</div>
 
 <!-- ログイン -->
 <div class="card" id="loginCard">
@@ -79,7 +81,7 @@
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週(点)</th><th>状態</th><th>そうさ</th>
+        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週:地理</th><th>今週:歴史</th><th>今週:公民</th><th>状態</th><th>そうさ</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -141,13 +143,21 @@ async function load(){
 }
 
 function render(list){
+  // 教科別の今週点。サーバがv5.2前（week_scoresなし）は地理のみ旧フィールドから拾い、他教科は「−」表示
+  const cell=(p,subj)=>{
+    const ws=p.week_scores;
+    if(!ws) return subj==='chiri' ? `${p.week_score||0}点` : "−";
+    return `${ws[subj]||0}点`;
+  };
   $('rows').innerHTML = list.map(p=>{
     const stop=p.suspended;
     return `<tr data-id="${p.id}">
       <td class="nick">${esc(p.nick)}</td>
       <td><span class="tag">${esc(p.campus)}</span></td>
       <td class="bango">${esc(p.bango)}</td>
-      <td>${p.week_score}点</td>
+      <td>${cell(p,'chiri')}</td>
+      <td>${cell(p,'rekishi')}</td>
+      <td>${cell(p,'koumin')}</td>
       <td>${stop?'<span class="tag stop">停止中</span>':'<span class="tag ok">通常</span>'}</td>
       <td><div class="actions">
         <button class="btn sec sm act-rename">名前変更</button>
