@@ -1,0 +1,1362 @@
+<!--
+  ミルバト社会・地理編 v3 — 中学受験 社会・地理 暗記アプリ（旧ミルバト社会）
+  ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
+  ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
+  Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト社会｜公民編</title>
+<style>
+  :root{
+    --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
+    --green:#4f9d69; --blue:#3f7cc4; --orange:#e08a3c; --gold:#d8a93a;
+    --wrong:#d9534f; --ok:#4f9d69; --card:#fffdf8;
+    --shadow:0 2px 0 rgba(42,39,35,.08), 0 10px 24px -12px rgba(42,39,35,.35); --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    background:radial-gradient(circle at 20% -10%, #fffaf0 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #eef5ee 0%, transparent 45%), var(--paper);
+    color:var(--ink);min-height:100%;display:flex;justify-content:center}
+  #app{width:100%;max-width:460px;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  .screen{flex:1;display:none;flex-direction:column;padding:20px 18px 28px}
+  .screen.active{display:flex;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h1{font-size:30px;margin:0;letter-spacing:.04em}
+  .brandsub{color:var(--ink-soft);font-size:13px;margin-top:2px;letter-spacing:.12em}
+  #login{justify-content:center;gap:18px;text-align:center}
+  .logo{font-size:64px;line-height:1}
+  .field{text-align:left;margin-top:6px}
+  .field label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:6px;letter-spacing:.05em}
+  .field input{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:18px;background:var(--card);font-family:inherit;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--green)}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:700;font-family:inherit;
+    cursor:pointer;width:100%;color:#fff;background:var(--green);box-shadow:0 3px 0 #3c7d52;
+    transition:transform .05s, box-shadow .05s;letter-spacing:.05em}
+  .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
+  .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
+  .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .btn[disabled]{opacity:.5}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .greet{font-size:14px;color:var(--ink-soft)}
+  .greet b{color:var(--ink);font-size:18px}
+  .streak{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid var(--line);
+    border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px}
+  .streak .fire{font-size:17px}
+  .map-wrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:16px 14px 8px;margin-bottom:16px;position:relative;overflow:hidden}
+  .map-wrap h2{margin:0 0 2px;font-size:15px;letter-spacing:.05em}
+  .map-wrap .sub{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+  svg.jpmap{width:100%;height:auto;display:block}
+  .mapnote{font-size:11px;color:var(--ink-soft);text-align:center;padding:6px 0 2px}
+  .stat-row{display:flex;gap:10px;margin-bottom:16px}
+  .stat{flex:1;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px;text-align:center}
+  .stat .num{font-size:24px;font-weight:800}
+  .stat .lbl{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+  .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .goal .gt{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+  .bar{height:12px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .5s}
+  .deck-pick{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+  .deck{display:flex;align-items:center;gap:12px;background:var(--card);border:2px solid var(--line);
+    border-radius:16px;padding:14px;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .deck:active{transform:scale(.99)}
+  .deck .dot{width:14px;height:14px;border-radius:5px;flex:none}
+  .deck .dn{font-weight:700;font-size:16px}
+  .deck .dd{font-size:12px;color:var(--ink-soft)}
+  .deck .due{margin-left:auto;font-size:12px;background:#fbeede;color:var(--orange);
+    border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+  .deck .due.zero{background:#eef2ee;color:var(--ink-soft)}
+  .toolrow{display:flex;gap:8px;margin-top:12px}
+  .toolrow .btn{padding:11px;font-size:13px}
+  #quiz{padding-top:14px}
+  .qtop{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .qtop button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-soft);padding:4px}
+  .qbar{flex:1;height:10px;border-radius:999px;background:#ece6d8;overflow:hidden}
+  .qbar > i{display:block;height:100%;width:0;background:var(--green);transition:width .3s}
+  .qcount{font-size:13px;color:var(--ink-soft);font-weight:700}
+  .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:4px 10px;border-radius:999px;background:#eef2ee;color:var(--ink-soft);margin-bottom:10px}
+  .qcard{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px}
+  .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    padding:4px 10px;border-radius:999px;margin-bottom:10px;color:#fff}
+  .qpref{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+  .qtext{font-size:21px;font-weight:700;line-height:1.5}
+  .qmulti-hint{margin-top:8px;font-size:12px;color:var(--orange);font-weight:700}
+  .choices{display:flex;flex-direction:column;gap:10px}
+  .choice{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:15px 16px;
+    font-size:17px;font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;color:var(--ink);transition:.12s}
+  .choice:active{transform:scale(.99)}
+  .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choice.sel{border-color:var(--blue);background:#eef4fb}
+  .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
+  .choice.correct{border-color:var(--ok);background:#eef7f0}
+  .choice.correct .mk{background:var(--ok);border-color:var(--ok)}
+  .choice.wrong{border-color:var(--wrong);background:#fcefee}
+  .choice.wrong .mk{background:var(--wrong);border-color:var(--wrong)}
+  .choice[disabled]{cursor:default}
+  /* 文字を選ぶ・入力 */
+  .answer-slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:54px;
+    padding:12px;border:2px dashed var(--line);border-radius:14px;margin-bottom:14px;background:#fff}
+  .slot{min-width:44px;height:44px;border-radius:10px;background:#eef4fb;border:2px solid var(--blue);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;cursor:pointer}
+  .slot.empty{background:#f3eee2;border:2px dashed var(--line);cursor:default}
+  .tiles{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tile{min-width:44px;height:48px;padding:0 10px;border-radius:12px;background:var(--card);
+    border:2px solid var(--line);font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+  .tile:active{transform:scale(.96)}
+  .tile.used{opacity:.25;pointer-events:none}
+  .text-input{width:100%;padding:16px;border:2px solid var(--line);border-radius:14px;font-size:24px;
+    font-family:inherit;text-align:center;color:var(--ink);background:#fff}
+  .text-input:focus{outline:none;border-color:var(--green)}
+  .input-help{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .feedback{border-radius:var(--r);padding:16px;margin-top:16px;display:none}
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.good{background:#eef7f0;border:2px solid var(--ok)}
+  .feedback.bad{background:#fcefee;border:2px solid var(--wrong)}
+  .feedback .ft{font-weight:800;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .feedback.good .ft{color:var(--ok)}
+  .feedback.bad .ft{color:var(--wrong)}
+  .feedback .fn{font-size:14px;color:var(--ink);line-height:1.6}
+  .qfoot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px}
+  .linkbtn{background:none;border:none;color:var(--ink-soft);font-size:13px;font-family:inherit;
+    cursor:pointer;text-decoration:underline;padding:4px}
+  #done{justify-content:center;text-align:center;gap:14px}
+  #done .big{font-size:72px;line-height:1}
+  #done h2{font-size:26px;margin:0}
+  #done .reward{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;display:flex;justify-content:space-around}
+  #done .reward div{font-size:13px;color:var(--ink-soft)}
+  #done .reward b{display:block;font-size:26px;color:var(--ink);margin-top:2px}
+  .xp-pop{color:var(--gold);font-weight:800}
+  /* 取り込み画面 */
+  #import{gap:14px}
+  #import h2{margin:0;font-size:22px}
+  #import textarea{width:100%;height:200px;border:2px solid var(--line);border-radius:14px;
+    padding:12px;font-family:monospace;font-size:12px;background:#fff;color:var(--ink)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--ink-soft);font-size:14px;background:#fff}
+  .ok-msg{color:var(--ok);font-weight:700;font-size:14px}
+  .err-msg{color:var(--wrong);font-weight:700;font-size:14px}
+  /* 称号画面 */
+  #badges{gap:0}
+  #badges .qtop{margin-bottom:6px}
+  #badges h2{margin:0;font-size:22px}
+  .badge-sum{font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;text-align:center;
+    box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .badge.locked{opacity:.55;filter:grayscale(.8)}
+  .badge .bemoji{font-size:34px;line-height:1}
+  .badge .bname{font-size:13px;font-weight:700;line-height:1.3}
+  .badge .bbar{width:100%;height:8px;border-radius:999px;background:#ece6d8;overflow:hidden;margin-top:4px}
+  .badge .bbar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--blue))}
+  .badge .bmeta{font-size:11px;color:var(--ink-soft)}
+  .badge.earned{border-color:var(--green)}
+  .badge.earned .bmeta{color:var(--green);font-weight:700}
+  .badge.final{grid-column:1 / -1;background:linear-gradient(135deg,#fff8e8,#fef0d8);border-color:var(--gold)}
+  .badge.final.locked{filter:grayscale(.7)}
+  .badge.final .bemoji{font-size:42px}
+  .badge.final .bname{font-size:16px}
+  footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 称号コレクション（ホーム上部） */
+  .collection{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 14px 16px;margin-bottom:16px}
+  .collection-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .collection-head h2{margin:0}
+  .coll-count{font-size:12px;color:var(--ink-soft)}
+  .coll-count b{color:var(--green);font-size:16px}
+  .hbadge-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .hbadge{border:none;background:none;font-family:inherit;cursor:pointer;padding:6px 2px;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .1s}
+  .hbadge:active{transform:scale(.92)}
+  .hbadge .hb-emoji{font-size:26px;line-height:1.1;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .hbadge .hb-name{font-size:9px;color:var(--ink-soft);text-align:center;line-height:1.15}
+  .hbadge.earned .hb-emoji{background:radial-gradient(circle at 50% 35%, #fff6df, #ffe9b8);
+    box-shadow:0 0 0 2px var(--gold), 0 2px 8px rgba(216,169,58,.5)}
+  .hbadge.earned .hb-name{color:var(--ink);font-weight:700}
+  .hbadge.locked{filter:grayscale(1);opacity:.4}
+  .hbadge.locked .hb-emoji{background:#eee7d8}
+  .hbadge.final .hb-emoji{font-size:30px;width:48px;height:48px}
+  .hbadge.final.earned .hb-emoji{box-shadow:0 0 0 3px var(--gold),0 2px 12px rgba(216,169,58,.7)}
+  /* 3モード入口 */
+  .mode-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+  .mode-card{display:flex;align-items:center;gap:14px;background:var(--card);border:2px solid var(--line);
+    border-radius:var(--r);box-shadow:var(--shadow);padding:16px;cursor:pointer;font-family:inherit;text-align:left}
+  .mode-card:active{transform:translateY(2px)}
+  .mode-card .mc-emoji{font-size:32px;flex-shrink:0}
+  .mode-card .mc-title{display:block;font-size:17px;font-weight:800;color:var(--ink)}
+  .mode-card .mc-desc{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
+  #modeDaily{border-color:var(--green)}
+  #modeDaily.done{border-color:var(--line);opacity:.7}
+  #modeReview{border-color:var(--orange)}
+  .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
+  /* 画像つきカード */
+  .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
+  .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
+  /* 称号獲得のお祝い（音なし） */
+  .celebrate{position:fixed;inset:0;z-index:99;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .celebrate.out{opacity:0;transition:opacity .25s}
+  @keyframes cel-in{from{opacity:0}to{opacity:1}}
+  .celebrate .conf{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .celebrate .conf i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;opacity:.9;animation:conf-fall linear infinite}
+  @keyframes conf-fall{0%{transform:translateY(-6vh) rotate(0deg)}100%{transform:translateY(108vh) rotate(720deg)}}
+  .celebrate .cbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:28px 40px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:80%}
+  @keyframes cel-pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  .celebrate .cemoji{font-size:62px;line-height:1.2;animation:cel-bounce 1.2s ease-in-out infinite}
+  @keyframes cel-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .celebrate .ctitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .celebrate .cname{font-size:22px;font-weight:800;margin-top:2px}
+  .celebrate .cget{color:var(--orange);font-weight:800;font-size:16px;margin-top:6px}
+  .celebrate .chint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  .celebrate.doctor .cemoji{font-size:76px}
+  .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* 選んで学習 */
+  .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
+    border-radius:12px;padding:10px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 2px 0 rgba(42,39,35,.06)}
+  .pick-btn:active{transform:translateY(2px);box-shadow:none}
+  .pick-btn .pe{font-size:22px;flex-shrink:0}
+  .pick-btn .pn{font-weight:700;font-size:13px;display:block;color:var(--ink)}
+  .pick-btn .pp{font-size:10px;color:var(--ink-soft)}
+  .pick-btn.done{border-color:var(--green);background:#eef7f0}
+  .pick-btn.done .pp{color:var(--green);font-weight:700}
+  /* ランキング */
+  .online-only{display:none} /* Supabase接続時のみ表示（初期化でonにする） */
+  .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+    font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
+  .field select:focus{outline:none;border-color:var(--green)}
+  .rank-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .rtab{flex:1 1 30%;padding:9px 2px;border:1.5px solid var(--line);border-radius:10px;background:#fff;
+    font-size:12px;font-weight:700;color:var(--ink-soft);font-family:inherit;cursor:pointer;white-space:nowrap}
+  .rtab.active{border-color:var(--green);color:var(--green);background:#eef7f0}
+  .rank-note{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:4px}
+  .rank-me{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 14px;
+    margin:10px 0;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .rank-me b{color:var(--green);font-size:18px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff}
+  .rank-row.me{border-color:var(--green);background:#eef7f0}
+  .rank-row .rno{width:40px;text-align:center;font-weight:800;font-size:15px;flex-shrink:0}
+  .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
+  .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
+  .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+  .star{font-size:14px;line-height:1}
+  .star.gold{color:#d8a93a}
+  .star.silver{color:#9aa0a6}
+  .rnick .stx{font-size:10px;color:var(--ink-soft);font-weight:700}
+  .rnick .me-tag{font-size:10px;background:var(--green);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
+  .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
+</style>
+
+<div id="app">
+  <!-- ログイン -->
+  <section id="login" class="screen active">
+    <div class="logo">🗾</div>
+    <div><h1>ミルバト社会</h1><div class="brandsub">公民編（中学受験）</div></div>
+    <div class="field"><label>ニックネーム</label>
+      <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
+      <div class="hint">本名は使わず、好きな名前にしてね。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
+    <div class="field"><label>番号（塾からもらった数字）</label>
+      <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
+      <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div></div>
+    <div class="field online-only" id="campusField"><label>校舎（初めての人だけ選んでね）</label>
+      <select id="campusSel">
+        <option value="">選んでね</option>
+        <option value="麻布">麻布</option>
+        <option value="渋谷">渋谷</option>
+        <option value="四谷">四谷</option>
+        <option value="新宿">新宿</option>
+        <option value="自由が丘">自由が丘</option>
+      </select></div>
+    <button class="btn" id="loginBtn">始める / 続きから</button>
+    <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="home" class="screen">
+    <div class="topbar">
+      <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
+    </div>
+    <div class="collection">
+      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">20</span></span></div>
+      <div class="hbadge-grid" id="homeBadgeGrid"></div>
+    </div>
+    <div class="mode-list">
+      <button class="mode-card" id="modeBadge">
+        <span class="mc-emoji">🏅</span>
+        <span class="mc-body"><span class="mc-title">称号モード</span><span class="mc-desc">分野・テーマをえらんで、まだマスターしていない問題に挑戦</span></span>
+      </button>
+      <button class="mode-card" id="modeDaily">
+        <span class="mc-emoji" id="modeDailyEmoji">📅</span>
+        <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
+      </button>
+      <button class="mode-card" id="modeReview" style="display:none">
+        <span class="mc-emoji">🔁</span>
+        <span class="mc-body"><span class="mc-title">復習モード <span id="reviewCount" class="rev-badge"></span></span><span class="mc-desc">今日の30問でまちがえた問題。正解すると消えるよ</span></span>
+      </button>
+      <button class="mode-card" id="modeRank">
+        <span class="mc-emoji">🏆</span>
+        <span class="mc-body"><span class="mc-title">ランキング</span><span class="mc-desc">週間・月間の塾内ポイント対戦</span></span>
+      </button>
+    </div>
+    <div class="toolrow">
+      <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- クイズ -->
+  <section id="quiz" class="screen">
+    <div class="qtop">
+      <button id="quitBtn">✕</button>
+      <div class="qbar"><i id="qProg"></i></div>
+      <div class="qcount" id="qCount">1/10</div>
+    </div>
+    <div class="stage-pill" id="stagePill">ステップ1・4択から選ぶ</div>
+    <div class="qcard">
+      <span class="qtag" id="qTag">県別編</span>
+      <img id="qImg" class="qimg" style="display:none" alt="">
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像が開けないよ（先生にお知らせしてね）</div>
+      <div class="qtext" id="qText">問題文</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを 全部 選んでね</div>
+    </div>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback">
+      <div class="ft" id="fTitle"></div>
+      <div class="fn" id="fNote"></div>
+    </div>
+    <div class="qfoot">
+      <button class="btn" id="checkBtn" disabled>答え合わせ</button>
+      <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="done" class="screen">
+    <div class="big">🎉</div>
+    <h2>今日の分 クリア！</h2>
+    <div class="reward">
+      <div>解いた問題<b id="dCards">10</b></div>
+      <div>正解<b id="dCorrect">8</b></div>
+      <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
+    </div>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 連続記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへ戻る</button>
+    <button class="btn secondary" id="againBtn">もう一セットやる</button>
+  </section>
+
+  <!-- 取り込み -->
+  <section id="import" class="screen">
+    <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
+    <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,都道府県,…）のままでOK。</p>
+    <label class="dz" for="csvFile">📄 CSVファイルを選ぶ
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
+    <p class="hint" style="text-align:center">または下に貼り付け</p>
+    <textarea id="csvText" placeholder="id,編,都道府県,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
+    <div id="impMsg" style="min-height:18px"></div>
+    <button class="btn" id="doImport">この内容で問題を入れ替える</button>
+    <button class="linkbtn" id="resetCards">最初のサンプル問題に戻す</button>
+  </section>
+
+  <!-- 選んで学習（地方・分野べつ） -->
+  <section id="pick" class="screen">
+    <div class="qtop"><button id="pickBack">✕</button><h2>🏅 称号モード</h2></div>
+    <p class="hint" style="margin:2px 0 4px">分野・テーマを選んで、まだマスターしていない問題に挑戦！</p>
+    <h3 class="pick-h">📜 分野で選ぶ</h3>
+    <div class="pick-grid" id="pickRegion"></div>
+    <h3 class="pick-h">🏅 テーマで選ぶ</h3>
+    <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- ランキング -->
+  <section id="ranking" class="screen">
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 ランキング</h2></div>
+    <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
+    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankPeriodTabs">
+      <button class="rtab active" data-period="week">今週</button>
+      <button class="rtab" data-period="month">今月</button>
+    </div>
+    <div class="rank-tabs" id="rankTabs">
+      <button class="rtab active" data-campus="">全員</button>
+      <button class="rtab" data-campus="麻布">麻布</button>
+      <button class="rtab" data-campus="渋谷">渋谷</button>
+      <button class="rtab" data-campus="四谷">四谷</button>
+      <button class="rtab" data-campus="新宿">新宿</button>
+      <button class="rtab" data-campus="自由が丘">自由が丘</button>
+    </div>
+    <div id="rankList"></div>
+    <div class="rank-legend"><span class="star gold">★</span> 月間チャンピオン　<span class="star silver">★</span> 週間チャンピオン</div>
+    <button class="btn secondary" id="rankReload">🔄 最新にする</button>
+  </section>
+
+  <!-- 称号 -->
+  <section id="badges" class="screen">
+    <div class="qtop"><button id="badgesBack">✕</button><h2>🏅 称号</h2></div>
+    <div class="badge-sum" id="badgeSum"></div>
+    <div class="badge-grid" id="badgeGrid"></div>
+  </section>
+
+  <footer>ミルバト社会・公民編 v1 ・ 進捗はこの端末に保存されます</footer>
+</div>
+
+<script>
+/* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
+const COLOR = { "しくみ編":"var(--green)", "横断編":"var(--orange)" };
+const DEFAULT_CARDS = [
+  {"id": "komin-kenpo-01", "comp": "しくみ編", "pref": "憲法の原則", "cat": "三大原則", "type": "multi", "q": "日本国憲法の三大原則を全部 選んでね", "a": ["国民主権", "基本的人権の尊重", "平和主義"], "choices": ["国民主権", "基本的人権の尊重", "平和主義", "天皇主権"], "note": "主権＋人権＋平和の3点セット。前文と条文に登場", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-02", "comp": "しくみ編", "pref": "憲法の原則", "cat": "国民主権", "type": "single", "q": "政治のあり方を最終的に決める力が国民にあるという原則は？", "a": ["国民主権"], "choices": ["国民主権", "天皇主権", "国家主権", "議会主権"], "note": "前文「主権が国民に存する」。天皇主権は大日本帝国憲法", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-03", "comp": "しくみ編", "pref": "憲法の原則", "cat": "平和主義", "type": "single", "q": "戦争を放棄し戦力を持たないと定めた憲法の条文は第何条？", "a": ["第9条"], "choices": ["第9条", "第1条", "第25条", "第96条"], "note": "戦争放棄・戦力不保持・交戦権の否認の3つ", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-04", "comp": "しくみ編", "pref": "憲法の原則", "cat": "平和主義", "type": "single", "q": "憲法第9条で「陸海空軍その他の何」を保持しないとされている？", "a": ["戦力"], "choices": ["戦力", "武力", "軍備", "兵力"], "note": "第2項。国の交戦権（こうせんけん）も認めない", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-05", "comp": "しくみ編", "pref": "憲法の原則", "cat": "公布", "type": "single", "q": "日本国憲法が公布されたのは1946年の何月何日？", "a": ["11月3日"], "choices": ["11月3日", "5月3日", "8月15日", "2月11日"], "note": "現在の文化の日。半年後の1947年5月3日に施行", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-06", "comp": "しくみ編", "pref": "憲法の原則", "cat": "施行", "type": "single", "q": "日本国憲法が施行（しこう）されたのは1947年の何月何日？", "a": ["5月3日"], "choices": ["5月3日", "11月3日", "4月1日", "1月1日"], "note": "現在の憲法記念日。公布は前年11月3日", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-07", "comp": "しくみ編", "pref": "憲法の原則", "cat": "最高法規", "type": "single", "q": "憲法第98条で日本国憲法は「国の何」と定められている？", "a": ["最高法規"], "choices": ["最高法規", "基本法", "最高規則", "根本法"], "note": "憲法に反する法律や命令は効力を持たない", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-kenpo-08", "comp": "しくみ編", "pref": "憲法の原則", "cat": "前文", "type": "single", "q": "憲法前文で「再び起こることのないように」と決意しているのは何の惨禍（さんか）？", "a": ["戦争"], "choices": ["戦争", "災害", "恐慌", "内乱"], "note": "前文は国民主権と平和主義を宣言している", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "komin-jinken-01", "comp": "しくみ編", "pref": "基本的人権", "cat": "自由権", "type": "single", "q": "思想や良心の自由・表現の自由がふくまれる自由は？", "a": ["精神の自由"], "choices": ["精神の自由", "身体の自由", "経済活動の自由", "社会権"], "note": "自由権は精神・身体・経済活動の3つに分類", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-02", "comp": "しくみ編", "pref": "基本的人権", "cat": "自由権", "type": "single", "q": "住む場所や職業を選ぶ自由・財産権がふくまれる自由は？", "a": ["経済活動の自由"], "choices": ["経済活動の自由", "精神の自由", "身体の自由", "参政権"], "note": "居住移転・職業選択・財産権の3つ", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-03", "comp": "しくみ編", "pref": "基本的人権", "cat": "社会権", "type": "single", "q": "生存権や教育を受ける権利がふくまれる基本的人権は？", "a": ["社会権"], "choices": ["社会権", "自由権", "平等権", "請求権"], "note": "人間らしく生きるための権利。20世紀に確立", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-04", "comp": "しくみ編", "pref": "基本的人権", "cat": "生存権", "type": "single", "q": "第25条の「健康で文化的な最低限度の生活を営む権利」を何という？", "a": ["生存権"], "choices": ["生存権", "環境権", "幸福追求権", "勤労の権利"], "note": "社会権の中心。生活保護制度のよりどころ", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-05", "comp": "しくみ編", "pref": "基本的人権", "cat": "参政権", "type": "single", "q": "選挙で投票するなど政治に参加する権利は？", "a": ["参政権"], "choices": ["参政権", "請求権", "社会権", "自由権"], "note": "人権を守るための権利。請求権とセットで覚える", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-06", "comp": "しくみ編", "pref": "基本的人権", "cat": "請求権", "type": "single", "q": "裁判を受ける権利などがふくまれる「人権を守るための権利」は？", "a": ["請求権"], "choices": ["請求権", "参政権", "平等権", "自由権"], "note": "国に裁判や補償を求める権利", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-07", "comp": "しくみ編", "pref": "基本的人権", "cat": "新しい人権", "type": "single", "q": "個人の情報がみだりに公開されない「新しい人権」は？", "a": ["プライバシーの権利"], "choices": ["プライバシーの権利", "知る権利", "環境権", "肖像権"], "note": "憲法に明記されていない新しい人権の代表", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-08", "comp": "しくみ編", "pref": "基本的人権", "cat": "平等権", "type": "single", "q": "第14条が定める「人種や性別などで差別されない」という原則は？", "a": ["法の下の平等"], "choices": ["法の下の平等", "信教の自由", "国民主権", "生存権"], "note": "「すべて国民は法の下（もと）に平等」", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-09", "comp": "しくみ編", "pref": "基本的人権", "cat": "自由権", "type": "single", "q": "第20条で保障される宗教を信じるかどうかを自分で決める自由は？", "a": ["信教の自由"], "choices": ["信教の自由", "表現の自由", "学問の自由", "集会の自由"], "note": "国や機関は宗教的活動をしてはならない", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-10", "comp": "しくみ編", "pref": "基本的人権", "cat": "国民の義務", "type": "multi", "q": "国民の三大義務を全部 選んでね", "a": ["勤労の義務", "納税の義務", "教育を受けさせる義務"], "choices": ["勤労の義務", "納税の義務", "教育を受けさせる義務", "投票の義務"], "note": "「教育を受ける」ではなく「受けさせる」義務に注意", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-11", "comp": "しくみ編", "pref": "基本的人権", "cat": "労働三権", "type": "multi", "q": "労働三権を全部 選んでね", "a": ["団結権", "団体交渉権", "団体行動権"], "choices": ["団結権", "団体交渉権", "団体行動権", "団体請求権"], "note": "団体行動権は争議権（そうぎけん）ともいう", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-12", "comp": "横断編", "pref": "基本的人権", "cat": "男女平等", "type": "single", "q": "国連で採択され男女雇用機会均等法制定のきっかけになった条約は？", "a": ["女子差別撤廃条約"], "choices": ["女子差別撤廃条約", "子どもの権利条約", "人種差別撤廃条約", "国際人権規約"], "note": "条約の批准（ひじゅん）→1985年に均等法という流れ", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-jinken-13", "comp": "しくみ編", "pref": "基本的人権", "cat": "男女平等", "type": "single", "q": "1985年に定められた職場での男女平等をめざす法律は？", "a": ["男女雇用機会均等法"], "choices": ["男女雇用機会均等法", "男女共同参画社会基本法", "労働基準法", "育児休業法"], "note": "女子差別撤廃条約がきっかけ。1985年制定", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "komin-tenno-01", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "天皇", "type": "single", "q": "第1条で天皇は日本国と日本国民統合の何と定められている？", "a": ["象徴"], "choices": ["象徴", "元首", "代表", "主権者"], "note": "地位は主権者である国民の総意に基づく", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-02", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "国事行為", "type": "single", "q": "天皇が行う形式的・儀礼的な行為を何という？", "a": ["国事行為"], "choices": ["国事行為", "政務行為", "公務行為", "儀礼行為"], "note": "内閣の助言と承認が必要", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-03", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "国事行為", "type": "single", "q": "天皇の国事行為に助言と承認を与える機関は？", "a": ["内閣"], "choices": ["内閣", "国会", "最高裁判所", "宮内庁"], "note": "責任は内閣が負う", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-04", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "任命", "type": "single", "q": "内閣の指名に基づいて天皇が任命する裁判官は？", "a": ["最高裁判所長官"], "choices": ["最高裁判所長官", "高等裁判所長官", "検事総長", "法務大臣"], "note": "内閣総理大臣の任命は国会の指名に基づく", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-05", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "憲法改正", "type": "single", "q": "憲法改正の発議に必要なのは各議院の総議員のどれだけの賛成？", "a": ["3分の2以上"], "choices": ["3分の2以上", "過半数", "3分の1以上", "4分の3以上"], "note": "発議（はつぎ）のあと国民投票へ", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-06", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "憲法改正", "type": "single", "q": "憲法改正の発議のあとに行われる投票は？", "a": ["国民投票"], "choices": ["国民投票", "住民投票", "国民審査", "総選挙"], "note": "過半数の賛成で承認される", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-tenno-07", "comp": "しくみ編", "pref": "天皇と憲法改正", "cat": "憲法改正", "type": "single", "q": "承認された憲法改正を国民の名で公布するのはだれ？", "a": ["天皇"], "choices": ["天皇", "内閣総理大臣", "衆議院議長", "最高裁判所長官"], "note": "公布は天皇の国事行為の一つ", "region": "憲法・人権", "badgeCat": "天皇と憲法改正"},
+  {"id": "komin-kokkai-01", "comp": "しくみ編", "pref": "国会", "cat": "国会の地位", "type": "single", "q": "第41条で国会は「国権の何」とされている？", "a": ["最高機関"], "choices": ["最高機関", "最高法規", "中心機関", "行政機関"], "note": "主権者である国民が選んだ代表の集まりだから", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-02", "comp": "しくみ編", "pref": "国会", "cat": "国会の地位", "type": "single", "q": "第41条で国会は「国の唯一の何」とされている？", "a": ["立法機関"], "choices": ["立法機関", "行政機関", "司法機関", "最高機関"], "note": "法律を作れるのは国会だけ", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-03", "comp": "しくみ編", "pref": "国会", "cat": "国会の種類", "type": "single", "q": "毎年1回 1月に召集（しょうしゅう）される国会は？", "a": ["通常国会"], "choices": ["通常国会", "臨時国会", "特別国会", "緊急集会"], "note": "常会ともいう。おもに次年度の予算を審議", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-04", "comp": "しくみ編", "pref": "国会", "cat": "国会の種類", "type": "single", "q": "衆議院解散後の総選挙から30日以内に召集され首相を指名する国会は？", "a": ["特別国会"], "choices": ["特別国会", "通常国会", "臨時国会", "緊急集会"], "note": "解散→40日以内に総選挙→30日以内に召集", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-05", "comp": "しくみ編", "pref": "国会", "cat": "国会の種類", "type": "single", "q": "内閣が必要と認めたときなどに召集される国会は？", "a": ["臨時国会"], "choices": ["臨時国会", "通常国会", "特別国会", "緊急集会"], "note": "どちらかの議院の総議員の4分の1以上の要求でも召集", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-06", "comp": "しくみ編", "pref": "国会", "cat": "衆議院", "type": "single", "q": "衆議院議員の定数は？（2026年現在）", "a": ["465人"], "choices": ["465人", "248人", "500人", "300人"], "note": "ヨロシク（465）。参議院は248人。改正あれば要確認", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-07", "comp": "しくみ編", "pref": "国会", "cat": "衆議院", "type": "single", "q": "衆議院議員の任期は何年？", "a": ["4年"], "choices": ["4年", "6年", "5年", "3年"], "note": "解散あり。参議院は6年で解散なし", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-08", "comp": "しくみ編", "pref": "国会", "cat": "参議院", "type": "single", "q": "参議院議員の定数は？（2026年現在）", "a": ["248人"], "choices": ["248人", "465人", "242人", "300人"], "note": "3年ごとに半数を改選。改正あれば要確認", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-09", "comp": "しくみ編", "pref": "国会", "cat": "参議院", "type": "single", "q": "参議院議員の任期は何年？", "a": ["6年"], "choices": ["6年", "4年", "5年", "8年"], "note": "解散なし。3年ごとに半数改選", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-10", "comp": "しくみ編", "pref": "国会", "cat": "被選挙権", "type": "single", "q": "衆議院議員の被選挙権（ひせんきょけん）は満何歳以上？", "a": ["満25歳以上"], "choices": ["満25歳以上", "満30歳以上", "満20歳以上", "満18歳以上"], "note": "参議院議員と知事は満30歳以上", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-11", "comp": "しくみ編", "pref": "国会", "cat": "被選挙権", "type": "single", "q": "参議院議員の被選挙権は満何歳以上？", "a": ["満30歳以上"], "choices": ["満30歳以上", "満25歳以上", "満20歳以上", "満35歳以上"], "note": "都道府県知事も満30歳以上", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-12", "comp": "しくみ編", "pref": "国会", "cat": "衆議院の優越", "type": "single", "q": "予算の議決などで衆議院が参議院より強い権限を持つことを何という？", "a": ["衆議院の優越"], "choices": ["衆議院の優越", "参議院の優越", "二院制", "議院内閣制"], "note": "任期が短く解散もあり民意を反映しやすいから", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-kokkai-13", "comp": "しくみ編", "pref": "国会", "cat": "法律の制定", "type": "single", "q": "法律案を提出できるのは国会議員とどこ？", "a": ["内閣"], "choices": ["内閣", "裁判所", "天皇", "政党"], "note": "法律の制定は国会の最も重要な仕事", "region": "政治のしくみ", "badgeCat": "国会"},
+  {"id": "komin-naikaku-01", "comp": "しくみ編", "pref": "内閣", "cat": "内閣総理大臣", "type": "single", "q": "内閣総理大臣はどんな人の中から国会の議決で指名される？", "a": ["国会議員"], "choices": ["国会議員", "国務大臣", "衆議院議員", "裁判官"], "note": "第67条。指名のあと天皇が任命する", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-02", "comp": "しくみ編", "pref": "内閣", "cat": "国務大臣", "type": "single", "q": "国務大臣を任命するのはだれ？", "a": ["内閣総理大臣"], "choices": ["内閣総理大臣", "天皇", "衆議院議長", "最高裁判所長官"], "note": "過半数は国会議員でなければならない", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-03", "comp": "しくみ編", "pref": "内閣", "cat": "国務大臣", "type": "single", "q": "国務大臣の過半数はどんな人でなければならない？", "a": ["国会議員"], "choices": ["国会議員", "衆議院議員", "参議院議員", "地方議員"], "note": "第68条。任命するのは内閣総理大臣", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-04", "comp": "しくみ編", "pref": "内閣", "cat": "議院内閣制", "type": "single", "q": "内閣が国会に対して連帯して責任を負うしくみを何という？", "a": ["議院内閣制"], "choices": ["議院内閣制", "大統領制", "三権分立", "地方自治"], "note": "衆議院の内閣不信任決議とセットで出る", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-05", "comp": "しくみ編", "pref": "内閣", "cat": "行政権", "type": "single", "q": "憲法第65条で内閣に属するとされている権力は？", "a": ["行政権"], "choices": ["行政権", "立法権", "司法権", "統帥権"], "note": "立法権は国会・司法権は裁判所", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-06", "comp": "しくみ編", "pref": "内閣", "cat": "省庁", "type": "single", "q": "地方自治や選挙に関する仕事を行う省庁は？", "a": ["総務省"], "choices": ["総務省", "財務省", "法務省", "経済産業省"], "note": "消防・郵便・統計も総務省の仕事", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-07", "comp": "しくみ編", "pref": "内閣", "cat": "省庁", "type": "single", "q": "国の予算案を作成する省庁は？", "a": ["財務省"], "choices": ["財務省", "総務省", "経済産業省", "内閣府"], "note": "予算案は通常国会で審議される", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-naikaku-08", "comp": "しくみ編", "pref": "内閣", "cat": "省庁", "type": "single", "q": "土地の利用や開発・気象に関する仕事を行う省庁は？", "a": ["国土交通省"], "choices": ["国土交通省", "環境省", "農林水産省", "総務省"], "note": "気象庁や観光庁は国土交通省の外局", "region": "政治のしくみ", "badgeCat": "内閣"},
+  {"id": "komin-saiban-01", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "違憲審査", "type": "single", "q": "法律などが憲法に違反していないか審査する権限を何という？", "a": ["違憲立法審査権"], "choices": ["違憲立法審査権", "国政調査権", "弾劾裁判権", "行政処分権"], "note": "すべての裁判所が持つ。最高裁は「憲法の番人」", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-02", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "違憲審査", "type": "single", "q": "違憲立法審査権を持っているのはどの裁判所？", "a": ["すべての裁判所"], "choices": ["すべての裁判所", "最高裁判所だけ", "高等裁判所だけ", "地方裁判所だけ"], "note": "最終的な判断は最高裁判所が下す", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-03", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "裁判員制度", "type": "single", "q": "国民が裁判官とともに重大な刑事裁判の第一審に参加する制度は？", "a": ["裁判員制度"], "choices": ["裁判員制度", "陪審員制度", "国民審査", "検察審査会"], "note": "くじなどで選ばれた国民が参加。2009年開始", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-04", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "三審制", "type": "single", "q": "判決に不服なら3回まで裁判を受けられるしくみは？", "a": ["三審制"], "choices": ["三審制", "三権分立", "再審制度", "二審制"], "note": "控訴（こうそ）→上告（じょうこく）。人権を守るため", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-05", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "裁判所の種類", "type": "single", "q": "全国の8地方に1か所ずつ置かれている裁判所は？", "a": ["高等裁判所"], "choices": ["高等裁判所", "地方裁判所", "家庭裁判所", "簡易裁判所"], "note": "札幌・仙台・東京・名古屋・大阪・広島・高松・福岡", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-06", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "司法権の独立", "type": "single", "q": "第76条で裁判官は自分の何に従い独立して裁判を行うとされている？", "a": ["良心"], "choices": ["良心", "信念", "世論", "命令"], "note": "憲法と法律にのみ拘束される（司法権の独立）", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-07", "comp": "横断編", "pref": "裁判所・三権分立", "cat": "三権分立", "type": "multi", "q": "三権分立の「三権」を全部 選んでね", "a": ["立法権", "行政権", "司法権"], "choices": ["立法権", "行政権", "司法権", "統帥権"], "note": "国会=立法・内閣=行政・裁判所=司法", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-08", "comp": "横断編", "pref": "裁判所・三権分立", "cat": "三権分立", "type": "single", "q": "国の権力を三つに分けて抑制と均衡を保つしくみを何という？", "a": ["三権分立"], "choices": ["三権分立", "議院内閣制", "地方自治", "二院制"], "note": "フランスのモンテスキューが説いた", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-saiban-09", "comp": "横断編", "pref": "裁判所・三権分立", "cat": "三権分立", "type": "single", "q": "三権分立の目的は独裁政治を防いで国民の何を守ること？", "a": ["基本的人権"], "choices": ["基本的人権", "国民主権", "財産", "領土"], "note": "権力の集中と乱用を防ぐしくみ", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
+  {"id": "komin-chihou-01", "comp": "しくみ編", "pref": "地方自治", "cat": "条例", "type": "single", "q": "地方議会が制定するその地域だけに適用されるきまりは？", "a": ["条例"], "choices": ["条例", "法律", "政令", "規則"], "note": "法律の範囲内で制定できる", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-02", "comp": "しくみ編", "pref": "地方自治", "cat": "地方自治", "type": "single", "q": "第92条で地方公共団体の組織や運営は何の本旨に基づくとされる？", "a": ["地方自治"], "choices": ["地方自治", "国民主権", "三権分立", "民主主義"], "note": "地方自治は「民主主義の学校」とよばれる", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-03", "comp": "しくみ編", "pref": "地方自治", "cat": "直接請求", "type": "single", "q": "首長や議員の解職請求（かいしょくせいきゅう）をカタカナで何という？", "a": ["リコール"], "choices": ["リコール", "イニシアチブ", "レファレンダム", "オンブズマン"], "note": "直接請求権の一つ。有権者の署名を集めて請求", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-04", "comp": "しくみ編", "pref": "地方自治", "cat": "直接請求", "type": "single", "q": "議会の解散請求やリコールが行われると実施される投票は？", "a": ["住民投票"], "choices": ["住民投票", "国民投票", "国民審査", "総選挙"], "note": "過半数の賛成で解散・解職が決まる", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-05", "comp": "しくみ編", "pref": "地方自治", "cat": "被選挙権", "type": "single", "q": "都道府県知事の被選挙権は満何歳以上？", "a": ["満30歳以上"], "choices": ["満30歳以上", "満25歳以上", "満20歳以上", "満35歳以上"], "note": "参議院議員と同じ30歳", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-06", "comp": "しくみ編", "pref": "地方自治", "cat": "被選挙権", "type": "single", "q": "市町村長の被選挙権は満何歳以上？", "a": ["満25歳以上"], "choices": ["満25歳以上", "満30歳以上", "満20歳以上", "満18歳以上"], "note": "衆議院議員・地方議員と同じ25歳", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-chihou-07", "comp": "しくみ編", "pref": "地方自治", "cat": "地方財政", "type": "single", "q": "地方公共団体の歳入（さいにゅう）のうち最も割合が多いのは？", "a": ["地方税"], "choices": ["地方税", "地方交付税", "国庫支出金", "地方債"], "note": "足りない分を国が補うのが地方交付税", "region": "政治のしくみ", "badgeCat": "地方自治"},
+  {"id": "komin-senkyo-01", "comp": "しくみ編", "pref": "選挙", "cat": "選挙権", "type": "single", "q": "選挙権が認められるのは満何歳以上？（2026年現在）", "a": ["満18歳以上"], "choices": ["満18歳以上", "満20歳以上", "満25歳以上", "満16歳以上"], "note": "2016年から18歳に引き下げ。改正あれば要確認", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-senkyo-02", "comp": "しくみ編", "pref": "選挙", "cat": "選挙制度", "type": "single", "q": "政党の得票数に応じて議席を配分する選挙制度は？", "a": ["比例代表制"], "choices": ["比例代表制", "小選挙区制", "大選挙区制", "中選挙区制"], "note": "衆議院は小選挙区比例代表並立制", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-senkyo-03", "comp": "しくみ編", "pref": "選挙", "cat": "選挙制度", "type": "single", "q": "参議院の比例代表で事前に候補者に順位をつけない方式は？", "a": ["非拘束名簿式"], "choices": ["非拘束名簿式", "拘束名簿式", "完全連記式", "単記式"], "note": "政党名でも候補者名でも投票できる", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-senkyo-04", "comp": "しくみ編", "pref": "選挙", "cat": "一票の格差", "type": "single", "q": "選挙区ごとに議員1人あたりの有権者数がちがう問題を何という？", "a": ["一票の格差"], "choices": ["一票の格差", "死票", "無効票", "棄権"], "note": "裁判で「違憲状態」と判断されたこともある", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-senkyo-05", "comp": "横断編", "pref": "選挙", "cat": "一票の格差", "type": "single", "q": "一票の格差は憲法第14条のどんな原則に反するおそれがある？", "a": ["法の下の平等"], "choices": ["法の下の平等", "国民主権", "生存権", "信教の自由"], "note": "格差が大きいと平等な選挙といえなくなる", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-senkyo-06", "comp": "しくみ編", "pref": "選挙", "cat": "選挙のきまり", "type": "single", "q": "日本の選挙制度を定めている法律は？", "a": ["公職選挙法"], "choices": ["公職選挙法", "政治資金規正法", "国会法", "内閣法"], "note": "選挙に関する仕事は総務省が担当", "region": "政治のしくみ", "badgeCat": "選挙"},
+  {"id": "komin-zaisei-01", "comp": "しくみ編", "pref": "財政・税", "cat": "歳出", "type": "single", "q": "国の歳出（さいしゅつ）で最も割合が多い項目は？", "a": ["社会保障関係費"], "choices": ["社会保障関係費", "国債費", "地方交付税", "防衛費"], "note": "高齢化で年々増加。歳出の約3分の1", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-zaisei-02", "comp": "しくみ編", "pref": "財政・税", "cat": "税金", "type": "single", "q": "ものやサービスを買うときに支払う税は？", "a": ["消費税"], "choices": ["消費税", "所得税", "法人税", "住民税"], "note": "税率10%（2026年現在）。改正あれば要確認", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-zaisei-03", "comp": "しくみ編", "pref": "財政・税", "cat": "税金", "type": "single", "q": "消費税のように税を負担する人と納める人がちがう税を何という？", "a": ["間接税"], "choices": ["間接税", "直接税", "国税", "地方税"], "note": "酒税や関税も間接税", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-zaisei-04", "comp": "しくみ編", "pref": "財政・税", "cat": "税金", "type": "single", "q": "所得税のように税を負担する人と納める人が同じ税を何という？", "a": ["直接税"], "choices": ["直接税", "間接税", "消費税", "関税"], "note": "所得税・法人税・相続税など", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-zaisei-05", "comp": "しくみ編", "pref": "財政・税", "cat": "予算", "type": "single", "q": "国の1年間の収入と支出の計画を何という？", "a": ["予算"], "choices": ["予算", "決算", "財政", "会計"], "note": "財務省が案を作り通常国会で議決する", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-zaisei-06", "comp": "しくみ編", "pref": "財政・税", "cat": "税金", "type": "single", "q": "消費税の標準税率は？（2026年現在）", "a": ["10%"], "choices": ["10%", "8%", "5%", "15%"], "note": "食料品などは軽減税率8%。改正あれば要確認", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "komin-hosho-01", "comp": "しくみ編", "pref": "社会保障", "cat": "四本柱", "type": "single", "q": "社会保険・社会福祉・公衆衛生とともに社会保障の四本柱に入るのは？", "a": ["公的扶助（こうてきふじょ）"], "choices": ["公的扶助（こうてきふじょ）", "公的援助", "生活扶助", "社会扶助"], "note": "生活保護法に基づいて生活を保障する", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-02", "comp": "しくみ編", "pref": "社会保障", "cat": "社会保険", "type": "single", "q": "病気やけがのときにお金が支給される社会保険は？", "a": ["医療保険"], "choices": ["医療保険", "年金保険", "雇用保険", "介護保険"], "note": "保険証で病院での支払いが軽くなる", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-03", "comp": "しくみ編", "pref": "社会保障", "cat": "社会保険", "type": "single", "q": "一定の年齢に達すると定期的にお金が支給される社会保険は？", "a": ["年金保険"], "choices": ["年金保険", "医療保険", "雇用保険", "介護保険"], "note": "高齢化がすすむと年金の費用が増大する", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-04", "comp": "しくみ編", "pref": "社会保障", "cat": "社会保険", "type": "single", "q": "失業したときにお金が支給される社会保険は？", "a": ["雇用保険"], "choices": ["雇用保険", "医療保険", "年金保険", "労災保険"], "note": "失業保険ともよばれる", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-05", "comp": "しくみ編", "pref": "社会保障", "cat": "社会保険", "type": "single", "q": "介護が必要な高齢者などにサービスを提供する社会保険は？", "a": ["介護保険"], "choices": ["介護保険", "医療保険", "年金保険", "雇用保険"], "note": "40歳以上の人が保険料を負担する", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-06", "comp": "しくみ編", "pref": "社会保障", "cat": "高齢化", "type": "single", "q": "高齢化とは全人口にしめる満何歳以上の割合が高まること？", "a": ["65歳"], "choices": ["65歳", "60歳", "70歳", "75歳"], "note": "日本は超高齢社会。医療費や年金が増大", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-07", "comp": "しくみ編", "pref": "社会保障", "cat": "少子化", "type": "single", "q": "少子化とは何という率が低下して子どもの数が減ること？", "a": ["出生率"], "choices": ["出生率", "死亡率", "就職率", "進学率"], "note": "合計特殊出生率という数値で表す", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-hosho-08", "comp": "しくみ編", "pref": "社会保障", "cat": "少子化", "type": "single", "q": "子育てのために会社などを休むことができる制度は？", "a": ["育児休業制度"], "choices": ["育児休業制度", "有給休暇制度", "介護休業制度", "時短勤務制度"], "note": "少子化対策の一つとして充実が進む", "region": "経済・くらし", "badgeCat": "社会保障"},
+  {"id": "komin-keizai-01", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "需要と供給", "type": "single", "q": "商品を買いたいと思う量のことを何という？", "a": ["需要量（じゅようりょう）"], "choices": ["需要量（じゅようりょう）", "供給量", "生産量", "消費量"], "note": "売りたい量は供給量（きょうきゅうりょう）", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-keizai-02", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "需要と供給", "type": "single", "q": "需要量が供給量より多いとき価格はどうなる？", "a": ["上がる"], "choices": ["上がる", "下がる", "変わらない", "ゼロになる"], "note": "ほしい人が多く品物が少ない→高くても売れる", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-keizai-03", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "物価", "type": "single", "q": "物価が下がり続けて貨幣（かへい）の価値が上がる現象は？", "a": ["デフレーション"], "choices": ["デフレーション", "インフレーション", "スタグフレーション", "バブル"], "note": "略してデフレ。逆はインフレ", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-keizai-04", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "物価", "type": "single", "q": "物価が上がり続けて貨幣の価値が下がる現象は？", "a": ["インフレーション"], "choices": ["インフレーション", "デフレーション", "デノミネーション", "リセッション"], "note": "略してインフレ。逆はデフレ", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-keizai-05", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "日本銀行", "type": "single", "q": "紙幣（しへい）を発行している日本の中央銀行は？", "a": ["日本銀行"], "choices": ["日本銀行", "ゆうちょ銀行", "東京銀行", "国立銀行"], "note": "「にっぽんぎんこう」と読む。日本銀行券を発行", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-keizai-06", "comp": "しくみ編", "pref": "経済のしくみ", "cat": "日本銀行", "type": "single", "q": "日本銀行のように紙幣を発行する役割を持つ銀行を何という？", "a": ["発券銀行"], "choices": ["発券銀行", "市中銀行", "都市銀行", "信託銀行"], "note": "発券銀行・政府の銀行・銀行の銀行の3つの顔", "region": "経済・くらし", "badgeCat": "経済のしくみ"},
+  {"id": "komin-kokuren-01", "comp": "しくみ編", "pref": "国際連合", "cat": "国連のしくみ", "type": "single", "q": "国際連合の本部がある都市は？", "a": ["ニューヨーク"], "choices": ["ニューヨーク", "ジュネーブ", "パリ", "ロンドン"], "note": "国際連盟の本部はスイスのジュネーブ", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-02", "comp": "しくみ編", "pref": "国際連合", "cat": "安全保障理事会", "type": "single", "q": "アメリカ・イギリス・フランス・中国とともに常任理事国である国は？", "a": ["ロシア"], "choices": ["ロシア", "ドイツ", "日本", "インド"], "note": "5大国＝第二次世界大戦の戦勝国", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-03", "comp": "しくみ編", "pref": "国際連合", "cat": "安全保障理事会", "type": "single", "q": "安全保障理事会の常任理事国だけが持つ特別な権限は？", "a": ["拒否権（きょひけん）"], "choices": ["拒否権（きょひけん）", "投票権", "司法権", "指名権"], "note": "1か国でも反対すると決定できない", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-04", "comp": "しくみ編", "pref": "国際連合", "cat": "国連のしくみ", "type": "single", "q": "安全保障理事会の理事国の数を変えるには何の改正が必要？", "a": ["国連憲章"], "choices": ["国連憲章", "日本国憲法", "安保理決議", "国際法"], "note": "国連憲章は国際連合の憲法にあたる", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-05", "comp": "しくみ編", "pref": "国際連合", "cat": "国連機関", "type": "single", "q": "「戦争は人の心の中で生まれる」で始まるのは何という憲章？", "a": ["ユネスコ憲章"], "choices": ["ユネスコ憲章", "国連憲章", "ユニセフ憲章", "パリ憲章"], "note": "ユネスコ＝国連教育科学文化機関", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-06", "comp": "しくみ編", "pref": "国際連合", "cat": "国連機関", "type": "single", "q": "国連児童基金の略称は？", "a": ["ユニセフ"], "choices": ["ユニセフ", "ユネスコ", "WHO", "PKO"], "note": "世界の子どもたちを援助する機関", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-07", "comp": "しくみ編", "pref": "国際連合", "cat": "国連機関", "type": "single", "q": "人々の健康増進を目的とする国連機関（略称WHO）は？", "a": ["世界保健機関"], "choices": ["世界保健機関", "世界貿易機関", "国際労働機関", "国連食糧農業機関"], "note": "本部はジュネーブ", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-08", "comp": "しくみ編", "pref": "国際連合", "cat": "国連のあゆみ", "type": "single", "q": "国際連合の原加盟国は何か国？", "a": ["51か国"], "choices": ["51か国", "21か国", "101か国", "193か国"], "note": "現在は193か国で約4倍", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-09", "comp": "しくみ編", "pref": "国際連合", "cat": "国連のあゆみ", "type": "single", "q": "国際連盟の本部が置かれていた都市は？", "a": ["ジュネーブ"], "choices": ["ジュネーブ", "ニューヨーク", "パリ", "ハーグ"], "note": "スイスの都市。WHOなどの本部がある", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-kokuren-10", "comp": "しくみ編", "pref": "国際連合", "cat": "国際裁判", "type": "single", "q": "国際司法裁判所があるオランダの都市は？", "a": ["ハーグ"], "choices": ["ハーグ", "ジュネーブ", "ウィーン", "ブリュッセル"], "note": "国と国の争いを裁く裁判所", "region": "国際社会", "badgeCat": "国際連合"},
+  {"id": "komin-heiwa-01", "comp": "しくみ編", "pref": "平和と紛争", "cat": "国際貢献", "type": "single", "q": "1992年に自衛隊が初めてPKOに派遣された国は？", "a": ["カンボジア"], "choices": ["カンボジア", "ベトナム", "イラク", "南スーダン"], "note": "PKO協力法に基づいて派遣された", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-02", "comp": "しくみ編", "pref": "平和と紛争", "cat": "国際貢献", "type": "single", "q": "PKOは何という活動の略称？", "a": ["国連平和維持活動"], "choices": ["国連平和維持活動", "国連平和協力活動", "国際貢献活動", "平和支援活動"], "note": "紛争地域の平和を保つ国連の活動", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-03", "comp": "しくみ編", "pref": "平和と紛争", "cat": "国際貢献", "type": "single", "q": "平和・人権・環境などで活躍する民間の国際組織（NGO）を漢字で？", "a": ["非政府組織"], "choices": ["非政府組織", "非営利組織", "国際機関", "市民団体"], "note": "NPOは非営利組織。まちがえやすい", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-04", "comp": "しくみ編", "pref": "平和と紛争", "cat": "国際組織", "type": "single", "q": "EUは何の略称？", "a": ["ヨーロッパ連合"], "choices": ["ヨーロッパ連合", "ヨーロッパ共同体", "ヨーロッパ理事会", "ヨーロッパ会議"], "note": "共通通貨はユーロ", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-05", "comp": "しくみ編", "pref": "平和と紛争", "cat": "冷戦", "type": "single", "q": "1989年に崩壊した東西冷戦の象徴といえば何の壁？", "a": ["ベルリンの壁"], "choices": ["ベルリンの壁", "パリの壁", "モスクワの壁", "ワルシャワの壁"], "note": "翌1990年に東西ドイツが統一", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-06", "comp": "しくみ編", "pref": "平和と紛争", "cat": "紛争", "type": "single", "q": "1991年の湾岸戦争で多国籍軍と戦い2003年にも攻撃された国は？", "a": ["イラク"], "choices": ["イラク", "イラン", "クウェート", "シリア"], "note": "2003年はアメリカとイギリスが攻撃", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-07", "comp": "しくみ編", "pref": "平和と紛争", "cat": "紛争", "type": "single", "q": "イスラエルと周辺のアラブ諸国の間で4度起こった戦争は？", "a": ["中東戦争"], "choices": ["中東戦争", "湾岸戦争", "朝鮮戦争", "ベトナム戦争"], "note": "第4次（1973年）は石油危機のきっかけ", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-08", "comp": "しくみ編", "pref": "平和と紛争", "cat": "紛争", "type": "single", "q": "1950年から53年にかけて起こった戦争は？", "a": ["朝鮮戦争"], "choices": ["朝鮮戦争", "ベトナム戦争", "湾岸戦争", "中東戦争"], "note": "北緯38度線で休戦。日本は特需景気に", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-09", "comp": "しくみ編", "pref": "平和と紛争", "cat": "冷戦", "type": "single", "q": "冷戦で南北に分断されのちに北側によって統一された東南アジアの国は？", "a": ["ベトナム"], "choices": ["ベトナム", "カンボジア", "ミャンマー", "ラオス"], "note": "ベトナム戦争にアメリカが介入した", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-10", "comp": "しくみ編", "pref": "平和と紛争", "cat": "核軍縮", "type": "single", "q": "1996年に採択されたすべての核実験を禁止する条約は？", "a": ["包括的核実験禁止条約"], "choices": ["包括的核実験禁止条約", "部分的核実験禁止条約", "核拡散防止条約", "核兵器禁止条約"], "note": "略称CTBT。1996年に国連総会で採択", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-11", "comp": "しくみ編", "pref": "平和と紛争", "cat": "核軍縮", "type": "single", "q": "「核兵器を持たず 作らず 持ち込ませず」を何という？", "a": ["非核三原則"], "choices": ["非核三原則", "平和三原則", "核軍縮三原則", "防衛三原則"], "note": "1971年に国会で決議された", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-12", "comp": "しくみ編", "pref": "平和と紛争", "cat": "核軍縮", "type": "single", "q": "核兵器を持つ国をこれ以上増やさないための条約（略称NPT）は？", "a": ["核拡散防止条約"], "choices": ["核拡散防止条約", "包括的核実験禁止条約", "核兵器禁止条約", "部分的核実験禁止条約"], "note": "IAEAが加盟国を査察する", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-13", "comp": "しくみ編", "pref": "平和と紛争", "cat": "核軍縮", "type": "single", "q": "NPT加盟国への査察を行う国際機関（略称IAEA）は？", "a": ["国際原子力機関"], "choices": ["国際原子力機関", "国際エネルギー機関", "国際査察機関", "国際軍縮機関"], "note": "本部はオーストリアのウィーン", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-heiwa-14", "comp": "しくみ編", "pref": "平和と紛争", "cat": "原爆", "type": "single", "q": "1945年8月6日に世界で初めて原子爆弾が投下された都市は？", "a": ["広島市"], "choices": ["広島市", "長崎市", "東京都", "大阪市"], "note": "8月9日には長崎市に投下された", "region": "国際社会", "badgeCat": "平和と紛争"},
+  {"id": "komin-kankyo-01", "comp": "しくみ編", "pref": "地球環境", "cat": "温暖化", "type": "single", "q": "化石燃料の大量使用や森林伐採（ばっさい）が原因ですすむ環境問題は？", "a": ["地球温暖化"], "choices": ["地球温暖化", "オゾン層破壊", "酸性雨", "砂漠化"], "note": "二酸化炭素などの温室効果ガスが原因", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-kankyo-02", "comp": "しくみ編", "pref": "地球環境", "cat": "オゾン層", "type": "single", "q": "フロンガスによって破壊される大気の層は？", "a": ["オゾン層"], "choices": ["オゾン層", "電離層", "成層圏", "対流圏"], "note": "破壊されると紫外線がそのまま地上に届く", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-kankyo-03", "comp": "しくみ編", "pref": "地球環境", "cat": "世界遺産", "type": "single", "q": "青森県と秋田県の県境にある世界自然遺産は？", "a": ["白神山地（しらかみさんち）"], "choices": ["白神山地（しらかみさんち）", "屋久島", "知床", "小笠原諸島"], "note": "ブナの原生林で有名", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-kankyo-04", "comp": "しくみ編", "pref": "地球環境", "cat": "環境条約", "type": "single", "q": "釧路湿原（くしろしつげん）など水鳥のすむ湿地を守る条約は？", "a": ["ラムサール条約"], "choices": ["ラムサール条約", "ワシントン条約", "バーゼル条約", "パリ協定"], "note": "谷津干潟・藤前干潟も登録されている", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-kankyo-05", "comp": "しくみ編", "pref": "地球環境", "cat": "環境会議", "type": "single", "q": "1992年に地球サミット（国連環境開発会議）が開かれた国は？", "a": ["ブラジル"], "choices": ["ブラジル", "スウェーデン", "アメリカ", "ケニア"], "note": "都市はリオデジャネイロ", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-kankyo-06", "comp": "しくみ編", "pref": "地球環境", "cat": "環境会議", "type": "single", "q": "1972年に国連人間環境会議が開かれた国は？", "a": ["スウェーデン"], "choices": ["スウェーデン", "ブラジル", "スイス", "デンマーク"], "note": "首都ストックホルム。「かけがえのない地球」", "region": "国際社会", "badgeCat": "地球環境"},
+  {"id": "komin-sekai-01", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の地形", "type": "single", "q": "アフリカ大陸の北部に広がる世界一広い砂漠は？", "a": ["サハラ砂漠"], "choices": ["サハラ砂漠", "ゴビ砂漠", "タクラマカン砂漠", "アタカマ砂漠"], "note": "砂漠化の進行が問題になっている", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-02", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の地形", "type": "single", "q": "南アメリカ大陸を流れる世界一の流域面積をもつ川は？", "a": ["アマゾン川"], "choices": ["アマゾン川", "ナイル川", "ミシシッピ川", "長江"], "note": "流域に広大な熱帯林。長さ世界一はナイル川", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-03", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の国", "type": "single", "q": "世界で最も面積が広い国は？", "a": ["ロシア"], "choices": ["ロシア", "カナダ", "アメリカ", "中国"], "note": "日本の約45倍の広さ", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-04", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の国", "type": "single", "q": "世界で最も人口が多い国は？（2026年現在）", "a": ["インド"], "choices": ["インド", "中国", "アメリカ", "インドネシア"], "note": "2023年に中国を抜いた。古い資料では中国なので注意", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-05", "comp": "しくみ編", "pref": "世界の国々", "cat": "宗教", "type": "single", "q": "聖地メッカに向かって祈りをささげる宗教は？", "a": ["イスラム教"], "choices": ["イスラム教", "キリスト教", "仏教", "ヒンドゥー教"], "note": "三大宗教＝キリスト教・イスラム教・仏教", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-06", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の国", "type": "single", "q": "戦後イギリスから独立しヒンドゥー教徒が多い国は？", "a": ["インド"], "choices": ["インド", "パキスタン", "バングラデシュ", "スリランカ"], "note": "パキスタンと国境をめぐって対立", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-07", "comp": "しくみ編", "pref": "世界の国々", "cat": "貿易", "type": "single", "q": "日本の鉄鉱石・石炭の最大の輸入相手国は？", "a": ["オーストラリア"], "choices": ["オーストラリア", "ブラジル", "中国", "インドネシア"], "note": "鉄鉱石は2位がブラジル", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-08", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の地形", "type": "single", "q": "経度0度の経線を何という？", "a": ["本初子午線（ほんしょしごせん）"], "choices": ["本初子午線（ほんしょしごせん）", "赤道", "日付変更線", "標準時子午線"], "note": "イギリスのロンドンを通る", "region": "国際社会", "badgeCat": "世界の国々"},
+  {"id": "komin-sekai-09", "comp": "しくみ編", "pref": "世界の国々", "cat": "世界の国", "type": "single", "q": "北緯38度線付近で分断された二つの国のうち北側の国は？", "a": ["北朝鮮"], "choices": ["北朝鮮", "韓国", "中国", "モンゴル"], "note": "正式名称は朝鮮民主主義人民共和国", "region": "国際社会", "badgeCat": "世界の国々"},
+];
+/* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
+const PREF_REGION = {
+  "憲法の原則": "憲法・人権",
+  "基本的人権": "憲法・人権",
+  "天皇と憲法改正": "憲法・人権",
+  "国会": "政治のしくみ",
+  "内閣": "政治のしくみ",
+  "裁判所・三権分立": "政治のしくみ",
+  "地方自治": "政治のしくみ",
+  "選挙": "政治のしくみ",
+  "財政・税": "経済・くらし",
+  "社会保障": "経済・くらし",
+  "経済のしくみ": "経済・くらし",
+  "国際連合": "国際社会",
+  "平和と紛争": "国際社会",
+  "地球環境": "国際社会",
+  "世界の国々": "国際社会"
+};
+const CAT_BADGE = {};
+function regionOf(pref){ return PREF_REGION[pref] || "政治のしくみ"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "憲法の原則"; }
+function enrichCards(cards){
+  cards.forEach(c=>{
+    if(!c.region) c.region = regionOf(c.pref);
+    if(!c.badgeCat) c.badgeCat = badgeCatOf(c.cat);
+  });
+  return cards;
+}
+
+let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards() を呼ぶと定数が未初期化で常にDEFAULT_CARDSに落ちるバグがあった
+
+/* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
+function buildMap(mset){
+  // 47都道府県タイルマップ。1県=1マス。地理配置に沿わせた簡略地図。
+  // mset に含まれる県（マスター済み）は緑に塗られる。
+  const T = {"北海道": {"c": 11, "r": 0, "s": "北海"}, "青森県": {"c": 10, "r": 2, "s": "青森"}, "秋田県": {"c": 9, "r": 3, "s": "秋田"}, "岩手県": {"c": 10, "r": 3, "s": "岩手"}, "山形県": {"c": 9, "r": 4, "s": "山形"}, "宮城県": {"c": 10, "r": 4, "s": "宮城"}, "福島県": {"c": 10, "r": 5, "s": "福島"}, "群馬県": {"c": 9, "r": 6, "s": "群馬"}, "栃木県": {"c": 10, "r": 6, "s": "栃木"}, "茨城県": {"c": 11, "r": 6, "s": "茨城"}, "埼玉県": {"c": 9, "r": 7, "s": "埼玉"}, "東京都": {"c": 10, "r": 7, "s": "東京"}, "千葉県": {"c": 11, "r": 7, "s": "千葉"}, "神奈川県": {"c": 10, "r": 8, "s": "神奈"}, "新潟県": {"c": 8, "r": 5, "s": "新潟"}, "富山県": {"c": 7, "r": 6, "s": "富山"}, "長野県": {"c": 8, "r": 6, "s": "長野"}, "石川県": {"c": 6, "r": 6, "s": "石川"}, "福井県": {"c": 6, "r": 7, "s": "福井"}, "山梨県": {"c": 8, "r": 7, "s": "山梨"}, "岐阜県": {"c": 7, "r": 7, "s": "岐阜"}, "静岡県": {"c": 8, "r": 8, "s": "静岡"}, "愛知県": {"c": 7, "r": 8, "s": "愛知"}, "滋賀県": {"c": 6, "r": 8, "s": "滋賀"}, "三重県": {"c": 6, "r": 9, "s": "三重"}, "京都府": {"c": 5, "r": 7, "s": "京都"}, "奈良県": {"c": 5, "r": 9, "s": "奈良"}, "大阪府": {"c": 5, "r": 8, "s": "大阪"}, "兵庫県": {"c": 4, "r": 8, "s": "兵庫"}, "和歌山県": {"c": 5, "r": 10, "s": "和歌"}, "鳥取県": {"c": 3, "r": 7, "s": "鳥取"}, "島根県": {"c": 2, "r": 7, "s": "島根"}, "岡山県": {"c": 3, "r": 8, "s": "岡山"}, "広島県": {"c": 2, "r": 8, "s": "広島"}, "山口県": {"c": 1, "r": 8, "s": "山口"}, "香川県": {"c": 3, "r": 9, "s": "香川"}, "徳島県": {"c": 4, "r": 9, "s": "徳島"}, "愛媛県": {"c": 2, "r": 9, "s": "愛媛"}, "高知県": {"c": 3, "r": 10, "s": "高知"}, "福岡県": {"c": 1, "r": 9, "s": "福岡"}, "佐賀県": {"c": 0, "r": 9, "s": "佐賀"}, "大分県": {"c": 1, "r": 10, "s": "大分"}, "長崎県": {"c": 0, "r": 10, "s": "長崎"}, "熊本県": {"c": 1, "r": 11, "s": "熊本"}, "宮崎県": {"c": 2, "r": 11, "s": "宮崎"}, "鹿児島県": {"c": 1, "r": 12, "s": "鹿児"}, "沖縄県": {"c": 0, "r": 13, "s": "沖縄"}};
+  const CELL=20, GAP=2.5, PAD=6;
+  let maxC=0,maxR=0;
+  for(const k in T){ if(T[k].c>maxC)maxC=T[k].c; if(T[k].r>maxR)maxR=T[k].r; }
+  const W = PAD*2 + (maxC+1)*(CELL+GAP);
+  const H = PAD*2 + (maxR+1)*(CELL+GAP);
+  let cells="";
+  for(const name in T){
+    const t=T[name];
+    const x=PAD+t.c*(CELL+GAP), y=PAD+t.r*(CELL+GAP);
+    const on=mset.has(name);
+    const fill=on?"var(--green)":"#e7e2d4";
+    const tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3.5" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+3.2}" text-anchor="middle" font-size="7.3" fill="${tcol}" font-weight="700">${t.s}</text></g>`;
+  }
+  return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
+}
+
+/* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
+const DAILY_GOAL=10;
+const LS_CARDS="komintan_cards";
+const CARD_DATA_VERSION=2; // 2026-07バッジ再編。これより古い取り込み済み問題セット(旧カテゴリ)は無効化して埋め込み問題に戻す
+const userKey=(n,p)=>"komintan_user_"+n+"_"+p;
+let state=null;
+
+function loadCards(){
+  try{
+    if(+(localStorage.getItem(LS_CARDS+"_ver")||1)<CARD_DATA_VERSION){
+      localStorage.removeItem(LS_CARDS);
+      localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
+    }else{
+      const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}
+    }
+  }catch(e){}
+  return DEFAULT_CARDS.slice();
+}
+CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0,review:[],daily30Date:""};}
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function loadState(n,p){
+  try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
+  return null;
+}
+function dayGap(a,b){
+  // "YYYY-M-D"文字列の日数差。Safariは"2026-7-11"をDate()で解釈できないため手動パース
+  const p=s=>{const[y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
+  return Math.round((p(b)-p(a))/864e5);
+}
+function rolloverDay(){
+  // 日付が変わっていたら「今日の学習」をリセット。
+  // 前回の記録日に30問未完了、または丸1日以上あいていたら連続記録を0に戻す
+  const t=todayStr();
+  if(state.lastDay!==t){
+    if(dayGap(state.lastDay,t)>=2 || !state.streakedToday) state.streak=0;
+    state.doneToday=0; state.streakedToday=false; state.lastDay=t;
+  }
+}
+
+/* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
+/* stage: 0=4択, 1=文字を並べ替え。の2段階（入力ステージは廃止）。reps（連続正解数）で決まる */
+function stageOf(r){
+  if(!r||r.reps<=0) return 0;
+  return 1;
+}
+function schedule(id,correct){
+  const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
+  if(correct){
+    r.reps+=1;
+    if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
+    r.ef=Math.min(2.6,r.ef+0.05);
+    if(r.reps>=2)r.mastered=true; // 4択→並べ替えの2回正解でマスター（並べ替え2回は冗長のため）
+    r.everCorrect=true; // ポイント制用：一度でも正解したことがある印（初正解の判定に使う）
+  }else{
+    r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
+    r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
+    r.wrong=(r.wrong||0)+1; // 苦手復習用：まちがえた回数を記録
+  }
+  r.due=Date.now()+r.interval*864e5;
+  state.reviews[id]=r;
+}
+function masteredCount(){const s=new Set();CARDS.forEach(c=>{const r=state.reviews[c.id];if(r&&r.mastered)s.add(c.pref);});return s;}
+function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastered).length;}
+
+/* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
+const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
+const BADGES = [
+  {key:"bunya_kenpo", name:"憲法・人権マスター", emoji:"🕊️", type:"region", match:"憲法・人権"},
+  {key:"bunya_seiji", name:"政治のしくみマスター", emoji:"🏛️", type:"region", match:"政治のしくみ"},
+  {key:"bunya_keizai", name:"経済・くらしマスター", emoji:"💰", type:"region", match:"経済・くらし"},
+  {key:"bunya_kokusai", name:"国際社会マスター", emoji:"🌏", type:"region", match:"国際社会"},
+  {key:"kenpo", name:"憲法の原則マスター", emoji:"📜", type:"badgeCat", match:"憲法の原則"},
+  {key:"jinken", name:"基本的人権マスター", emoji:"🕊️", type:"badgeCat", match:"基本的人権"},
+  {key:"tenno", name:"天皇と憲法改正マスター", emoji:"🎌", type:"badgeCat", match:"天皇と憲法改正"},
+  {key:"kokkai", name:"国会マスター", emoji:"🏛️", type:"badgeCat", match:"国会"},
+  {key:"naikaku", name:"内閣マスター", emoji:"🏢", type:"badgeCat", match:"内閣"},
+  {key:"saiban", name:"裁判所・三権分立マスター", emoji:"⚖️", type:"badgeCat", match:"裁判所・三権分立"},
+  {key:"chihou", name:"地方自治マスター", emoji:"🏘️", type:"badgeCat", match:"地方自治"},
+  {key:"senkyo", name:"選挙マスター", emoji:"🗳️", type:"badgeCat", match:"選挙"},
+  {key:"zaisei", name:"財政・税マスター", emoji:"🧾", type:"badgeCat", match:"財政・税"},
+  {key:"hosho", name:"社会保障マスター", emoji:"🤝", type:"badgeCat", match:"社会保障"},
+  {key:"keizai", name:"経済のしくみマスター", emoji:"📈", type:"badgeCat", match:"経済のしくみ"},
+  {key:"kokuren", name:"国際連合マスター", emoji:"🌐", type:"badgeCat", match:"国際連合"},
+  {key:"heiwa", name:"平和と紛争マスター", emoji:"☮️", type:"badgeCat", match:"平和と紛争"},
+  {key:"kankyo", name:"地球環境マスター", emoji:"🌱", type:"badgeCat", match:"地球環境"},
+  {key:"sekai", name:"世界の国々マスター", emoji:"🗺️", type:"badgeCat", match:"世界の国々"},
+];
+// 2026-07再編で廃止したバッジキー（獲得済み記録が残っていても無害化のため削除）
+const OBSOLETE_BADGE_KEYS=["region_chugokushikoku","land","fishery","forestry","tourism"];
+const FINAL_BADGE = {key:"doctor", name:"公民博士", emoji:"🎓"};
+// 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
+// 解放判定・公民博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
+function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
+function activeBadges(){return BADGES.filter(badgeActive);}
+
+// 称号ごとの進捗 {total, mastered, ratio, earned}
+function badgeProgress(b){
+  const group = CARDS.filter(c => b.type==="region" ? c.region===b.match : c.badgeCat===b.match);
+  const total = group.length;
+  let mastered = 0;
+  group.forEach(c=>{const r=state.reviews[c.id]; if(r&&r.mastered)mastered++;});
+  const ratio = total ? mastered/total : 0;
+  return {total, mastered, ratio, earned: total>0 && ratio>=BADGE_THRESHOLD};
+}
+// 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
+function refreshBadges(){
+  if(!state.badges)state.badges={};
+  // 2026-07バッジ再編: 旧区分で獲得した称号(公民博士含む)を一度リセットし、正答記録(reviews)から新区分で再判定する
+  if((state.badgeSchemaVersion||1)<2){ state.badges={}; state.badgeSchemaVersion=2; saveState(); }
+  OBSOLETE_BADGE_KEYS.forEach(k=>{delete state.badges[k];});
+  const act=activeBadges(), fresh=[];
+  act.forEach(b=>{
+    if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
+  });
+  if(act.length && act.every(b=>state.badges[b.key]) && !state.badges[FINAL_BADGE.key]){
+    state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
+  }
+  if(fresh.length){saveState();celebrate(fresh);}
+  return state.badges;
+}
+function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
+let celebrateQueue=[], celebrating=false;
+function celebrate(badges){ celebrateQueue.push(...badges); if(!celebrating) nextCelebration(); }
+function nextCelebration(){
+  const b=celebrateQueue.shift();
+  if(!b){celebrating=false;return;}
+  celebrating=true;
+  const isDoctor=b.key===FINAL_BADGE.key;
+  const colors=["#4f9d69","#e08a3c","#d8a93a","#3f7cc4","#d9534f","#9a6fc4"];
+  let conf="";
+  const n=isDoctor?90:45;
+  for(let i=0;i<n;i++){ // 疑似ランダム配置（indexから決める）
+    conf+=`<i style="left:${(i*37)%100}%;background:${colors[i%colors.length]};animation-delay:${(i%20)*0.13}s;animation-duration:${2.2+(i%7)*0.3}s;width:${6+(i%3)*3}px"></i>`;
+  }
+  const ov=document.createElement('div');
+  ov.className="celebrate"+(isDoctor?" doctor":"");
+  ov.innerHTML=`<div class="conf">${conf}</div>
+    <div class="cbody">
+      <div class="cemoji">${b.emoji}</div>
+      <div class="ctitle">${isDoctor?"最後の称号":"新しい称号"}</div>
+      <div class="cname">${b.name}</div>
+      <div class="cget">${isDoctor?"全部の称号を 集めたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップで閉じる</div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
+  ov.onclick=close;
+  setTimeout(close, isDoctor?9000:4500);
+}
+
+/* ===== 5. 画面 ===== */
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+
+// 共有ログイン情報が「いま認証に失敗した名前・番号」と同じなら削除する
+// （間違った情報のまま各教科で自動ログイン失敗を繰り返すのを防ぐ。別の情報なら消さない）
+function clearSharedIfMatches(n,p){
+  try{
+    const s=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    if(s&&s.nick===n&&s.pin===p)localStorage.removeItem(SHARED_LOGIN_KEY);
+  }catch(e){}
+}
+$('loginBtn').onclick=async()=>{
+  const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
+  $('loginMsg').textContent="";
+  if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
+  $('loginBtn').disabled=true;
+  try{
+    let onlineOk=false, srvCampus="", srvWeek=0;
+    if(ONLINE()){
+      $('loginMsg').textContent="通信中…";
+      try{
+        let r=await rpc('login_player',{p_nick:n,p_number:p,p_subject:SUBJECT});
+        if(!r.ok&&r.reason==='not_found'){
+          if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
+          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";clearSharedIfMatches(n,p);return;}
+          r.week_score=0;
+        }else if(!r.ok&&r.reason==='suspended'){
+          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";clearSharedIfMatches(n,p);return;
+        }else if(!r.ok){
+          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
+        }
+        onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+      }catch(e){ /* サーバに届かない → オフラインで続行 */ }
+    }
+    const existing=loadState(n,p);
+    state=existing||freshState(n,p);
+    if(!state.badges)state.badges={};
+    if(state.weekPending==null)state.weekPending=0;
+    state.online=onlineOk;
+    if(onlineOk){
+      state.campus=srvCampus;
+      state.weekScore=srvWeek;
+      if(!existing){
+        // この端末に記録がない → サーバのバックアップから復元を試みる
+        try{
+          const pr=await rpc('load_progress',{p_nick:n,p_number:p,p_subject:SUBJECT});
+          if(pr.ok&&pr.data){
+            const d=pr.data;
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{
+              if(d[k]!=null)state[k]=d[k];
+            });
+          }
+        }catch(e){}
+      }
+    }
+    $('loginMsg').textContent="";
+    // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
+    // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
+    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
+    rolloverDay(); refreshBadges(); saveState();
+    renderHome(); show('home');
+    flushScore();
+  }finally{ $('loginBtn').disabled=false; }
+};
+$('logoutBtn').onclick=()=>{
+  state=null; $('nick').value="";$('pin').value="";$('campusSel').value="";
+  try{localStorage.removeItem(SHARED_LOGIN_KEY);}catch(e){} // 全教科からログアウト
+  location.href="../"; // ポータル（教科えらび）へ戻る
+};
+
+function renderHome(){
+  rolloverDay();
+  $('hiNick').textContent=state.nick;
+  $('streakN').textContent=state.streak;
+  refreshBadges();
+  renderHomeBadges();
+  // ランキングはオンライン時のみ入口を出す
+  $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
+  // 今日の30問：クリア済みなら見た目を変える
+  const dailyDone = state.daily30Date===todayStr();
+  $('modeDaily').classList.toggle('done',dailyDone);
+  $('modeDailyEmoji').textContent = dailyDone ? "✅" : "📅";
+  $('modeDailyTitle').textContent = dailyDone ? "今日の30問（クリア済み）" : "今日の30問";
+  $('modeDailyDesc').textContent = dailyDone ? "また明日ちょうせんできるよ。今日は復習や称号モードをどうぞ" : "全範囲からランダム約30問。毎日やって🔥連続をのばそう";
+  // 復習モード：たまっている間だけ入口を出す
+  const nrev = reviewCards().length;
+  $('modeReview').style.display = nrev>0 ? "" : "none";
+  $('reviewCount').textContent = nrev>0 ? nrev+"問" : "";
+}
+
+// ホーム上部の称号コレクション：獲得＝カラーで光る／未獲得＝グレー の2状態だけ
+function renderHomeBadges(){
+  const items=BADGES.concat([FINAL_BADGE]);
+  let html="";
+  items.forEach(b=>{
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const isFinal=b.key===FINAL_BADGE.key;
+    const short=b.name.replace("マスター","");
+    html+=`<button class="hbadge ${isFinal?'final ':''}${earned?'earned':'locked'}" data-key="${b.key}">
+      <span class="hb-emoji">${b.emoji}</span><span class="hb-name">${short}</span></button>`;
+  });
+  $('homeBadgeGrid').innerHTML=html;
+  $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
+  $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
+  $('collTotal').textContent=BADGES.length+1; // 19称号＋公民博士＝20
+}
+$('modeBadge').onclick=()=>{renderPick();show('pick');};
+$('modeDaily').onclick=()=>startQuiz('DAILY30');
+$('modeReview').onclick=()=>startQuiz('REVIEW');
+$('modeRank').onclick=()=>{show('ranking');renderPeriodTabs();renderRankTabs();loadRanking();};
+
+/* ===== 称号画面 ===== */
+function renderBadges(){
+  refreshBadges(); saveState();
+  const got=earnedBadgeCount();
+  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 公民博士 達成！</span>':'（全部集めると「公民博士」）'}`;
+  let html="";
+  BADGES.forEach(b=>{
+    if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
+      html+=`<div class="badge locked" style="filter:grayscale(.6)">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="bname">${b.name}</div>
+        <div class="bmeta">準備中・お楽しみに！</div>
+      </div>`;
+      return;
+    }
+    const p=badgeProgress(b);
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const pct=Math.round(p.ratio*100);
+    const meta = earned
+      ? `ゲット！ ${state.badges[b.key]}`
+      : (p.total ? `あと${Math.max(0,Math.ceil(p.total*BADGE_THRESHOLD)-p.mastered)}問でゲット` : "問題なし");
+    html+=`<div class="badge ${earned?'earned':'locked'}">
+      <div class="bemoji">${b.emoji}</div>
+      <div class="bname">${b.name}</div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+      <div class="bmeta">${p.mastered}/${p.total}　${meta}</div>
+    </div>`;
+  });
+  const fEarned=!!(state.badges&&state.badges[FINAL_BADGE.key]);
+  html+=`<div class="badge final ${fEarned?'earned':'locked'}">
+    <div class="bemoji">${FINAL_BADGE.emoji}</div>
+    <div class="bname">${FINAL_BADGE.name}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号全てでゲット'}</div>
+  </div>`;
+  $('badgeGrid').innerHTML=html;
+}
+$('badgesBack').onclick=()=>{renderHome();show('home');};
+
+/* ===== 選んで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+function renderPick(){
+  const mk=(b,comp)=>{
+    const p=badgeProgress(b);
+    const done=p.total>0&&p.mastered>=p.total;
+    return `<button class="pick-btn ${done?'done':''}" data-comp="${comp}">
+      <span class="pe">${b.emoji}</span>
+      <span><span class="pn">${b.match}</span><span class="pp">${p.mastered}/${p.total}${done?'　パーフェクト！':''}</span></span>
+    </button>`;
+  };
+  $('pickRegion').innerHTML=BADGES.filter(b=>b.type==="region").map(b=>mk(b,"R:"+b.match)).join("");
+  $('pickCat').innerHTML=BADGES.filter(b=>b.type==="badgeCat"&&badgeActive(b)).map(b=>mk(b,"B:"+b.match)).join("");
+  document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
+}
+$('pickBack').onclick=()=>{renderHome();show('home');};
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+function cardInGroup(c,comp){
+  if(comp==="ALL")return true;
+  if(comp.startsWith("R:"))return c.region===comp.slice(2);
+  if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  return c.comp===comp;
+}
+function dueCards(comp){
+  const now=Date.now();
+  return CARDS.filter(c=>{
+    if(!cardInGroup(c,comp))return false;
+    const r=state.reviews[c.id];
+    if(!r)return true;
+    if(r.mastered&&r.due>now)return false;
+    return r.due?r.due<=now:true;
+  });
+}
+
+/* ===== 6. クイズ進行（3ステージ） ===== */
+let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+    .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
+}
+const DAILY30=30; // 今日の30問の枚数
+function reviewCards(){ // 今日の30問で間違えた問題（過去分もたまる）。正解すると外れる
+  return (state.review||[]).map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+}
+function startQuiz(comp){
+  let pool;
+  if(comp==="DAILY30"){
+    if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
+    // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
+    // 複数称号向けの複製問題（例: forest-isanとheritage-genseirin）が同じ回に2回出ないよう、問題文+正解でユニーク化
+    const seen30=new Set();
+    pool=shuffle(CARDS.slice()).filter(c=>{const k=c.q+"|"+(c.a||[]).join("・");if(seen30.has(k))return false;seen30.add(k);return true;}).slice(0,DAILY30);
+  }else if(comp==="REVIEW"){
+    // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
+    pool=reviewCards();
+    if(pool.length===0){alert("復習する問題はないよ！今日の30問をがんばろう😊");return;}
+  }else if(comp&&(comp.startsWith("R:")||comp.startsWith("B:"))){
+    // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
+    pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
+    if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
+  }else if(comp==="NIGATE"){
+    pool=nigateCards().slice(0,DAILY_GOAL);
+  }else{
+    pool=dueCards(comp);
+    if(pool.length===0)pool=CARDS.filter(c=>cardInGroup(c,comp));
+    pool=shuffle(pool).slice(0,DAILY_GOAL);
+  }
+  if(pool.length===0){renderHome();show('home');return;}
+  session={queue:pool,idx:0,correct:0,total:pool.length,comp};
+  renderQuestion(); show('quiz');
+}
+const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を並べる","ステップ3・漢字で入力"];
+
+function renderQuestion(){
+  const c=session.queue[session.idx];
+  picked=new Set(); answered=false; slotChars=[];
+  // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
+  stage = (c.type==="multi"||c.image||session.comp==="DAILY30") ? 0 : stageOf(state.reviews[c.id]);
+  $('qProg').style.width=(session.idx/session.total*100)+"%";
+  $('qCount').textContent=(session.idx+1)+"/"+session.total;
+  $('stagePill').textContent = c.type==="multi" ? "複数選ぶ問題" : (c.image ? "画像を見て選ぶ問題" : STAGE_LABEL[stage]);
+  $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
+  $('qText').textContent=c.q; // 都道府県名(qPref)は表示しない（答えが分かってしまうため）
+  const im=$('qImg'); $('qImgMiss').style.display="none";
+  if(c.image){
+    im.alt="（画像："+c.q+"）";
+    im.onerror=()=>{im.style.display="none";$('qImgMiss').style.display="";};
+    im.src="images/"+c.image; im.style.display="";
+  }else{ im.style.display="none"; im.removeAttribute('src'); }
+  $('qMultiHint').style.display=c.type==="multi"?"block":"none";
+  $('feedback').className="feedback";
+  $('checkBtn').textContent="答え合わせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('dontknow').style.display="block";
+
+  if(stage===0) renderChoices(c);
+  else if(stage===1) renderTiles(c);
+  else renderInput(c);
+}
+
+function renderChoices(c){
+  // 取り込みCSV由来のテキストをHTMLとして解釈しないよう、DOM APIで組み立てる（XSS対策）
+  const ch=shuffle(c.choices);
+  const wrap=document.createElement('div');wrap.className='choices';
+  ch.forEach(o=>{
+    const b=document.createElement('button');b.className='choice';b.dataset.opt=o;
+    const mk=document.createElement('span');mk.className='mk';mk.textContent=c.type==="multi"?"☐":"";
+    const tx=document.createElement('span');tx.textContent=o;
+    b.append(mk,tx);b.onclick=()=>onPick(b,c.type);
+    wrap.appendChild(b);
+  });
+  const host=$('answerArea');host.innerHTML="";host.appendChild(wrap);
+}
+function onPick(btn,type){
+  if(answered)return;const opt=btn.dataset.opt;
+  if(type==="single"){
+    $('answerArea').querySelectorAll('.choice').forEach(x=>{x.classList.remove('sel');x.querySelector('.mk').textContent="";});
+    picked=new Set([opt]);btn.classList.add('sel');
+  }else{
+    if(picked.has(opt)){picked.delete(opt);btn.classList.remove('sel');btn.querySelector('.mk').textContent="☐";}
+    else{picked.add(opt);btn.classList.add('sel');btn.querySelector('.mk').textContent="✓";}
+  }
+  $('checkBtn').disabled=picked.size===0;
+}
+
+/* 振り仮名「（よみ）」を除いた表記。並べ替えタイルと答え合わせに使う */
+function stripYomi(s){return String(s).replace(/（[^）]*）/g,"");}
+
+/* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+function renderTiles(c){
+  const ans=stripYomi(c.a[0]);
+  const ansChars=ans.split("");
+  // ダミー文字：他の選択肢から文字を拝借（振り仮名は除く）
+  let pool=[];
+  c.choices.forEach(o=>{const p=stripYomi(o);if(p!==ans)pool.push(...p.split(""));});
+  pool=pool.filter(ch=>!ansChars.includes(ch));
+  const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
+  const tiles=shuffle([...ansChars,...dummies]);
+  let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
+  $('answerArea').innerHTML=html;
+  renderSlots(ansChars.length);
+  const tw=$('tiles');
+  tiles.forEach((ch,i)=>{
+    const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
+    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    tw.appendChild(b);
+  });
+}
+function renderSlots(n){
+  const host=$('slots');host.innerHTML="";
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+      d.onclick=()=>{if(answered)return;
+        // タップで戻す（最後の1つ）
+        const removed=slotChars.splice(i,1)[0];
+        // 対応するタイルのusedを1つ解除
+        const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
+        if(t)t.classList.remove('used');
+        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+    }else{d.className="slot empty";d.textContent="";}
+    host.appendChild(d);
+  }
+}
+
+/* ステージ3：漢字入力 */
+function renderInput(c){
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="答えを入力">
+    <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
+  const inp=$('txtIn');
+  inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
+  setTimeout(()=>inp.focus(),100);
+}
+
+/* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
+function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
+
+$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+
+function checkAnswer(){
+  const c=session.queue[session.idx];
+  if(!answered){
+    let correct=false;
+    if(stage===0){
+      const aset=new Set(c.a);
+      correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
+    }else if(stage===1){
+      correct = slotChars.join("")===stripYomi(c.a[0]);
+    }else{
+      const v=$('txtIn').value;
+      correct = norm(v)===norm(c.a[0]);
+    }
+    judge(correct);
+  }else{
+    session.idx++;
+    if(session.idx<session.total)renderQuestion(); else finishSession();
+  }
+}
+
+function judge(correct){
+  const c=session.queue[session.idx];
+  answered=true; $('dontknow').style.display="none";
+  // 表示の色付け
+  if(stage===0){
+    const aset=new Set(c.a);
+    $('answerArea').querySelectorAll('.choice').forEach(b=>{
+      const o=b.dataset.opt;b.disabled=true;
+      if(aset.has(o)){b.classList.remove('sel');b.classList.add('correct');b.querySelector('.mk').textContent="✓";}
+      else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
+    });
+  }
+  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=1点
+  const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
+  const isDaily = session.comp==="DAILY30";
+  schedule(c.id,correct);
+  state.accTotal++;
+  if(correct){
+    session.correct++; state.accCorrect++; state.xp+=10;
+    const pts = isDaily ? 10 : (firstCorrect ? 10 : 1);
+    state.weekPending=(state.weekPending||0)+pts;
+    if(session)session.points=(session.points||0)+pts;
+  }
+  // 復習リスト：今日の30問で間違えた問題をためる／正解したら（どのモードでも）その問題を外す
+  if(!state.review)state.review=[];
+  if(isDaily && !correct){ if(!state.review.includes(c.id))state.review.push(c.id); }
+  if(correct){ const i=state.review.indexOf(c.id); if(i>=0)state.review.splice(i,1); }
+  state.doneToday++;
+  refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
+  saveState();
+  const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
+  $('fTitle').innerHTML=correct?"正解！ <span class='xp-pop'>+10 XP</span>":"惜しい！もう一度覚えよう";
+  // 答え・覚え方メモはCSV由来テキストなのでDOM APIで挿入（XSS対策）
+  const fn=$('fNote');fn.innerHTML="";
+  if(!correct){
+    fn.append("答え：");
+    const b=document.createElement('b');b.textContent=c.a.join("・");
+    fn.append(b,document.createElement('br'));
+  }
+  fn.append(c.note||"");
+  $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
+  $('checkBtn').disabled=false;
+}
+
+$('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+function finishSession(){
+  let up=false;
+  // 今日の30問を1セット完了：ストリーク+1（1日1回）＋今日はもうできない印
+  if(session.comp==="DAILY30"){
+    state.daily30Date=todayStr();
+    if(!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  }
+  refreshBadges();
+  saveState();
+  flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  $('dCards').textContent=session.total;
+  $('dCorrect').textContent=session.correct;
+  $('dXp').textContent="+"+(session.correct*10);
+  $('dStreakMsg').textContent=up
+    ? `🔥 連続 ${state.streak}日 になったよ！`
+    : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  show('done');
+}
+$('backHome').onclick=()=>{renderHome();show('home');};
+$('againBtn').onclick=()=>{startQuiz(session.comp);};
+
+/* ===== 7. CSV取り込み ===== */
+$('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
+$('impBack').onclick=()=>{renderHome();show('home');};
+$('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題に戻しました</span>';};
+
+$('doImport').onclick=()=>{
+  const txt=$('csvText').value.trim();
+  if(!txt){$('impMsg').innerHTML='<span class="err-msg">CSVが空です</span>';return;}
+  try{
+    const cards=parseCSV(txt);
+    if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards)); localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
+  }catch(err){
+    // 例外メッセージにCSV断片が混ざることがあるためテキストとして表示（XSS対策）
+    const s=document.createElement('span');s.className='err-msg';s.textContent='読み込みエラー：'+err.message;
+    const m=$('impMsg');m.innerHTML="";m.appendChild(s);
+  }
+};
+
+/* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
+function parseCSV(text){
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch==='\r'){} else cur+=ch; }
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  if(rows.length<2)return [];
+  const head=rows[0].map(h=>h.trim());
+  const idx=name=>head.indexOf(name);
+  const ci={id:idx("id"),comp:idx("編"),pref:idx("都道府県"),cat:idx("カテゴリ"),type:idx("出題タイプ"),q:idx("問題文"),a:idx("正解"),choices:idx("選択肢"),note:idx("覚え方メモ"),tag:idx("タグ"),region:idx("地方"),badgeCat:idx("称号カテゴリ"),image:idx("画像")}; // 画像列はオプショナル（無い12列CSVでも動く）
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.join("").trim()==="")continue;
+    const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
+    const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
+    const type=get("type")==="multi"?"multi":"single";
+    const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
+    let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
+    a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
+    const region=get("region")||regionOf(get("pref"));
+    const badgeCat=get("badgeCat")||badgeCatOf(get("cat"));
+    const card={id,comp:get("comp")||"県別編",pref:get("pref"),cat:get("cat"),type,q:qq,a,choices,note:get("note"),region,badgeCat};
+    const image=get("image"); if(image)card.image=image;
+    out.push(card);
+  }
+  return out;
+}
+
+$('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'');});
+
+/* ===== 8. ランキングバトル（Supabase） =====
+   下の2つを埋めるとオンライン機能（登録・週間ランキング・進捗バックアップ）が有効になる。
+   空のままなら従来どおり端末内のみで動く。
+   ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
+   ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
+     このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
+   ・番号：生徒のログイン認証はbcryptハッシュ照合。平文の番号は「発行済み番号表」にだけ残り、
+     講師（管理ページ／管理パスワード）からのみ参照できる（生徒・anon keyからは一切見えない）。
+     講師はニックネーム↔番号を照合し、塾のスプレッドシート（番号↔氏名）で誰かを特定する。
+   ・本名などの個人情報はアプリ／DBに保存しない。通信はHTTPS。 */
+const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
+const SUBJECT = "koumin"; // 教科ID（サーバ側でランキング・進捗を教科ごとに分けるためのラベル）
+const SHARED_LOGIN_KEY = "mirubato_login"; // ポータルと共有するログイン情報（同一ドメインの全教科で共有）
+
+function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+// ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
+(function initLoginUI(){
+  const on=ONLINE();
+  document.querySelectorAll('.online-only').forEach(el=>{
+    el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
+  });
+  // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
+  // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
+  try{
+    const saved=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    const valid=saved&&typeof saved.nick==="string"&&saved.nick.length>=1&&saved.nick.length<=12
+      &&/^\d{4,8}$/.test(saved.pin||"")&&(!saved.sv||saved.sv===1);
+    if(saved&&!valid)localStorage.removeItem(SHARED_LOGIN_KEY);
+    if(valid&&!state){
+      $('nick').value=saved.nick; $('pin').value=saved.pin;
+      if(saved.campus)$('campusSel').value=saved.campus;
+      setTimeout(()=>$('loginBtn').click(),0);
+    }
+  }catch(e){}
+})();
+async function rpc(fn,args){
+  const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+    body:JSON.stringify(args||{})
+  });
+  if(!res.ok)throw new Error("rpc "+fn+" HTTP "+res.status);
+  return res.json();
+}
+const REG_ERR={
+  bad_nick:"ニックネームは1〜12文字で入れてね",
+  bad_campus:"校舎を選んでね",
+  bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
+  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"
+};
+
+/* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
+async function flushScore(){
+  if(!state||!state.online||!ONLINE())return;
+  while(state.weekPending>0){
+    const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
+    try{
+      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send,p_subject:SUBJECT});
+      if(!r.ok)break;
+      // サーバが実際に加算できた分（granted）だけ減らす。日次上限で一部切り捨てられた分は消さずに翌日送る
+      const granted=(r.granted!=null)?r.granted:send; // granted未対応の旧サーバとの互換
+      state.weekPending-=granted; state.weekScore=r.week_score; saveState();
+      if(granted<send)break; // 日次上限に到達→残りは明日
+    }catch(e){break;}
+  }
+}
+
+/* 進捗バックアップ：番号(pin)は送るデータに含めない */
+async function syncProgress(){
+  if(!state||!state.online||!ONLINE())return;
+  const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+    accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
+    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
+}
+
+/* ランキング画面 */
+let rankCampus="", rankPeriod="week";
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
+// チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
+function starHtml(gold,silver){
+  let h="";
+  if(gold>0)  h+=`<span class="star gold" title="月間チャンピオン">★</span>${gold>1?'<span class="stx">×'+gold+'</span>':''}`;
+  if(silver>0)h+=`${h?' ':''}<span class="star silver" title="週間チャンピオン">★</span>${silver>1?'<span class="stx">×'+silver+'</span>':''}`;
+  return h;
+}
+$('rankBack').onclick=()=>{renderHome();show('home');};
+$('rankReload').onclick=()=>loadRanking();
+function renderPeriodTabs(){
+  $('rankPeriodTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.period===rankPeriod);
+    b.onclick=()=>{rankPeriod=b.dataset.period;renderPeriodTabs();loadRanking();};
+  });
+}
+function renderRankTabs(){
+  $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.campus===rankCampus);
+    b.onclick=()=>{rankCampus=b.dataset.campus;renderRankTabs();loadRanking();};
+  });
+}
+async function loadRanking(){
+  const isMonth=rankPeriod==='month';
+  $('rankNote').innerHTML=(isMonth?'今月の 点数 で 勝負！':'今週の 点数 で 勝負！')
+    +'<span id="rankReset"></span>';
+  if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
+  await flushScore();
+  $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
+  try{
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:SUBJECT});
+    if(!rows.length){
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
+        +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
+      return;
+    }
+    const medal=["🥇","🥈","🥉"];
+    $('rankList').innerHTML=rows.map(r=>{
+      const me=state&&r.nick===state.nick;
+      const st=starHtml(r.monthly_wins||0,r.weekly_wins||0);
+      return `<div class="rank-row${me?' me':''}">
+        <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
+        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}点</span></div>`;
+    }).join("");
+  }catch(e){
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">通信エラー。<br>しばらくしてから「最新にする」を押してね</div>';
+  }
+}
+</script>
