@@ -1169,6 +1169,8 @@ function finishSession(){
   $('dStreakMsg').textContent=up
     ? `🔥 連続 ${state.streak}日 になったよ！`
     : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  // 今日の30問は1日1回なので「もう一セットやる」を隠す（押しても警告が出るだけだった）
+  $('againBtn').style.display = session.comp==="DAILY30" ? "none" : "";
   show('done');
 }
 $('backHome').onclick=()=>{renderHome();show('home');};
@@ -1186,6 +1188,19 @@ $('doImport').onclick=()=>{
   try{
     const cards=parseCSV(txt);
     if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
+    // 壊れた問題データで進行不能にならないよう取り込み前に検証（ID重複・正解なし・選択肢不足）
+    const errs=[],seen=new Set();
+    cards.forEach(c=>{
+      if(seen.has(c.id))errs.push(c.id+": IDが重複");
+      seen.add(c.id);
+      if(c.a.length<1)errs.push(c.id+": 正解が空");
+      if(c.choices.length<2)errs.push(c.id+": 選択肢が2つ未満");
+    });
+    if(errs.length){
+      const s=document.createElement('span');s.className='err-msg';
+      s.textContent='取り込み中止（CSVを直してください）：'+errs.slice(0,5).join(" ／ ")+(errs.length>5?` …ほか${errs.length-5}件`:"");
+      const m=$('impMsg');m.innerHTML="";m.appendChild(s);return;
+    }
     CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards)); localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
     $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
   }catch(err){

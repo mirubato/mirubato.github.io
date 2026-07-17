@@ -288,7 +288,7 @@
       <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
     </div>
     <div class="collection">
-      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">19</span></span></div>
+      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">20</span></span></div>
       <div class="hbadge-grid" id="homeBadgeGrid"></div>
     </div>
     <div class="mode-list">
@@ -633,11 +633,19 @@ function buildMap(mset){
 /* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
 const DAILY_GOAL=10;
 const LS_CARDS="rekitan_cards";
+const CARD_DATA_VERSION=2; // 2026-07バッジ再編。これより古い取り込み済み問題セット(旧カテゴリ)は無効化して埋め込み問題に戻す
 const userKey=(n,p)=>"rekitan_user_"+n+"_"+p;
 let state=null;
 
 function loadCards(){
-  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  try{
+    if(+(localStorage.getItem(LS_CARDS+"_ver")||1)<CARD_DATA_VERSION){
+      localStorage.removeItem(LS_CARDS);
+      localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
+    }else{
+      const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}
+    }
+  }catch(e){}
   return DEFAULT_CARDS.slice();
 }
 CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
@@ -709,6 +717,8 @@ const BADGES = [
   {key:"culture", name:"文化マスター", emoji:"🎨", type:"badgeCat", match:"文化"},
   {key:"war", name:"外交・戦いマスター", emoji:"⚔️", type:"badgeCat", match:"外交・戦い"},
 ];
+// 2026-07再編で廃止したバッジキー（獲得済み記録が残っていても無害化のため削除）
+const OBSOLETE_BADGE_KEYS=["region_chugokushikoku","land","fishery","forestry","tourism"];
 const FINAL_BADGE = {key:"doctor", name:"歴史博士", emoji:"🎓"};
 // 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
 // 解放判定・歴史博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
@@ -727,6 +737,9 @@ function badgeProgress(b){
 // 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
 function refreshBadges(){
   if(!state.badges)state.badges={};
+  // 2026-07バッジ再編: 旧区分で獲得した称号(歴史博士含む)を一度リセットし、正答記録(reviews)から新区分で再判定する
+  if((state.badgeSchemaVersion||1)<2){ state.badges={}; state.badgeSchemaVersion=2; saveState(); }
+  OBSOLETE_BADGE_KEYS.forEach(k=>{delete state.badges[k];});
   const act=activeBadges(), fresh=[];
   act.forEach(b=>{
     if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
@@ -971,7 +984,9 @@ function startQuiz(comp){
   if(comp==="DAILY30"){
     if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
     // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
-    pool=shuffle(CARDS.slice()).slice(0,DAILY30);
+    // 複数称号向けの複製問題（例: forest-isanとheritage-genseirin）が同じ回に2回出ないよう、問題文+正解でユニーク化
+    const seen30=new Set();
+    pool=shuffle(CARDS.slice()).filter(c=>{const k=c.q+"|"+(c.a||[]).join("・");if(seen30.has(k))return false;seen30.add(k);return true;}).slice(0,DAILY30);
   }else if(comp==="REVIEW"){
     // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
     pool=reviewCards();
@@ -1182,6 +1197,8 @@ function finishSession(){
   $('dStreakMsg').textContent=up
     ? `🔥 連続 ${state.streak}日 になったよ！`
     : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  // 今日の30問は1日1回なので「もう一セットやる」を隠す（押しても警告が出るだけだった）
+  $('againBtn').style.display = session.comp==="DAILY30" ? "none" : "";
   show('done');
 }
 $('backHome').onclick=()=>{renderHome();show('home');};
@@ -1199,7 +1216,20 @@ $('doImport').onclick=()=>{
   try{
     const cards=parseCSV(txt);
     if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
-    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
+    // 壊れた問題データで進行不能にならないよう取り込み前に検証（ID重複・正解なし・選択肢不足）
+    const errs=[],seen=new Set();
+    cards.forEach(c=>{
+      if(seen.has(c.id))errs.push(c.id+": IDが重複");
+      seen.add(c.id);
+      if(c.a.length<1)errs.push(c.id+": 正解が空");
+      if(c.choices.length<2)errs.push(c.id+": 選択肢が2つ未満");
+    });
+    if(errs.length){
+      const s=document.createElement('span');s.className='err-msg';
+      s.textContent='取り込み中止（CSVを直してください）：'+errs.slice(0,5).join(" ／ ")+(errs.length>5?` …ほか${errs.length-5}件`:"");
+      const m=$('impMsg');m.innerHTML="";m.appendChild(s);return;
+    }
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards)); localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
     $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
   }catch(err){
     // 例外メッセージにCSV断片が混ざることがあるためテキストとして表示（XSS対策）
