@@ -93,6 +93,69 @@
   </div>
 </div>
 
+<!-- 課題（地理のみ） -->
+<div class="card hide" id="kadaiCard">
+  <h1 style="font-size:17px">📝 課題を出す（地理）</h1>
+  <div class="sub">生徒×称号×期間を指定。期間中は生徒のホームに毎日表示され、その称号を獲得すると完了して消えます。</div>
+  <label>生徒を選ぶ（複数OK）</label>
+  <div id="kadaiPlayers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;max-height:180px;overflow-y:auto"></div>
+  <div class="row-controls">
+    <div class="f">
+      <label>称号（範囲）</label>
+      <select id="kadaiDeck">
+        <optgroup label="地方">
+          <option value="R:北海道">🐻 北海道マスター</option><option value="R:東北">🍎 東北マスター</option>
+          <option value="R:関東">🗼 関東マスター</option><option value="R:中部">🗻 中部マスター</option>
+          <option value="R:近畿">🦌 近畿マスター</option><option value="R:中国">⛩️ 中国マスター</option>
+          <option value="R:四国">🌀 四国マスター</option><option value="R:九州沖縄">🌺 九州沖縄マスター</option>
+        </optgroup>
+        <optgroup label="分野">
+          <option value="B:川・平野・湖">🏞️ 川・平野・湖マスター</option><option value="B:山・火山・台地">🌋 山・火山・台地マスター</option>
+          <option value="B:海">🌊 海マスター</option><option value="B:気候">🌦️ 気候マスター</option>
+          <option value="B:農業">🌾 農業マスター</option><option value="B:畜産・林業・漁業">🐄 畜産・林業・漁業マスター</option>
+          <option value="B:工業">🏭 工業マスター</option><option value="B:伝統工芸品">🏺 伝統工芸品マスター</option>
+          <option value="B:県庁所在地">🏯 県庁所在地マスター</option><option value="B:世界遺産">🏛️ 世界遺産マスター</option>
+          <option value="B:白地図">🗺️ 白地図マスター</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="f"><label>開始日</label><input type="date" id="kadaiStart"></div>
+    <div class="f"><label>終了日</label><input type="date" id="kadaiEnd"></div>
+    <button class="btn" id="kadaiSend">課題を出す</button>
+  </div>
+  <div class="msg" id="kadaiMsg"></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>生徒</th><th>課題</th><th>期間</th><th>状態</th><th>そうさ</th></tr></thead>
+      <tbody id="kadaiRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 問題の報告（地理のみ） -->
+<div class="card hide" id="repCard">
+  <h1 style="font-size:17px">⚠️ 問題の報告</h1>
+  <div class="sub">生徒からの「答えが間違っている／わかりにくい」報告。対応したら「対応済み」にしてください。</div>
+  <div class="row-controls">
+    <div class="f">
+      <label>表示</label>
+      <select id="repFilter">
+        <option value="open">未対応のみ</option>
+        <option value="done">対応済みのみ</option>
+        <option value="">全部</option>
+      </select>
+    </div>
+    <button class="btn sec" id="repReload">🔄 最新にする</button>
+  </div>
+  <div class="msg" id="repMsg"></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>日時</th><th>生徒</th><th>問題</th><th>理由</th><th>ひとこと</th><th>状態</th><th>そうさ</th></tr></thead>
+      <tbody id="repRows"></tbody>
+    </table>
+  </div>
+</div>
+
 <script>
 /* chiri_app.html と同じ値を入れる */
 const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
@@ -125,10 +188,14 @@ $('loginBtn').onclick=async()=>{
     if(!r.ok){$('loginMsg').className="msg err";$('loginMsg').textContent="パスワードが違います";return;}
     ADMIN_PW=pw;
     $('loginCard').classList.add('hide'); $('adminCard').classList.remove('hide');
-    load();
+    $('kadaiCard').classList.remove('hide'); $('repCard').classList.remove('hide');
+    const t=new Date(), z=n=>String(n).padStart(2,'0'), ymd=`${t.getFullYear()}-${z(t.getMonth()+1)}-${z(t.getDate())}`;
+    if(!$('kadaiStart').value)$('kadaiStart').value=ymd;
+    if(!$('kadaiEnd').value)$('kadaiEnd').value=ymd;
+    load(); loadKadai(); loadReports();
   }catch(e){$('loginMsg').className="msg err";$('loginMsg').textContent="通信エラー："+e.message;}
 };
-$('logoutBtn').onclick=()=>{ADMIN_PW="";$('pw').value="";$('adminCard').classList.add('hide');$('loginCard').classList.remove('hide');$('loginMsg').textContent="";};
+$('logoutBtn').onclick=()=>{ADMIN_PW="";$('pw').value="";$('adminCard').classList.add('hide');$('kadaiCard').classList.add('hide');$('repCard').classList.add('hide');$('loginCard').classList.remove('hide');$('loginMsg').textContent="";};
 $('reloadBtn').onclick=()=>load();
 $('campusFilter').onchange=()=>load();
 
@@ -138,6 +205,7 @@ async function load(){
     const r=await rpc('admin_list',{p_pw:ADMIN_PW,p_campus:$('campusFilter').value||null});
     if(!r.ok){$('adminMsg').className="msg err";$('adminMsg').textContent="読み込めませんでした（再ログインしてください）";return;}
     render(r.players||[]);
+    renderKadaiPlayers(r.players||[]);
     $('adminMsg').textContent = r.players.length ? (r.players.length+"人") : "まだ登録がありません";
   }catch(e){$('adminMsg').className="msg err";$('adminMsg').textContent="通信エラー："+e.message;}
 }
@@ -192,5 +260,78 @@ async function doToggle(id,nick,isStopped){
     load();
   }catch(e){alert("通信エラー："+e.message);}
 }
+/* ===== 課題（地理） ===== */
+function renderKadaiPlayers(list){
+  // 停止中の生徒には課題を出せない（表示もしない）。校舎しぼりは上の一覧と連動
+  $('kadaiPlayers').innerHTML=list.filter(p=>!p.suspended).map(p=>
+    `<label style="display:flex;align-items:center;gap:5px;border:2px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap">
+      <input type="checkbox" class="kadai-pl" value="${p.id}" style="width:auto">${esc(p.nick)}<span class="tag">${esc(p.campus)}</span>
+    </label>`).join("") || '<span style="font-size:13px;color:var(--ink-soft)">生徒がいません（上の校舎しぼりも見てね）</span>';
+}
+$('kadaiSend').onclick=async()=>{
+  const ids=[...document.querySelectorAll('.kadai-pl:checked')].map(c=>c.value);
+  const deckSel=$('kadaiDeck'), deck=deckSel.value;
+  const deckName=deckSel.options[deckSel.selectedIndex].textContent.replace(/^\S+\s/,'');
+  const s=$('kadaiStart').value, e=$('kadaiEnd').value;
+  const m=$('kadaiMsg'); m.className="msg";
+  if(!ids.length){m.className="msg err";m.textContent="生徒を選んでください";return;}
+  if(!s||!e){m.className="msg err";m.textContent="開始日と終了日を入れてください";return;}
+  if(e<s){m.className="msg err";m.textContent="終了日が開始日より前です";return;}
+  m.textContent="送信中…";
+  try{
+    const r=await rpc('admin_create_assignment',{p_pw:ADMIN_PW,p_players:ids,p_deck:deck,p_deck_name:deckName,p_start:s,p_end:e,p_subject:'chiri'});
+    if(!r.ok){m.className="msg err";m.textContent="出せませんでした（"+(r.reason||"")+"）";return;}
+    m.className="msg ok";m.textContent=r.created+"人に課題を出しました";
+    document.querySelectorAll('.kadai-pl:checked').forEach(c=>c.checked=false);
+    loadKadai();
+  }catch(err){m.className="msg err";m.textContent="通信エラー："+err.message;}
+};
+async function loadKadai(){
+  try{
+    const r=await rpc('admin_list_assignments',{p_pw:ADMIN_PW,p_subject:'chiri'});
+    if(!r.ok)return;
+    const st={done:'<span class="tag ok">達成✅</span>',active:'<span class="tag">進行中</span>',
+              expired:'<span class="tag stop">期限切れ</span>',upcoming:'<span class="tag">開始前</span>'};
+    $('kadaiRows').innerHTML=(r.assignments||[]).map(a=>
+      `<tr><td class="nick">${esc(a.nick)}</td><td>${esc(a.deck_name)}</td>
+       <td>${esc(a.start_date)}〜${esc(a.end_date)}</td><td>${st[a.status]||""}</td>
+       <td><button class="btn sec sm kadai-del" data-id="${a.id}">削除</button></td></tr>`).join("");
+    $('kadaiRows').querySelectorAll('.kadai-del').forEach(b=>b.onclick=async()=>{
+      if(!confirm("この課題を削除しますか？"))return;
+      try{const r2=await rpc('admin_delete_assignment',{p_pw:ADMIN_PW,p_id:+b.dataset.id});if(r2.ok)loadKadai();}
+      catch(e){alert("通信エラー："+e.message);}
+    });
+  }catch(e){}
+}
+
+/* ===== 問題の報告 ===== */
+const REP_REASON={wrong:'答えが間違い',unclear:'わかりにくい',other:'その他'};
+async function loadReports(){
+  $('repMsg').className="msg";$('repMsg').textContent="読み込み中…";
+  try{
+    const r=await rpc('admin_list_reports',{p_pw:ADMIN_PW,p_status:$('repFilter').value||null});
+    if(!r.ok){$('repMsg').className="msg err";$('repMsg').textContent="読み込めませんでした";return;}
+    const list=r.reports||[];
+    $('repMsg').textContent=list.length? list.length+"件" : "報告はありません";
+    $('repRows').innerHTML=list.map(x=>{
+      const d=new Date(x.created_at), z=n=>String(n).padStart(2,'0');
+      const when=`${d.getMonth()+1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}`;
+      const done=x.status==='done';
+      return `<tr><td>${when}</td><td class="nick">${esc(x.nick)}</td>
+        <td title="${esc(x.question_id)}" style="white-space:normal;min-width:200px">${esc(x.question_text)}</td>
+        <td>${REP_REASON[x.reason]||esc(x.reason)}</td>
+        <td style="white-space:normal">${esc(x.comment)}</td>
+        <td>${done?'<span class="tag ok">対応済み</span>':'<span class="tag stop">未対応</span>'}</td>
+        <td><button class="btn sm ${done?'sec':''} rep-tgl" data-id="${x.id}" data-next="${done?'open':'done'}">${done?'未対応に戻す':'対応済みにする'}</button></td></tr>`;
+    }).join("");
+    $('repRows').querySelectorAll('.rep-tgl').forEach(b=>b.onclick=async()=>{
+      try{const r2=await rpc('admin_set_report_status',{p_pw:ADMIN_PW,p_id:+b.dataset.id,p_status:b.dataset.next});if(r2.ok)loadReports();}
+      catch(e){alert("通信エラー："+e.message);}
+    });
+  }catch(e){$('repMsg').className="msg err";$('repMsg').textContent="通信エラー："+e.message;}
+}
+$('repReload').onclick=()=>loadReports();
+$('repFilter').onchange=()=>loadReports();
+
 $('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click();});
 </script>

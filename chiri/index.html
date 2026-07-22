@@ -195,6 +195,9 @@
   .mode-card .mc-desc{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
   #modeDaily{border-color:var(--green)}
   #modeDaily.done{border-color:var(--line);opacity:.7}
+  #kadaiList .mode-card{border-color:var(--gold);background:#fffaf0;width:100%;margin-bottom:10px}
+  #kadaiList .mc-title::before{content:"課題";display:inline-block;font-size:10px;font-weight:800;color:#fff;
+    background:var(--gold);border-radius:6px;padding:2px 6px;margin-right:6px;vertical-align:2px}
   #modeReview{border-color:var(--orange)}
   .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
   /* 画像つきカード */
@@ -291,6 +294,7 @@
       <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">20</span></span></div>
       <div class="hbadge-grid" id="homeBadgeGrid"></div>
     </div>
+    <div id="kadaiList"></div>
     <div class="mode-list">
       <button class="mode-card" id="modeBadge">
         <span class="mc-emoji">🏅</span>
@@ -334,12 +338,31 @@
     <div class="feedback" id="feedback">
       <div class="ft" id="fTitle"></div>
       <div class="fn" id="fNote"></div>
+      <button class="linkbtn" id="reportBtn" style="display:none;margin-top:10px;font-size:12px">⚠️ この問題を報告</button>
     </div>
     <div class="qfoot">
       <button class="btn" id="checkBtn" disabled>答え合わせ</button>
       <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
     </div>
   </section>
+
+  <!-- 問題の報告（答え合わせ後に⚠️ボタンから開く。講師だけが管理ページで見る） -->
+  <div id="reportOverlay" style="display:none;position:fixed;inset:0;background:rgba(42,39,35,.5);z-index:90;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;max-width:420px;width:100%">
+      <div style="font-size:16px;font-weight:800;margin-bottom:6px">⚠️ この問題を報告する</div>
+      <div id="repQText" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;line-height:1.5"></div>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="wrong"> 答えが間違っていると思う</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="unclear"> 問題文がわかりにくい</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="other"> その他</label>
+      <input id="repComment" maxlength="100" placeholder="ひとこと（なくてもOK）"
+        style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:2px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit">
+      <div id="repMsg" style="min-height:18px;font-size:12px;color:var(--wrong);margin-top:6px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn secondary" id="repCancel" style="flex:1">やめる</button>
+        <button class="btn" id="repSend" style="flex:1">送信する</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 完了 -->
   <section id="done" class="screen">
@@ -930,9 +953,55 @@ function refreshBadges(){
     state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
   }
   if(fresh.length){saveState();celebrate(fresh);}
+  checkAssignmentsDone(); // 新しく称号を取ったら、対応する課題を完了にする
   return state.badges;
 }
 function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4b2. 課題（先生が出す宿題）: 期間中ホームに表示し、対象の称号を獲得したら完了 ===== */
+let ASSIGNMENTS=[];           // 今日有効な未完了課題（サーバから取得。オフライン時は空）
+const REPORTED_IDS=new Set(); // この起動中に報告済みの問題ID（二重報告防止）
+function badgeForDeck(deck){
+  const m=/^([RB]):(.+)$/.exec(deck||"");
+  if(!m)return null;
+  return BADGES.find(b=>(m[1]==="R"?b.type==="region":b.type==="badgeCat")&&b.match===m[2])||null;
+}
+async function fetchAssignments(){
+  ASSIGNMENTS=[];
+  if(!state||!state.online)return;
+  try{
+    const r=await rpc('list_assignments',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT});
+    if(r&&r.ok)ASSIGNMENTS=r.assignments||[];
+  }catch(e){}
+}
+function checkAssignmentsDone(){
+  // 対応する称号を獲得済みの課題を完了にする（サーバへ通知し、ホームの一覧から外す）
+  if(!state||!ASSIGNMENTS.length)return;
+  ASSIGNMENTS.slice().forEach(a=>{
+    const b=badgeForDeck(a.deck);
+    if(b&&state.badges&&state.badges[b.key]){
+      ASSIGNMENTS=ASSIGNMENTS.filter(x=>x.id!==a.id);
+      if(state.online)rpc('complete_assignment',{p_nick:state.nick,p_number:state.pin,p_id:a.id}).catch(()=>{});
+      renderKadai();
+    }
+  });
+}
+function renderKadai(){
+  const box=$('kadaiList'); if(!box)return;
+  box.innerHTML="";
+  const md=s=>{const p=String(s).split("-");return (+p[1])+"/"+(+p[2]);};
+  ASSIGNMENTS.forEach(a=>{
+    const b=badgeForDeck(a.deck);
+    const btn=document.createElement('button'); btn.className="mode-card";
+    const em=document.createElement('span'); em.className="mc-emoji"; em.textContent=b?b.emoji:"📝";
+    const body=document.createElement('span'); body.className="mc-body";
+    const t=document.createElement('span'); t.className="mc-title"; t.textContent=(a.deck_name||(b?b.name:"課題"))+"をとろう！";
+    const d=document.createElement('span'); d.className="mc-desc"; d.textContent="先生からの課題（"+md(a.start_date)+"〜"+md(a.end_date)+"）。この称号を80%マスターで達成！";
+    body.appendChild(t); body.appendChild(d); btn.appendChild(em); btn.appendChild(body);
+    btn.onclick=()=>startQuiz(a.deck);
+    box.appendChild(btn);
+  });
+}
 
 /* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
 let celebrateQueue=[], celebrating=false;
@@ -1027,6 +1096,7 @@ $('loginBtn').onclick=async()=>{
     // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
     try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
     rolloverDay(); refreshBadges(); saveState();
+    await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
     flushScore();
   }finally{ $('loginBtn').disabled=false; }
@@ -1043,6 +1113,7 @@ function renderHome(){
   $('streakN').textContent=state.streak;
   refreshBadges();
   renderHomeBadges();
+  renderKadai();
   // ランキングはオンライン時のみ入口を出す
   $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
   // 今日の30問：クリア済みなら見た目を変える
@@ -1359,9 +1430,43 @@ function judge(correct){
   fn.append(c.note||"");
   $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
   $('checkBtn').disabled=false;
+  // 報告ボタン：オンライン時のみ。同じ問題の二重報告は不可
+  const rb=$('reportBtn');
+  if(REPORTED_IDS.has(c.id)){rb.style.display="";rb.disabled=true;rb.textContent="✅ 報告したよ（ありがとう）";}
+  else if(state.online){rb.style.display="";rb.disabled=false;rb.textContent="⚠️ この問題を報告";}
+  else rb.style.display="none";
 }
 
 $('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+/* ===== 問題の報告（生徒→講師）。答え合わせ後の⚠️ボタンから ===== */
+let reportCard=null;
+$('reportBtn').onclick=()=>{
+  if(!session)return;
+  reportCard=session.queue[session.idx];
+  $('repQText').textContent="問題："+reportCard.q;
+  document.querySelectorAll('input[name=repReason]').forEach(r=>r.checked=false);
+  $('repComment').value=""; $('repMsg').textContent="";
+  $('reportOverlay').style.display="flex";
+};
+$('repCancel').onclick=()=>{$('reportOverlay').style.display="none";};
+$('repSend').onclick=async()=>{
+  const sel=document.querySelector('input[name=repReason]:checked');
+  if(!sel){$('repMsg').textContent="理由を選んでね";return;}
+  if(!reportCard)return;
+  $('repSend').disabled=true; $('repMsg').textContent="送信中…";
+  try{
+    const r=await rpc('report_question',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT,
+      p_question_id:reportCard.id,p_question_text:reportCard.q,
+      p_reason:sel.value,p_comment:$('repComment').value.trim()});
+    if(r&&r.ok){
+      REPORTED_IDS.add(reportCard.id);
+      $('reportOverlay').style.display="none";
+      const rb=$('reportBtn'); rb.disabled=true; rb.textContent="✅ 報告したよ（ありがとう）";
+    }else{$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  }catch(e){$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  finally{$('repSend').disabled=false;}
+};
 
 function finishSession(){
   let up=false;
