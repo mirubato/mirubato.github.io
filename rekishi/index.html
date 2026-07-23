@@ -311,6 +311,7 @@
     </div>
     <div class="toolrow">
       <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="subjectBackBtn">📚 教科をえらぶ</button>
       <button class="btn secondary" id="logoutBtn">ログアウト</button>
     </div>
   </section>
@@ -334,12 +335,31 @@
     <div class="feedback" id="feedback">
       <div class="ft" id="fTitle"></div>
       <div class="fn" id="fNote"></div>
+      <button class="linkbtn" id="reportBtn" style="display:none;margin-top:10px;font-size:12px">⚠️ この問題を報告</button>
     </div>
     <div class="qfoot">
       <button class="btn" id="checkBtn" disabled>答え合わせ</button>
       <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
     </div>
   </section>
+
+  <!-- 問題の報告（答え合わせ後に⚠️ボタンから開く。講師だけが管理ページで見る） -->
+  <div id="reportOverlay" style="display:none;position:fixed;inset:0;background:rgba(42,39,35,.5);z-index:90;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;max-width:420px;width:100%">
+      <div style="font-size:16px;font-weight:800;margin-bottom:6px">⚠️ この問題を報告する</div>
+      <div id="repQText" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;line-height:1.5"></div>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="wrong"> 答えが間違っていると思う</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="unclear"> 問題文がわかりにくい</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="other"> その他</label>
+      <input id="repComment" maxlength="100" placeholder="ひとこと（なくてもOK）"
+        style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:2px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit">
+      <div id="repMsg" style="min-height:18px;font-size:12px;color:var(--wrong);margin-top:6px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn secondary" id="repCancel" style="flex:1">やめる</button>
+        <button class="btn" id="repSend" style="flex:1">送信する</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 完了 -->
   <section id="done" class="screen">
@@ -384,6 +404,7 @@
     <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
     <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
     <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankSubjectTabs"></div>
     <div class="rank-tabs" id="rankPeriodTabs">
       <button class="rtab active" data-period="week">今週</button>
       <button class="rtab" data-period="month">今月</button>
@@ -851,6 +872,7 @@ $('loginBtn').onclick=async()=>{
     flushScore();
   }finally{ $('loginBtn').disabled=false; }
 };
+$('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
 $('logoutBtn').onclick=()=>{
   state=null; $('nick').value="";$('pin').value="";$('campusSel').value="";
   try{localStorage.removeItem(SHARED_LOGIN_KEY);}catch(e){} // 全教科からログアウト
@@ -896,7 +918,7 @@ function renderHomeBadges(){
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
 $('modeReview').onclick=()=>startQuiz('REVIEW');
-$('modeRank').onclick=()=>{show('ranking');renderPeriodTabs();renderRankTabs();loadRanking();};
+$('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
 
 /* ===== 称号画面 ===== */
 function renderBadges(){
@@ -1179,9 +1201,44 @@ function judge(correct){
   fn.append(c.note||"");
   $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
   $('checkBtn').disabled=false;
+  // 報告ボタン：オンライン時のみ。同じ問題の二重報告は不可
+  const rb=$('reportBtn');
+  if(REPORTED_IDS.has(c.id)){rb.style.display="";rb.disabled=true;rb.textContent="✅ 報告したよ（ありがとう）";}
+  else if(state.online){rb.style.display="";rb.disabled=false;rb.textContent="⚠️ この問題を報告";}
+  else rb.style.display="none";
 }
 
 $('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
+
+/* ===== 問題の報告（生徒→講師）。答え合わせ後の⚠️ボタンから ===== */
+const REPORTED_IDS=new Set(); // この起動中に報告済みの問題ID（二重報告防止）
+let reportCard=null;
+$('reportBtn').onclick=()=>{
+  if(!session)return;
+  reportCard=session.queue[session.idx];
+  $('repQText').textContent="問題："+reportCard.q;
+  document.querySelectorAll('input[name=repReason]').forEach(r=>r.checked=false);
+  $('repComment').value=""; $('repMsg').textContent="";
+  $('reportOverlay').style.display="flex";
+};
+$('repCancel').onclick=()=>{$('reportOverlay').style.display="none";};
+$('repSend').onclick=async()=>{
+  const sel=document.querySelector('input[name=repReason]:checked');
+  if(!sel){$('repMsg').textContent="理由を選んでね";return;}
+  if(!reportCard)return;
+  $('repSend').disabled=true; $('repMsg').textContent="送信中…";
+  try{
+    const r=await rpc('report_question',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT,
+      p_question_id:reportCard.id,p_question_text:reportCard.q,
+      p_reason:sel.value,p_comment:$('repComment').value.trim()});
+    if(r&&r.ok){
+      REPORTED_IDS.add(reportCard.id);
+      $('reportOverlay').style.display="none";
+      const rb=$('reportBtn'); rb.disabled=true; rb.textContent="✅ 報告したよ（ありがとう）";
+    }else{$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  }catch(e){$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  finally{$('repSend').disabled=false;}
+};
 
 function finishSession(){
   let up=false;
@@ -1358,7 +1415,16 @@ async function syncProgress(){
 }
 
 /* ランキング画面 */
-let rankCampus="", rankPeriod="week";
+let rankCampus="", rankPeriod="week", rankSubject=SUBJECT;
+// 教科タブ：他教科のランキングも見られる（get_rankingはp_subjectで教科別）
+const RANK_SUBJECTS=[["chiri","\u{1F5FE} 地理"],["rekishi","\u{1F4DC} 歴史"],["koumin","\u{1F3DB}\uFE0F 公民"]];
+function renderSubjectTabs(){
+  $('rankSubjectTabs').innerHTML=RANK_SUBJECTS.map(s=>
+    `<button class="rtab${s[0]===rankSubject?' active':''}" data-subject="${s[0]}">${s[1]}</button>`).join("");
+  $('rankSubjectTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.onclick=()=>{rankSubject=b.dataset.subject;renderSubjectTabs();loadRanking();};
+  });
+}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
 // チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
@@ -1389,9 +1455,11 @@ async function loadRanking(){
   if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
   $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
   await flushScore();
+  // 他教科のランキングを見ている間は「君の今週の点数」（今の教科の値）を隠す
+  document.querySelector('.rank-me').style.display = rankSubject===SUBJECT ? "" : "none";
   $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
   try{
-    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:SUBJECT});
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:rankSubject});
     if(!rows.length){
       $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
         +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';

@@ -315,6 +315,7 @@
     </div>
     <div class="toolrow">
       <button class="btn secondary" id="importBtn">問題を取り込む</button>
+      <button class="btn secondary" id="subjectBackBtn">📚 教科をえらぶ</button>
       <button class="btn secondary" id="logoutBtn">ログアウト</button>
     </div>
   </section>
@@ -407,6 +408,7 @@
     <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
     <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
     <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankSubjectTabs"></div>
     <div class="rank-tabs" id="rankPeriodTabs">
       <button class="rtab active" data-period="week">今週</button>
       <button class="rtab" data-period="month">今月</button>
@@ -1103,6 +1105,7 @@ $('loginBtn').onclick=async()=>{
     flushScore();
   }finally{ $('loginBtn').disabled=false; }
 };
+$('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
 $('logoutBtn').onclick=()=>{
   state=null; $('nick').value="";$('pin').value="";$('campusSel').value="";
   try{localStorage.removeItem(SHARED_LOGIN_KEY);}catch(e){} // 全教科からログアウト
@@ -1149,7 +1152,7 @@ function renderHomeBadges(){
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
 $('modeReview').onclick=()=>startQuiz('REVIEW');
-$('modeRank').onclick=()=>{show('ranking');renderPeriodTabs();renderRankTabs();loadRanking();};
+$('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
 
 /* ===== 称号画面 ===== */
 function renderBadges(){
@@ -1645,7 +1648,16 @@ async function syncProgress(){
 }
 
 /* ランキング画面 */
-let rankCampus="", rankPeriod="week";
+let rankCampus="", rankPeriod="week", rankSubject=SUBJECT;
+// 教科タブ：他教科のランキングも見られる（get_rankingはp_subjectで教科別）
+const RANK_SUBJECTS=[["chiri","\u{1F5FE} 地理"],["rekishi","\u{1F4DC} 歴史"],["koumin","\u{1F3DB}\uFE0F 公民"]];
+function renderSubjectTabs(){
+  $('rankSubjectTabs').innerHTML=RANK_SUBJECTS.map(s=>
+    `<button class="rtab${s[0]===rankSubject?' active':''}" data-subject="${s[0]}">${s[1]}</button>`).join("");
+  $('rankSubjectTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.onclick=()=>{rankSubject=b.dataset.subject;renderSubjectTabs();loadRanking();};
+  });
+}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
 // チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
@@ -1676,9 +1688,11 @@ async function loadRanking(){
   if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
   $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
   await flushScore();
+  // 他教科のランキングを見ている間は「君の今週の点数」（今の教科の値）を隠す
+  document.querySelector('.rank-me').style.display = rankSubject===SUBJECT ? "" : "none";
   $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
   try{
-    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:SUBJECT});
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:rankSubject});
     if(!rows.length){
       $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
         +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';

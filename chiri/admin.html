@@ -150,7 +150,7 @@
   <div class="msg" id="repMsg"></div>
   <div class="tablewrap">
     <table>
-      <thead><tr><th>日時</th><th>生徒</th><th>問題</th><th>理由</th><th>ひとこと</th><th>状態</th><th>そうさ</th></tr></thead>
+      <thead><tr><th>日時</th><th>生徒</th><th>教科</th><th>問題</th><th>理由</th><th>ひとこと</th><th>状態</th><th>そうさ</th></tr></thead>
       <tbody id="repRows"></tbody>
     </table>
   </div>
@@ -306,6 +306,7 @@ async function loadKadai(){
 
 /* ===== 問題の報告 ===== */
 const REP_REASON={wrong:'答えが間違い',unclear:'わかりにくい',other:'その他'};
+const SUBJ_LABEL={chiri:'地理',rekishi:'歴史',koumin:'公民',kokugo:'国語',rika:'理科'};
 async function loadReports(){
   $('repMsg').className="msg";$('repMsg').textContent="読み込み中…";
   try{
@@ -318,6 +319,7 @@ async function loadReports(){
       const when=`${d.getMonth()+1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}`;
       const done=x.status==='done';
       return `<tr><td>${when}</td><td class="nick">${esc(x.nick)}</td>
+        <td><span class="tag">${SUBJ_LABEL[x.subject]||esc(x.subject)}</span></td>
         <td title="${esc(x.question_id)}" style="white-space:normal;min-width:200px">${esc(x.question_text)}</td>
         <td>${REP_REASON[x.reason]||esc(x.reason)}</td>
         <td style="white-space:normal">${esc(x.comment)}</td>
