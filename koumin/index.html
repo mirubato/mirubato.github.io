@@ -621,7 +621,7 @@ function loadCards(){
 CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
 function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0,review:[],daily30Date:""};}
 function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
-function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function saveState(){ if(state) try{state.savedAt=Date.now();localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
 function loadState(n,p){
   try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
   return null;
@@ -799,18 +799,20 @@ $('loginBtn').onclick=async()=>{
     if(onlineOk){
       state.campus=srvCampus;
       state.weekScore=srvWeek;
-      if(!existing){
-        // この端末に記録がない → サーバのバックアップから復元を試みる
-        try{
-          const pr=await rpc('load_progress',{p_nick:n,p_number:p,p_subject:SUBJECT});
-          if(pr.ok&&pr.data){
-            const d=pr.data;
-            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{
+      // サーバのバックアップと比較して「新しい側」を採用する（複数端末利用で古い進捗に巻き戻るのを防ぐ）。
+      // savedAt はこの端末で最後に学習記録を保存した時刻。旧データ（savedAtなし）は0＝最古扱いで従来動作と同じ。
+      try{
+        const pr=await rpc('load_progress',{p_nick:n,p_number:p,p_subject:SUBJECT});
+        if(pr.ok&&pr.data){
+          const d=pr.data;
+          const srvAt=+d.savedAt||0, locAt=existing?(+state.savedAt||0):-1;
+          if(srvAt>locAt){
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending","savedAt"].forEach(k=>{
               if(d[k]!=null)state[k]=d[k];
             });
           }
-        }catch(e){}
-      }
+        }
+      }catch(e){}
     }
     $('loginMsg').textContent="";
     // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
@@ -1296,7 +1298,13 @@ const REG_ERR={
 };
 
 /* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
+let flushingScore=null; // 多重送信ロック：ログイン直後と学習完了時の呼び出しが重なっても週間ポイントを二重送信しない
 async function flushScore(){
+  if(flushingScore)return flushingScore;
+  flushingScore=(async()=>{ await _flushScoreBody(); })().finally(()=>{flushingScore=null;});
+  return flushingScore;
+}
+async function _flushScoreBody(){
   if(!state||!state.online||!ONLINE())return;
   while(state.weekPending>0){
     const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
@@ -1317,7 +1325,7 @@ async function syncProgress(){
   const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
     accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
     streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
-    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending};
+    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending,savedAt:state.savedAt};
   try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
 
