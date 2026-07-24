@@ -1088,7 +1088,7 @@ $('loginBtn').onclick=async()=>{
           const d=pr.data;
           const srvAt=+d.savedAt||0, locAt=existing?(+state.savedAt||0):-1;
           if(srvAt>locAt){
-            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending","savedAt"].forEach(k=>{
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","daily30Session","weekPending","savedAt"].forEach(k=>{
               if(d[k]!=null)state[k]=d[k];
             });
           }
@@ -1126,6 +1126,10 @@ function renderHome(){
   $('modeDaily').classList.toggle('done',dailyDone);
   $('modeDailyEmoji').textContent = dailyDone ? "✅" : "📅";
   $('modeDailyTitle').textContent = dailyDone ? "今日の30問（クリア済み）" : "今日の30問";
+  const ds30=state.daily30Session;
+  if(!dailyDone&&ds30&&ds30.date===todayStr()&&Array.isArray(ds30.ids)&&ds30.idx>0&&ds30.idx<ds30.ids.length){
+    $('modeDailyTitle').textContent="今日の30問（つづき "+(ds30.idx+1)+"問目から）";
+  }
   $('modeDailyDesc').textContent = dailyDone ? "また明日ちょうせんできるよ。今日は復習や称号モードをどうぞ" : "全範囲からランダム約30問。毎日やって🔥連続をのばそう";
   // 復習モード：たまっている間だけ入口を出す
   const nrev = reviewCards().length;
@@ -1241,6 +1245,15 @@ function startQuiz(comp){
   let pool;
   if(comp==="DAILY30"){
     if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
+    // 途中でやめた分が今日あれば、同じ問題セットの続きから再開する（完走すると消える）
+    const ds=state.daily30Session;
+    if(ds&&ds.date===todayStr()&&Array.isArray(ds.ids)&&ds.idx>0){
+      const q=ds.ids.map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+      if(q.length&&ds.idx<q.length){
+        session={queue:q,idx:ds.idx,correct:ds.correct||0,total:q.length,comp,points:ds.points||0};
+        renderQuestion(); show('quiz'); return;
+      }
+    }
     // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
     // 複数称号向けの複製問題（例: forest-isanとheritage-genseirin）が同じ回に2回出ないよう、問題文+正解でユニーク化
     const seen30=new Set();
@@ -1420,6 +1433,9 @@ function judge(correct){
   if(!state.review)state.review=[];
   if(isDaily && !correct){ if(!state.review.includes(c.id))state.review.push(c.id); }
   if(correct){ const i=state.review.indexOf(c.id); if(i>=0)state.review.splice(i,1); }
+  if(isDaily){ // 今日の30問：途中でやめても続きから再開できるよう進み具合を保存（完走時に消す）
+    state.daily30Session={date:todayStr(),ids:session.queue.map(x=>x.id),idx:session.idx+1,correct:session.correct,points:session.points||0};
+  }
   state.doneToday++;
   refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
   saveState();
@@ -1478,6 +1494,7 @@ function finishSession(){
   // 今日の30問を1セット完了：ストリーク+1（1日1回）＋今日はもうできない印
   if(session.comp==="DAILY30"){
     state.daily30Date=todayStr();
+    delete state.daily30Session; // 完走したので「続き」データは消す
     if(!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
   }
   refreshBadges();
@@ -1643,7 +1660,7 @@ async function syncProgress(){
   const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
     accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
     streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
-    review:state.review,daily30Date:state.daily30Date,weekPending:state.weekPending,savedAt:state.savedAt};
+    review:state.review,daily30Date:state.daily30Date,daily30Session:state.daily30Session,weekPending:state.weekPending,savedAt:state.savedAt};
   try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
 
