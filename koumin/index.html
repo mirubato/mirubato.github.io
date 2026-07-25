@@ -1,3 +1,4 @@
+<!doctype html>
 <!--
   ミルバト社会・地理編 v3 — 中学受験 社会・地理 暗記アプリ（旧ミルバト社会）
   ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
@@ -889,7 +890,7 @@ function renderHomeBadges(){
   $('homeBadgeGrid').innerHTML=html;
   $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
   $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
-  $('collTotal').textContent=BADGES.length+1; // 19称号＋公民博士＝20
+  $('collTotal').textContent=BADGES.length+1; // 全称号＋最終称号（博士）
 }
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
@@ -900,7 +901,7 @@ $('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs
 function renderBadges(){
   refreshBadges(); saveState();
   const got=earnedBadgeCount();
-  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 公民博士 達成！</span>':'（全部集めると「公民博士」）'}`;
+    $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?`<span style="color:var(--gold);font-weight:700">${FINAL_BADGE.emoji} ${FINAL_BADGE.name} 達成！</span>`:`（全部集めると「${FINAL_BADGE.name}」）`}`;
   let html="";
   BADGES.forEach(b=>{
     if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
@@ -1304,7 +1305,7 @@ function parseCSV(text){
     const row=rows[r]; if(!row||row.join("").trim()==="")continue;
     const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
     const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
-    const type=get("type")==="multi"?"multi":"single";
+    const type=["multi","tile"].includes(get("type"))?get("type"):"single"; // tile=文字ならべ型（語彙編）を保持。未知の値はsingle扱い
     const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
     let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
     a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める

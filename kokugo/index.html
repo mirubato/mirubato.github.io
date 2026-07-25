@@ -1,3 +1,4 @@
+<!doctype html>
 <!--
   ミルバト国語・語彙編 v2 — 中学受験 国語・語彙 暗記アプリ（旧ことばたん）。ちずたんエンジン2026-07-24版から生成（生成: 語彙アプリ_組替.py＋ことばたん_embed.py）
   ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
@@ -329,7 +330,7 @@
     </div>
     <div class="stage-pill" id="stagePill">ステップ1・4択から選ぶ</div>
     <div class="qcard">
-      <span class="qtag" id="qTag">県別編</span>
+      <span class="qtag" id="qTag">ことわざ編</span>
       <img id="qImg" class="qimg" style="display:none" alt="">
       <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像が開けないよ（先生にお知らせしてね）</div>
       <div class="qtext" id="qText">問題文</div>
@@ -457,7 +458,7 @@ const DEFAULT_CARDS = [
   {"id": "ktz-017", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "つまらないものでも、信じる人にとっては価値があること\n「〇〇〇の頭も〇〇〇〇から」", "a": ["いわししんじん"], "choices": ["の", "あ", "ー", "か", "け"], "note": "いわしの頭も信心から（いわしのあたまもしんじんから）　例文：いわしの頭も信心からとばかりに、占いを信じ続ける。", "region": "", "badgeCat": "ことわざ"},
   {"id": "ktz-018", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "相手が好意を見せれば、自分も好意的に行動しようとする\n「〇〇〇〇〇あれば〇〇〇〇〇」", "a": ["うおごころみずごころ"], "choices": ["あ", "れ"], "note": "魚心あれば水心（うおごころあればみずごころ）　例文：魚心あれば水心なのか、丁寧な接客には丁寧に応えたくなる。", "region": "", "badgeCat": "ことわざ"},
   {"id": "ktz-019", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "思いがけないことや他人の誘いによって、良い方に導かれること\n「牛に引かれて〇〇〇〇〇〇〇〇」", "a": ["ぜんこうじまいり"], "choices": ["し", "に", "び", "ぺ"], "note": "牛に引かれて善光寺参り（うしにひかれてぜんこうじまいり）　例文：牛に引かれて善光寺参りと言うように、友達に誘われて行った野球観戦で野球にハマった！", "region": "", "badgeCat": "ことわざ"},
-  {"id": "ktz-020", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "身体が大きいだけで役に立たないこと\n「うどの〇〇〇〇」", "a": ["たいぼく"], "choices": ["う", "ど", "て", "し", "ひ", "や", "こ", "も"], "note": "うどの大木（うどのたいぼく）　例文：体が大きいだけにうどの大木のと言われぬよう、全力で仕事をしている。", "region": "", "badgeCat": "ことわざ"},
+  {"id": "ktz-020", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "身体が大きいだけで役に立たないこと\n「うどの〇〇〇〇」", "a": ["たいぼく"], "choices": ["う", "ど", "て", "し", "ひ", "や", "こ", "も"], "note": "うどの大木（うどのたいぼく）　例文：体が大きいだけにうどの大木と言われぬよう、全力で仕事をしている。", "region": "", "badgeCat": "ことわざ"},
   {"id": "ktz-021", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "馬に念仏を読んでも無駄→意見や忠告に耳を貸さず全く効果がないこと\n「馬の耳に〇〇〇〇」", "a": ["ねんぶつ"], "choices": ["う", "ま", "ぽ", "ー", "ぎ", "げ", "で", "ひ"], "note": "馬の耳に念仏（うまのみみにねんぶつ）　例文：いくら忠告しても彼には馬の耳に念仏で、聞く耳を持たない。", "region": "", "badgeCat": "ことわざ"},
   {"id": "ktz-022", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "平凡な親からは非凡な子は生まれない\n「〇〇のつるに〇〇〇はならぬ」", "a": ["うりなすび"], "choices": ["の", "つ", "だ", "ら", "や", "ん", "め"], "note": "瓜のつるになすびはならぬ（うりのつるになすびはならぬ）　例文：瓜のつるになすびはならぬというのに、うちの子供は私より格段に賢い。", "region": "", "badgeCat": "ことわざ"},
   {"id": "ktz-023", "comp": "ことわざ編", "pref": "", "cat": "ことわざ", "type": "tile", "q": "小さなエサで大魚を釣るように、少しの労力でより大きな利益を生む\n「〇〇で〇〇を釣る」", "a": ["えびたい"], "choices": ["で", "を", "ざ", "け", "ー", "ぬ", "へ", "ら"], "note": "海老で鯛を釣る（えびでたいをつる）　例文：一枚の宝くじで大金持ちになることは、海老で鯛を釣るようなものだ。", "region": "", "badgeCat": "ことわざ"},
@@ -962,7 +963,7 @@ const BADGES = [
 const OBSOLETE_BADGE_KEYS=[];
 const FINAL_BADGE = {key:"doctor", name:"語彙博士", emoji:"🎓"};
 // 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
-// 解放判定・地理博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
+// 解放判定・語彙博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
 function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
 function activeBadges(){return BADGES.filter(badgeActive);}
 
@@ -978,7 +979,7 @@ function badgeProgress(b){
 // 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
 function refreshBadges(){
   if(!state.badges)state.badges={};
-  // 2026-07バッジ再編: 旧区分で獲得した称号(地理博士含む)を一度リセットし、正答記録(reviews)から新区分で再判定する
+  // 2026-07バッジ再編: 旧区分で獲得した称号(語彙博士含む)を一度リセットし、正答記録(reviews)から新区分で再判定する
   if((state.badgeSchemaVersion||1)<2){ state.badges={}; state.badgeSchemaVersion=2; saveState(); }
   OBSOLETE_BADGE_KEYS.forEach(k=>{delete state.badges[k];});
   const act=activeBadges(), fresh=[];
@@ -1185,7 +1186,7 @@ function renderHomeBadges(){
   $('homeBadgeGrid').innerHTML=html;
   $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
   $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
-  $('collTotal').textContent=BADGES.length+1; // 19称号＋地理博士＝20
+  $('collTotal').textContent=BADGES.length+1; // 全称号＋最終称号（博士）
 }
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
@@ -1196,7 +1197,7 @@ $('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs
 function renderBadges(){
   refreshBadges(); saveState();
   const got=earnedBadgeCount();
-  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 地理博士 達成！</span>':'（全部集めると「地理博士」）'}`;
+  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?`<span style="color:var(--gold);font-weight:700">${FINAL_BADGE.emoji} ${FINAL_BADGE.name} 達成！</span>`:`（全部集めると「${FINAL_BADGE.name}」）`}`;
   let html="";
   BADGES.forEach(b=>{
     if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
@@ -1598,7 +1599,7 @@ function parseCSV(text){
     const row=rows[r]; if(!row||row.join("").trim()==="")continue;
     const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
     const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
-    const type=get("type")==="multi"?"multi":"single";
+    const type=["multi","tile"].includes(get("type"))?get("type"):"single"; // tile=文字ならべ型（語彙編）を保持。未知の値はsingle扱い
     const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
     let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
     a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
