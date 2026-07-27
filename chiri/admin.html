@@ -94,31 +94,23 @@
   </div>
 </div>
 
-<!-- 課題（地理のみ） -->
+<!-- 課題（全教科対応） -->
 <div class="card hide" id="kadaiCard">
-  <h1 style="font-size:17px">📝 課題を出す（地理）</h1>
-  <div class="sub">生徒×称号×期間を指定。期間中は生徒のホームに毎日表示され、その称号を獲得すると完了して消えます。</div>
+  <h1 style="font-size:17px">📝 課題を出す</h1>
+  <div class="sub">生徒×教科×称号×期間を指定。期間中は生徒のホームに毎日表示され、その称号を獲得すると完了して消えます。</div>
   <label>生徒を選ぶ（複数OK）</label>
   <div id="kadaiPlayers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;max-height:180px;overflow-y:auto"></div>
   <div class="row-controls">
     <div class="f">
-      <label>称号（範囲）</label>
-      <select id="kadaiDeck">
-        <optgroup label="地方">
-          <option value="R:北海道">🐻 北海道マスター</option><option value="R:東北">🍎 東北マスター</option>
-          <option value="R:関東">🗼 関東マスター</option><option value="R:中部">🗻 中部マスター</option>
-          <option value="R:近畿">🦌 近畿マスター</option><option value="R:中国">⛩️ 中国マスター</option>
-          <option value="R:四国">🌀 四国マスター</option><option value="R:九州沖縄">🌺 九州沖縄マスター</option>
-        </optgroup>
-        <optgroup label="分野">
-          <option value="B:川・平野・湖">🏞️ 川・平野・湖マスター</option><option value="B:山・火山・台地">🌋 山・火山・台地マスター</option>
-          <option value="B:海">🌊 海マスター</option><option value="B:気候">🌦️ 気候マスター</option>
-          <option value="B:農業">🌾 農業マスター</option><option value="B:畜産・林業・漁業">🐄 畜産・林業・漁業マスター</option>
-          <option value="B:工業">🏭 工業マスター</option><option value="B:伝統工芸品">🏺 伝統工芸品マスター</option>
-          <option value="B:県庁所在地">🏯 県庁所在地マスター</option><option value="B:世界遺産">🏛️ 世界遺産マスター</option>
-          <option value="B:白地図">🗺️ 白地図マスター</option>
-        </optgroup>
+      <label>教科</label>
+      <select id="kadaiSubject">
+        <option value="chiri">🗾 地理</option><option value="rekishi">📜 歴史</option>
+        <option value="koumin">🏛️ 公民</option><option value="kokugo">📖 国語</option>
       </select>
+    </div>
+    <div class="f">
+      <label>称号（範囲）</label>
+      <select id="kadaiDeck"></select>
     </div>
     <div class="f"><label>開始日</label><input type="date" id="kadaiStart"></div>
     <div class="f"><label>終了日</label><input type="date" id="kadaiEnd"></div>
@@ -127,7 +119,7 @@
   <div class="msg" id="kadaiMsg"></div>
   <div class="tablewrap">
     <table>
-      <thead><tr><th>生徒</th><th>課題</th><th>期間</th><th>状態</th><th>そうさ</th></tr></thead>
+      <thead><tr><th>生徒</th><th>教科</th><th>課題</th><th>期間</th><th>状態</th><th>そうさ</th></tr></thead>
       <tbody id="kadaiRows"></tbody>
     </table>
   </div>
@@ -261,7 +253,32 @@ async function doToggle(id,nick,isStopped){
     load();
   }catch(e){alert("通信エラー："+e.message);}
 }
-/* ===== 課題（地理） ===== */
+/* ===== 課題（全教科） ===== */
+// 各教科の称号デッキ（値はアプリのデッキキー: R:=縦軸(地方/時代/大分野) / B:=分野。ラベルは「絵文字＋称号名」）
+const KADAI_DECKS={
+  chiri:[["地方",[["R:北海道","🐻 北海道マスター"],["R:東北","🍎 東北マスター"],["R:関東","🗼 関東マスター"],["R:中部","🗻 中部マスター"],
+    ["R:近畿","🦌 近畿マスター"],["R:中国","⛩️ 中国マスター"],["R:四国","🌀 四国マスター"],["R:九州沖縄","🌺 九州沖縄マスター"]]],
+   ["分野",[["B:川・平野・湖","🏞️ 川・平野・湖マスター"],["B:山・火山・台地","🌋 山・火山・台地マスター"],["B:海","🌊 海マスター"],
+    ["B:気候","🌦️ 気候マスター"],["B:農業","🌾 農業マスター"],["B:畜産・林業・漁業","🐄 畜産・林業・漁業マスター"],["B:工業","🏭 工業マスター"],
+    ["B:伝統工芸品","🏺 伝統工芸品マスター"],["B:県庁所在地","🏯 県庁所在地マスター"],["B:世界遺産","🏛️ 世界遺産マスター"],["B:白地図","🗺️ 白地図マスター"]]]],
+  rekishi:[["時代",[["R:縄文時代","🏺 縄文マスター"],["R:弥生時代","🌾 弥生マスター"],["R:古墳時代","🗿 古墳マスター"],["R:飛鳥時代","🛕 飛鳥マスター"],
+    ["R:奈良時代","🙏 奈良マスター"],["R:平安時代","🎎 平安マスター"],["R:鎌倉時代","🗡️ 鎌倉マスター"],["R:室町時代","🍵 室町マスター"],
+    ["R:安土桃山時代","🏯 安土桃山マスター"],["R:江戸時代","🎭 江戸マスター"],["R:明治時代","🚂 明治マスター"],["R:大正時代","🎩 大正マスター"],["R:昭和時代","📺 昭和マスター"]]],
+   ["分野",[["B:政治・できごと","🏛️ 政治・できごとマスター"],["B:人物","👑 人物マスター"],["B:文化","🎨 文化マスター"],["B:外交・戦い","⚔️ 外交・戦いマスター"]]]],
+  koumin:[["大分野",[["R:憲法・人権","🕊️ 憲法・人権マスター"],["R:政治のしくみ","🏛️ 政治のしくみマスター"],["R:経済・くらし","💰 経済・くらしマスター"],["R:国際社会","🌏 国際社会マスター"]]],
+   ["テーマ",[["B:憲法の原則","📜 憲法の原則マスター"],["B:基本的人権","🕊️ 基本的人権マスター"],["B:天皇と憲法改正","🎌 天皇と憲法改正マスター"],
+    ["B:国会","🏛️ 国会マスター"],["B:内閣","🏢 内閣マスター"],["B:裁判所・三権分立","⚖️ 裁判所・三権分立マスター"],["B:地方自治","🏘️ 地方自治マスター"],
+    ["B:選挙","🗳️ 選挙マスター"],["B:財政・税","🧾 財政・税マスター"],["B:社会保障","🤝 社会保障マスター"],["B:経済のしくみ","📈 経済のしくみマスター"],
+    ["B:国際連合","🌐 国際連合マスター"],["B:平和と紛争","☮️ 平和と紛争マスター"],["B:地球環境","🌱 地球環境マスター"],["B:世界の国々","🗺️ 世界の国々マスター"]]]],
+  kokugo:[["分野",[["B:ことわざ","💬 ことわざマスター"],["B:慣用句","🙌 慣用句マスター"],["B:四字熟語","🀄 四字熟語マスター"],["B:対義語・類義語","🔁 対義語・類義語マスター"]]]],
+};
+function renderKadaiDecks(){
+  const subj=$('kadaiSubject').value;
+  $('kadaiDeck').innerHTML=(KADAI_DECKS[subj]||[]).map(([g,items])=>
+    `<optgroup label="${g}">`+items.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join("")+`</optgroup>`).join("");
+}
+$('kadaiSubject').onchange=()=>renderKadaiDecks();
+renderKadaiDecks();
 function renderKadaiPlayers(list){
   // 停止中の生徒には課題を出せない（表示もしない）。校舎しぼりは上の一覧と連動
   $('kadaiPlayers').innerHTML=list.filter(p=>!p.suspended).map(p=>
@@ -280,7 +297,7 @@ $('kadaiSend').onclick=async()=>{
   if(e<s){m.className="msg err";m.textContent="終了日が開始日より前です";return;}
   m.textContent="送信中…";
   try{
-    const r=await rpc('admin_create_assignment',{p_pw:ADMIN_PW,p_players:ids,p_deck:deck,p_deck_name:deckName,p_start:s,p_end:e,p_subject:'chiri'});
+    const r=await rpc('admin_create_assignment',{p_pw:ADMIN_PW,p_players:ids,p_deck:deck,p_deck_name:deckName,p_start:s,p_end:e,p_subject:$('kadaiSubject').value});
     if(!r.ok){m.className="msg err";m.textContent="出せませんでした（"+(r.reason||"")+"）";return;}
     m.className="msg ok";m.textContent=r.created+"人に課題を出しました";
     document.querySelectorAll('.kadai-pl:checked').forEach(c=>c.checked=false);
@@ -289,12 +306,17 @@ $('kadaiSend').onclick=async()=>{
 };
 async function loadKadai(){
   try{
-    const r=await rpc('admin_list_assignments',{p_pw:ADMIN_PW,p_subject:'chiri'});
-    if(!r.ok)return;
+    // 全教科ぶんをまとめて取得して1つの表に（教科タグつき）
+    const subjects=Object.keys(KADAI_DECKS);
+    const results=await Promise.all(subjects.map(sub=>
+      rpc('admin_list_assignments',{p_pw:ADMIN_PW,p_subject:sub}).then(r=>({sub,r})).catch(()=>({sub,r:null}))));
+    const all=[];
+    results.forEach(({sub,r})=>{if(r&&r.ok)(r.assignments||[]).forEach(a=>{a._subject=sub;all.push(a);});});
+    all.sort((a,b)=>(a.completed_at?1:0)-(b.completed_at?1:0) || String(b.end_date).localeCompare(String(a.end_date)) || b.id-a.id);
     const st={done:'<span class="tag ok">達成✅</span>',active:'<span class="tag">進行中</span>',
               expired:'<span class="tag stop">期限切れ</span>',upcoming:'<span class="tag">開始前</span>'};
-    $('kadaiRows').innerHTML=(r.assignments||[]).map(a=>
-      `<tr><td class="nick">${esc(a.nick)}</td><td>${esc(a.deck_name)}</td>
+    $('kadaiRows').innerHTML=all.map(a=>
+      `<tr><td class="nick">${esc(a.nick)}</td><td><span class="tag">${SUBJ_LABEL[a._subject]||esc(a._subject)}</span></td><td>${esc(a.deck_name)}</td>
        <td>${esc(a.start_date)}〜${esc(a.end_date)}</td><td>${st[a.status]||""}</td>
        <td><button class="btn sec sm kadai-del" data-id="${a.id}">削除</button></td></tr>`).join("");
     $('kadaiRows').querySelectorAll('.kadai-del').forEach(b=>b.onclick=async()=>{
