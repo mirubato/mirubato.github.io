@@ -97,6 +97,7 @@
   .choice:active{transform:scale(.99)}
   .choice .mk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;
     display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .choices.is-single .mk{border-radius:50%} /* 1つ選ぶ問題は丸（ラジオ風）にして複数選択と見分ける */
   .choice.sel{border-color:var(--blue);background:#eef4fb}
   .choice.sel .mk{background:var(--blue);border-color:var(--blue)}
   .choice.correct{border-color:var(--ok);background:#eef7f0}
@@ -1232,6 +1233,7 @@ function dueCards(comp){
 
 /* ===== 6. クイズ進行（3ステージ） ===== */
 let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
+let renderSeq=0; // 描画世代。前問のボタンへの遅延タップ（指の離し遅れ等）が今問のpicked/slotCharsを汚染するのを防ぐ
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
 
 function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
@@ -1282,7 +1284,7 @@ const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を
 
 function renderQuestion(){
   const c=session.queue[session.idx];
-  picked=new Set(); answered=false; slotChars=[];
+  picked=new Set(); answered=false; slotChars=[]; renderSeq++;
   // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
   // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
   const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0]));
@@ -1311,12 +1313,13 @@ function renderQuestion(){
 function renderChoices(c){
   // 取り込みCSV由来のテキストをHTMLとして解釈しないよう、DOM APIで組み立てる（XSS対策）
   const ch=shuffle(c.choices);
-  const wrap=document.createElement('div');wrap.className='choices';
+  const wrap=document.createElement('div');wrap.className='choices '+(c.type==="multi"?"is-multi":"is-single");
   ch.forEach(o=>{
     const b=document.createElement('button');b.className='choice';b.dataset.opt=o;
     const mk=document.createElement('span');mk.className='mk';mk.textContent=c.type==="multi"?"☐":"";
     const tx=document.createElement('span');tx.textContent=o;
-    b.append(mk,tx);b.onclick=()=>onPick(b,c.type);
+    const seq=renderSeq;
+    b.append(mk,tx);b.onclick=()=>{if(seq!==renderSeq)return;onPick(b,c.type);};
     wrap.appendChild(b);
   });
   const host=$('answerArea');host.innerHTML="";host.appendChild(wrap);
@@ -1350,9 +1353,10 @@ function renderTiles(c){
   $('answerArea').innerHTML=html;
   renderSlots(ansChars.length);
   const tw=$('tiles');
+  const seq=renderSeq;
   tiles.forEach((ch,i)=>{
     const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
-    b.onclick=()=>{if(answered)return;if(slotChars.length>=ansChars.length)return;
+    b.onclick=()=>{if(seq!==renderSeq)return;if(answered)return;if(slotChars.length>=ansChars.length)return;
       slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
       $('checkBtn').disabled=slotChars.length!==ansChars.length;};
     tw.appendChild(b);
@@ -1360,10 +1364,11 @@ function renderTiles(c){
 }
 function renderSlots(n){
   const host=$('slots');host.innerHTML="";
+  const seq=renderSeq;
   for(let i=0;i<n;i++){
     const d=document.createElement('div');
     if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
-      d.onclick=()=>{if(answered)return;
+      d.onclick=()=>{if(seq!==renderSeq)return;if(answered)return;
         // タップで戻す（最後の1つ）
         const removed=slotChars.splice(i,1)[0];
         // 対応するタイルのusedを1つ解除
@@ -1387,13 +1392,18 @@ function renderInput(c){
 /* 表記ゆれ正規化：前後空白除去・末尾の市県府町を許容 */
 function norm(s){return (s||"").trim().replace(/[\s　]/g,"").replace(/(市|県|府|町|村|区)$/,"");}
 
-$('dontknow').onclick=()=>{ if(answered)return; picked=new Set(["__none__"]); judge(false); };
+let dontknowSeq=-1; // 「分からない」を押し始めたときの描画世代（前問への遅延タップが今問を誤判定しないように）
+$('dontknow').addEventListener('pointerdown',()=>{dontknowSeq=renderSeq;});
+$('dontknow').onclick=()=>{ if(answered)return; if(dontknowSeq!==renderSeq)return; picked=new Set(["__none__"]); judge(false); };
 
 function checkAnswer(){
   const c=session.queue[session.idx];
   if(!answered){
     let correct=false;
     if(stage===0){
+      // 画面に存在しない選択肢（前問への遅延タップ等）が混入していても判定を壊さない（2026-07-30 誤判定バグ修正）
+      if(!picked.has("__none__")) picked=new Set([...picked].filter(p=>c.choices.includes(p)));
+      if(picked.size===0){ $('checkBtn').disabled=true; return; }
       const aset=new Set(c.a);
       correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
     }else if(stage===1){

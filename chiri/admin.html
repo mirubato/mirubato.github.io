@@ -50,7 +50,7 @@
 </style>
 
 <h1>🏫 ミルバト 先生用 管理ページ</h1>
-<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます（地理・歴史・公民 共通）</div>
+<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます（地理・歴史・公民・国語 共通）</div>
 
 <!-- ログイン -->
 <div class="card" id="loginCard">
@@ -82,7 +82,7 @@
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週:地理</th><th>今週:歴史</th><th>今週:公民</th><th>状態</th><th>そうさ</th>
+        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週:地理</th><th>今週:歴史</th><th>今週:公民</th><th>今週:国語</th><th>状態</th><th>そうさ</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -219,6 +219,7 @@ function render(list){
       <td>${cell(p,'chiri')}</td>
       <td>${cell(p,'rekishi')}</td>
       <td>${cell(p,'koumin')}</td>
+      <td>${cell(p,'kokugo')}</td>
       <td>${stop?'<span class="tag stop">停止中</span>':'<span class="tag ok">通常</span>'}</td>
       <td><div class="actions">
         <button class="btn sec sm act-rename">名前変更</button>
