@@ -1680,7 +1680,7 @@ async function syncProgress(){
 /* ランキング画面 */
 let rankCampus="", rankPeriod="week", rankSubject=SUBJECT;
 // 教科タブ：他教科のランキングも見られる（get_rankingはp_subjectで教科別）
-const RANK_SUBJECTS=[["chiri","\u{1F5FE} 地理"],["rekishi","\u{1F4DC} 歴史"],["koumin","\u{1F3DB}\uFE0F 公民"],["total","🏆 総合"]];
+const RANK_SUBJECTS=[["chiri","\u{1F5FE} 地理"],["rekishi","\u{1F4DC} 歴史"],["koumin","\u{1F3DB}\uFE0F 公民"],["kokugo","📖 国語"],["rika","🔬 理科"],["total","🏆 総合"]];
 function renderSubjectTabs(){
   $('rankSubjectTabs').innerHTML=RANK_SUBJECTS.map(s=>
     `<button class="rtab${s[0]===rankSubject?' active':''}" data-subject="${s[0]}">${s[1]}</button>`).join("");

@@ -1,15 +1,15 @@
 <!doctype html>
 <!--
-  ミルバト理科 v1 — 中学受験 理科・知識 暗記アプリ（旧りかたん）
+  ミルバト社会・地理編 v3 — 中学受験 社会・地理 暗記アプリ（旧ミルバト理科）
   ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
   ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
-  ・週間ランキングバトル（Supabase接続時のみ）。書き込みはすべてRPC経由・番号はサーバ側でbcryptハッシュ化。
+  ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
   ・問題はCSV取り込みで差し替え可能（スプレッドシートで量産→読み込み）
   Supabase設定：<script>内の SUPABASE_URL / SUPABASE_ANON_KEY を埋める（空なら従来どおり端末内のみで動く）。
 -->
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>ミルバト理科｜知識編</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミルバト理科</title>
 <style>
   :root{
     --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
@@ -167,6 +167,41 @@
   .badge.final .bemoji{font-size:42px}
   .badge.final .bname{font-size:16px}
   footer{text-align:center;font-size:11px;color:var(--ink-soft);padding:10px;letter-spacing:.04em}
+  /* 称号コレクション（ホーム上部） */
+  .collection{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 14px 16px;margin-bottom:16px}
+  .collection-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .collection-head h2{margin:0}
+  .coll-count{font-size:12px;color:var(--ink-soft)}
+  .coll-count b{color:var(--green);font-size:16px}
+  .hbadge-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .hbadge{border:none;background:none;font-family:inherit;cursor:pointer;padding:6px 2px;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .1s}
+  .hbadge:active{transform:scale(.92)}
+  .hbadge .hb-emoji{font-size:26px;line-height:1.1;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .hbadge .hb-name{font-size:9px;color:var(--ink-soft);text-align:center;line-height:1.15}
+  .hbadge.earned .hb-emoji{background:radial-gradient(circle at 50% 35%, #fff6df, #ffe9b8);
+    box-shadow:0 0 0 2px var(--gold), 0 2px 8px rgba(216,169,58,.5)}
+  .hbadge.earned .hb-name{color:var(--ink);font-weight:700}
+  .hbadge.locked{filter:grayscale(1);opacity:.4}
+  .hbadge.locked .hb-emoji{background:#eee7d8}
+  .hbadge.final .hb-emoji{font-size:30px;width:48px;height:48px}
+  .hbadge.final.earned .hb-emoji{box-shadow:0 0 0 3px var(--gold),0 2px 12px rgba(216,169,58,.7)}
+  /* 3モード入口 */
+  .mode-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+  .mode-card{display:flex;align-items:center;gap:14px;background:var(--card);border:2px solid var(--line);
+    border-radius:var(--r);box-shadow:var(--shadow);padding:16px;cursor:pointer;font-family:inherit;text-align:left}
+  .mode-card:active{transform:translateY(2px)}
+  .mode-card .mc-emoji{font-size:32px;flex-shrink:0}
+  .mode-card .mc-title{display:block;font-size:17px;font-weight:800;color:var(--ink)}
+  .mode-card .mc-desc{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
+  #modeDaily{border-color:var(--green)}
+  #modeDaily.done{border-color:var(--line);opacity:.7}
+  #kadaiList .mode-card{border-color:var(--gold);background:#fffaf0;width:100%;margin-bottom:10px}
+  #kadaiList .mc-title::before{content:"課題";display:inline-block;font-size:10px;font-weight:800;color:#fff;
+    background:var(--gold);border-radius:6px;padding:2px 6px;margin-right:6px;vertical-align:2px}
+  #modeReview{border-color:var(--orange)}
+  .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
   /* 画像つきカード */
   .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
   .qimg-miss{font-size:12px;color:var(--ink-soft);background:#f2efe6;border-radius:10px;padding:10px;text-align:center;margin-bottom:8px}
@@ -188,7 +223,7 @@
   .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
   .celebrate.doctor .cemoji{font-size:76px}
   .celebrate.doctor .cname{color:#a87d16;font-size:26px}
-  /* えらんで学習 */
+  /* 選んで学習 */
   .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
   .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .pick-btn{display:flex;align-items:center;gap:8px;background:var(--card);border:2px solid var(--line);
@@ -200,6 +235,7 @@
   .pick-btn.done{border-color:var(--green);background:#eef7f0}
   .pick-btn.done .pp{color:var(--green);font-weight:700}
   /* ランキング */
+  .online-only{display:none} /* Supabase接続時のみ表示（初期化でonにする） */
   .field select{width:100%;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
     font-size:16px;background:var(--card);font-family:inherit;color:var(--ink);appearance:none}
   .field select:focus{outline:none;border-color:var(--green)}
@@ -218,29 +254,35 @@
   .rank-row .rnick{flex:1;font-weight:700;line-height:1.3}
   .rank-row .rcampus{font-size:10px;color:var(--ink-soft);font-weight:400}
   .rank-row .rscore{font-weight:800;color:var(--green);white-space:nowrap}
+  .star{font-size:14px;line-height:1}
+  .star.gold{color:#d8a93a}
+  .star.silver{color:#9aa0a6}
+  .rnick .stx{font-size:10px;color:var(--ink-soft);font-weight:700}
+  .rnick .me-tag{font-size:10px;background:var(--green);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
+  .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
 </style>
 
 <div id="app">
   <!-- ログイン -->
   <section id="login" class="screen active">
-    <div class="logo">🔬</div>
-    <div><h1>ミルバト理科</h1><div class="brandsub">生物・地学・物理化学（中学受験）</div></div>
+    <div class="logo">🗾</div>
+    <div><h1>ミルバト理科</h1><div class="brandsub">物理・化学・生物・地学（中学受験）</div></div>
     <div class="field"><label>ニックネーム</label>
       <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
-      <div class="hint">本名はつかわず、すきな名前にしてね</div></div>
+      <div class="hint">本名は使わず、好きな名前にしてね。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
     <div class="field"><label>番号（塾からもらった数字）</label>
       <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
-      <div class="hint">先生からもらった数字だよ。ほかの人には教えないでね</div></div>
-    <div class="field" id="campusField"><label>校舎（はじめての人だけえらんでね）</label>
+      <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div></div>
+    <div class="field online-only" id="campusField"><label>校舎（初めての人だけ選んでね）</label>
       <select id="campusSel">
-        <option value="">えらんでね</option>
+        <option value="">選んでね</option>
         <option value="麻布">麻布</option>
         <option value="渋谷">渋谷</option>
         <option value="四谷">四谷</option>
         <option value="新宿">新宿</option>
         <option value="自由が丘">自由が丘</option>
       </select></div>
-    <button class="btn" id="loginBtn">はじめる / つづきから</button>
+    <button class="btn" id="loginBtn">始める / 続きから</button>
     <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
   </section>
 
@@ -248,27 +290,30 @@
   <section id="home" class="screen">
     <div class="topbar">
       <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
-      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日れんぞく</div>
+      <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
     </div>
-    <div class="map-wrap">
-      <h2>りか コレクション マップ</h2>
-      <div class="sub">マスターした分野が緑にそまっていくよ</div>
-      <div id="mapHost"></div>
-      <div class="mapnote"><span id="masterN">0</span> / <span id="mapTotal">-</span> 分野をマスター</div>
+    <div class="collection">
+      <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">20</span></span></div>
+      <div class="hbadge-grid" id="homeBadgeGrid"></div>
     </div>
-    <div class="stat-row">
-      <div class="stat"><div class="num" id="sCards">0</div><div class="lbl">おぼえたカード</div></div>
-      <div class="stat"><div class="num" id="sXp">0</div><div class="lbl">XP</div></div>
-      <div class="stat"><div class="num" id="sAcc">–</div><div class="lbl">せいかい率</div></div>
-    </div>
-    <div class="goal">
-      <div class="gt"><span>きょうのゴール</span><span><b id="goalNow">0</b> / <span id="goalMax">10</span> 問</span></div>
-      <div class="bar"><i id="goalBar"></i></div>
-    </div>
-    <div class="deck-pick" id="deckPick"></div>
-    <div class="toolrow">
-      <button class="btn secondary" id="rankBtn" style="display:none">🏆 ランキング</button>
-      <button class="btn secondary" id="badgesBtn">🏅 称号 <span id="badgeCountPill" style="font-weight:800"></span></button>
+    <div id="kadaiList"></div>
+    <div class="mode-list">
+      <button class="mode-card" id="modeBadge">
+        <span class="mc-emoji">🏅</span>
+        <span class="mc-body"><span class="mc-title">称号モード</span><span class="mc-desc">分野・テーマをえらんで、まだマスターしていない問題に挑戦</span></span>
+      </button>
+      <button class="mode-card" id="modeDaily">
+        <span class="mc-emoji" id="modeDailyEmoji">📅</span>
+        <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
+      </button>
+      <button class="mode-card" id="modeReview" style="display:none">
+        <span class="mc-emoji">🔁</span>
+        <span class="mc-body"><span class="mc-title">復習モード <span id="reviewCount" class="rev-badge"></span></span><span class="mc-desc">今日の30問でまちがえた問題。正解すると消えるよ</span></span>
+      </button>
+      <button class="mode-card" id="modeRank">
+        <span class="mc-emoji">🏆</span>
+        <span class="mc-body"><span class="mc-title">ランキング</span><span class="mc-desc">週間・月間の塾内ポイント対戦</span></span>
+      </button>
     </div>
     <div class="toolrow">
       <button class="btn secondary" id="importBtn">問題を取り込む</button>
@@ -284,70 +329,94 @@
       <div class="qbar"><i id="qProg"></i></div>
       <div class="qcount" id="qCount">1/10</div>
     </div>
-    <div class="stage-pill" id="stagePill">ステップ1・4たくからえらぶ</div>
+    <div class="stage-pill" id="stagePill">ステップ1・4択から選ぶ</div>
     <div class="qcard">
       <span class="qtag" id="qTag">県別編</span>
-      <div class="qpref" id="qPref">香川県</div>
       <img id="qImg" class="qimg" style="display:none" alt="">
-      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像がひらけないよ（先生におしらせしてね）</div>
+      <div class="qimg-miss" id="qImgMiss" style="display:none">🖼️ 画像が開けないよ（先生にお知らせしてね）</div>
       <div class="qtext" id="qText">問題文</div>
-      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを ぜんぶ えらんでね</div>
+      <div class="qmulti-hint" id="qMultiHint" style="display:none">▶ あてはまるものを 全部 選んでね</div>
     </div>
     <div id="answerArea"></div>
     <div class="feedback" id="feedback">
       <div class="ft" id="fTitle"></div>
       <div class="fn" id="fNote"></div>
+      <button class="linkbtn" id="reportBtn" style="display:none;margin-top:10px;font-size:12px">⚠️ この問題を報告</button>
     </div>
     <div class="qfoot">
-      <button class="btn" id="checkBtn" disabled>こたえあわせ</button>
-      <button class="linkbtn" id="dontknow">わからない（答えを見る）</button>
+      <button class="btn" id="checkBtn" disabled>答え合わせ</button>
+      <button class="linkbtn" id="dontknow">分からない（答えを見る）</button>
     </div>
   </section>
+
+  <!-- 問題の報告（答え合わせ後に⚠️ボタンから開く。講師だけが管理ページで見る） -->
+  <div id="reportOverlay" style="display:none;position:fixed;inset:0;background:rgba(42,39,35,.5);z-index:90;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;max-width:420px;width:100%">
+      <div style="font-size:16px;font-weight:800;margin-bottom:6px">⚠️ この問題を報告する</div>
+      <div id="repQText" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;line-height:1.5"></div>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="wrong"> 答えが間違っていると思う</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="unclear"> 問題文がわかりにくい</label>
+      <label style="display:block;padding:8px 4px;font-size:14px"><input type="radio" name="repReason" value="other"> その他</label>
+      <input id="repComment" maxlength="100" placeholder="ひとこと（なくてもOK）"
+        style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:2px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit">
+      <div id="repMsg" style="min-height:18px;font-size:12px;color:var(--wrong);margin-top:6px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn secondary" id="repCancel" style="flex:1">やめる</button>
+        <button class="btn" id="repSend" style="flex:1">送信する</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 完了 -->
   <section id="done" class="screen">
     <div class="big">🎉</div>
-    <h2>きょうのぶん クリア！</h2>
+    <h2>今日の分 クリア！</h2>
     <div class="reward">
-      <div>といた問題<b id="dCards">10</b></div>
-      <div>せいかい<b id="dCorrect">8</b></div>
+      <div>解いた問題<b id="dCards">10</b></div>
+      <div>正解<b id="dCorrect">8</b></div>
       <div>ゲットXP<b class="xp-pop" id="dXp">+80</b></div>
     </div>
-    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 れんぞく記録がのびたよ！</div>
-    <button class="btn" id="backHome">ホームへもどる</button>
-    <button class="btn secondary" id="againBtn">もうひとセットやる</button>
+    <div class="greet" style="text-align:center" id="dStreakMsg">🔥 連続記録がのびたよ！</div>
+    <button class="btn" id="backHome">ホームへ戻る</button>
+    <button class="btn secondary" id="againBtn">もう一セットやる</button>
   </section>
 
   <!-- 取り込み -->
   <section id="import" class="screen">
     <div class="qtop"><button id="impBack">✕</button><h2>問題を取り込む</h2></div>
     <p class="hint">スプレッドシートで作った問題を取り込めます。CSVファイルを選ぶか、中身を貼り付けてください。1行目は見出し（id,編,都道府県,…）のままでOK。</p>
-    <label class="dz" for="csvFile">📄 CSVファイルをえらぶ
+    <label class="dz" for="csvFile">📄 CSVファイルを選ぶ
       <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none"></label>
     <p class="hint" style="text-align:center">または下に貼り付け</p>
     <textarea id="csvText" placeholder="id,編,都道府県,カテゴリ,出題タイプ,問題文,正解,選択肢,覚え方メモ,タグ&#10;..."></textarea>
     <div id="impMsg" style="min-height:18px"></div>
-    <button class="btn" id="doImport">この内容で問題を入れかえる</button>
-    <button class="linkbtn" id="resetCards">さいしょのサンプル問題にもどす</button>
+    <button class="btn" id="doImport">この内容で問題を入れ替える</button>
+    <button class="linkbtn" id="resetCards">最初のサンプル問題に戻す</button>
   </section>
 
-  <!-- えらんで学習（地方・分野べつ） -->
+  <!-- 選んで学習（地方・分野べつ） -->
   <section id="pick" class="screen">
-    <div class="qtop"><button id="pickBack">✕</button><h2>🎯 えらんで学習</h2></div>
-    <p class="hint" style="margin:2px 0 4px">称号をねらって、分野やテーマをえらんで学習しよう</p>
-    <h3 class="pick-h">🔬 ぶんやで えらぶ</h3>
+    <div class="qtop"><button id="pickBack">✕</button><h2>🏅 称号モード</h2></div>
+    <p class="hint" style="margin:2px 0 4px">分野・テーマを選んで、まだマスターしていない問題に挑戦！</p>
+    <h3 class="pick-h">🔬 分野で選ぶ</h3>
     <div class="pick-grid" id="pickRegion"></div>
-    <h3 class="pick-h">🏅 テーマで えらぶ</h3>
+    <h3 class="pick-h">🏅 テーマで選ぶ</h3>
     <div class="pick-grid" id="pickCat"></div>
   </section>
 
   <!-- ランキング -->
   <section id="ranking" class="screen">
-    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 今週のランキング</h2></div>
-    <div class="rank-note">今週の せいかい数 で しょうぶ！<span id="rankReset"></span></div>
-    <div class="rank-me"><span>きみの今週のせいかい</span><span><b id="myWeekScore">0</b> 問</span></div>
+    <div class="qtop"><button id="rankBack">✕</button><h2>🏆 ランキング</h2></div>
+    <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
+    <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
+    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-tabs" id="rankSubjectTabs"></div>
+    <div class="rank-tabs" id="rankPeriodTabs">
+      <button class="rtab active" data-period="week">今週</button>
+      <button class="rtab" data-period="month">今月</button>
+    </div>
     <div class="rank-tabs" id="rankTabs">
-      <button class="rtab active" data-campus="">ぜんいん</button>
+      <button class="rtab active" data-campus="">全員</button>
       <button class="rtab" data-campus="麻布">麻布</button>
       <button class="rtab" data-campus="渋谷">渋谷</button>
       <button class="rtab" data-campus="四谷">四谷</button>
@@ -355,7 +424,8 @@
       <button class="rtab" data-campus="自由が丘">自由が丘</button>
     </div>
     <div id="rankList"></div>
-    <button class="btn secondary" id="rankReload">🔄 さいしんにする</button>
+    <div class="rank-legend"><span class="star gold">★</span> 月間チャンピオン　<span class="star silver">★</span> 週間チャンピオン</div>
+    <button class="btn secondary" id="rankReload">🔄 最新にする</button>
   </section>
 
   <!-- 称号 -->
@@ -365,186 +435,388 @@
     <div class="badge-grid" id="badgeGrid"></div>
   </section>
 
-  <footer>ミルバト理科 v1 ・ 進捗はこの端末に保存されます</footer>
+  <footer>ミルバト理科 v3 ・ 進捗はこの端末に保存されます</footer>
 </div>
 
 <script>
 /* ===== 1. 既定カードデータ（地理プリント(全部).pdfより） ===== */
 const COLOR = { "物理編":"var(--orange)", "化学編":"var(--gold)", "生物編":"var(--green)", "地学編":"var(--blue)" };
 const DEFAULT_CARDS = [
-  {"id": "p001-force-unit", "comp": "物理編", "pref": "力", "cat": "力の単位", "type": "single", "q": "力の大きさを表す単位はどれ？", "a": ["ニュートン"], "choices": ["ワット", "ニュートン", "ボルト", "パスカル"], "note": "力の単位はニュートンで、記号はN。", "region": "物理", "badgeCat": "力・運動"},
-  {"id": "p002-gravity", "comp": "物理編", "pref": "力", "cat": "重力", "type": "single", "q": "地球が物体を引く力を何という？", "a": ["重力"], "choices": ["磁力", "重力", "浮力", "摩擦力"], "note": "重力は地球の中心向きにはたらく。", "region": "物理", "badgeCat": "力・運動"},
-  {"id": "p003-center-gravity", "comp": "物理編", "pref": "力", "cat": "重心と安定", "type": "single", "q": "物体を安定させる方法として正しいものはどれ？", "a": ["重心を低くして底面を広くする"], "choices": ["重心を高くして底面を狭くする", "重心を低くして底面を広くする", "重心を高くして底面を広くする", "重心を低くして底面を狭くする"], "note": "重心が低く、支える面が広いほど倒れにくい。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p001-force-unit", "comp": "物理編", "pref": "力", "cat": "重さのはかり方", "type": "single", "q": "月面で物の重さをはかったとき、地球上とほぼ同じ値になる器具はどれ？", "a": ["上皿てんびん"], "choices": ["ばねばかり", "台ばかり", "上皿てんびん", "体重計"], "note": "上皿てんびんは分銅と比べるので月でも同じ。ばねばかりは重力をはかるので月では約6分の1。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p002-gravity", "comp": "物理編", "pref": "力", "cat": "重力", "type": "single", "q": "地球が物体を引く力を何という？", "a": ["重力"], "choices": ["摩擦力", "浮力", "磁力", "重力"], "note": "重力は地球の中心向きにはたらく。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p003-center-gravity", "comp": "物理編", "pref": "力", "cat": "重心と安定", "type": "single", "q": "物体を安定させる方法として正しいものはどれ？", "a": ["重心を低くして底面を広くする"], "choices": ["重心を高くして底面を狭くする", "重心を高くして底面を広くする", "重心を低くして底面を狭くする", "重心を低くして底面を広くする"], "note": "重心が低く、支える面が広いほど倒れにくい。", "region": "物理", "badgeCat": "力・運動"},
   {"id": "p004-lever-rule", "comp": "物理編", "pref": "てこ", "cat": "てこのつり合い", "type": "single", "q": "てこがつり合うときに等しくなるものはどれ？", "a": ["力×支点からの距離"], "choices": ["力÷支点からの距離", "力×支点からの距離", "力＋支点からの距離", "力－支点からの距離"], "note": "左右の「力×距離」をそろえる。", "region": "物理", "badgeCat": "てこ・滑車"},
-  {"id": "p005-lever-calc", "comp": "物理編", "pref": "てこ", "cat": "てこの計算", "type": "single", "q": "支点から20cmの位置に3Nの力をかけた。反対側の30cmの位置でつり合わせる力は何N？", "a": ["2N"], "choices": ["1N", "2N", "3N", "4.5N"], "note": "3×20＝□×30より2N。", "region": "物理", "badgeCat": "てこ・滑車"},
-  {"id": "p006-fixed-pulley", "comp": "物理編", "pref": "滑車", "cat": "定滑車", "type": "single", "q": "定滑車を使う主な利点はどれ？", "a": ["力を加える向きを変えられる"], "choices": ["必要な力を半分にできる", "力を加える向きを変えられる", "物体の重さをなくせる", "引く距離を半分にできる"], "note": "定滑車は力の向きを変える道具。", "region": "物理", "badgeCat": "てこ・滑車"},
-  {"id": "p007-movable-pulley", "comp": "物理編", "pref": "滑車", "cat": "動滑車", "type": "single", "q": "理想的な動滑車1個で物体を持ち上げるとき、必要な力は物体の重さの何倍？", "a": ["2分の1"], "choices": ["4分の1", "2分の1", "1倍", "2倍"], "note": "動滑車を支えるひもが2本なので力は半分。", "region": "物理", "badgeCat": "てこ・滑車"},
-  {"id": "p008-wheel-axle", "comp": "物理編", "pref": "てこ", "cat": "輪軸", "type": "single", "q": "輪軸で小さい力を大きな力に変えるには、力をどこに加える？", "a": ["半径の大きい輪"], "choices": ["半径の小さい軸", "半径の大きい輪", "中心", "どこでも同じ"], "note": "大きい輪を回すと、小さい軸に大きな力が出る。", "region": "物理", "badgeCat": "てこ・滑車"},
-  {"id": "p009-spring", "comp": "物理編", "pref": "ばね", "cat": "ばねののび", "type": "single", "q": "限界をこえない範囲で、ばねののびは加える力に対してどう変わる？", "a": ["比例する"], "choices": ["反比例する", "比例する", "変わらない", "二乗に比例する"], "note": "おもりが倍なら、のびも倍。22", "region": "物理", "badgeCat": "ばね"},
-  {"id": "p010-spring-parallel", "comp": "物理編", "pref": "ばね", "cat": "ばねの並列", "type": "single", "q": "同じばね2本を並列につないで同じ重さを支えると、1本あたりの力はどうなる？", "a": ["半分になる"], "choices": ["2倍になる", "半分になる", "4倍になる", "変わらない"], "note": "2本で重さを分け合う。", "region": "物理", "badgeCat": "ばね"},
-  {"id": "p011-pressure", "comp": "物理編", "pref": "圧力", "cat": "圧力と面積", "type": "single", "q": "同じ重さの物体を置くとき、床にかかる圧力を小さくする方法はどれ？", "a": ["接する面積を大きくする"], "choices": ["接する面積を小さくする", "接する面積を大きくする", "物体を高くする", "向きを速く変える"], "note": "圧力＝力÷面積。面積が大きいほど圧力は小さい。", "region": "物理", "badgeCat": "圧力・浮力"},
-  {"id": "p012-water-pressure", "comp": "物理編", "pref": "圧力", "cat": "水圧", "type": "single", "q": "水中の同じ深さでは、水圧は向きによってどうなる？", "a": ["どの向きにも同じ大きさではたらく"], "choices": ["下向きだけにはたらく", "上向きだけにはたらく", "どの向きにも同じ大きさではたらく", "横向きにははたらかない"], "note": "水圧はあらゆる向きにはたらき、深いほど大きい。", "region": "物理", "badgeCat": "圧力・浮力"},
-  {"id": "p013-buoyancy", "comp": "物理編", "pref": "浮力", "cat": "浮力の向き", "type": "single", "q": "水中の物体にはたらく浮力の向きはどれ？", "a": ["鉛直上向き"], "choices": ["鉛直下向き", "鉛直上向き", "水平方向", "物体の進行方向"], "note": "浮力は重力と反対の上向き。", "region": "物理", "badgeCat": "圧力・浮力"},
-  {"id": "p014-floating", "comp": "物理編", "pref": "浮力", "cat": "浮く条件", "type": "single", "q": "水に浮いて静止している物体では、浮力と重力の関係はどうなる？", "a": ["大きさが等しい"], "choices": ["浮力の方が大きい", "重力の方が大きい", "大きさが等しい", "どちらも0"], "note": "静止しているので上向きと下向きの力がつり合う。", "region": "物理", "badgeCat": "圧力・浮力"},
-  {"id": "p015-friction", "comp": "物理編", "pref": "力", "cat": "摩擦力", "type": "single", "q": "摩擦力が大きくなりやすい組み合わせはどれ？", "a": ["ざらざらした面どうし"], "choices": ["なめらかな面どうし", "ざらざらした面どうし", "油をぬった面どうし", "車輪を使った面"], "note": "面の凹凸が大きいほど摩擦は大きくなりやすい。", "region": "物理", "badgeCat": "力・運動"},
-  {"id": "p016-speed", "comp": "物理編", "pref": "運動", "cat": "速さの計算", "type": "single", "q": "120mを30秒で進む物体の速さは毎秒何m？", "a": ["毎秒4m"], "choices": ["毎秒2m", "毎秒4m", "毎秒30m", "毎秒90m"], "note": "速さ＝道のり÷時間。120÷30＝4。", "region": "物理", "badgeCat": "力・運動"},
-  {"id": "p017-pendulum-length", "comp": "物理編", "pref": "振り子", "cat": "振り子の周期", "type": "single", "q": "振り子が1往復する時間を長くするにはどうする？", "a": ["糸を長くする"], "choices": ["おもりを重くする", "振れ幅を少し大きくする", "糸を長くする", "おもりの色を変える"], "note": "周期を決める主な条件は糸の長さ。", "region": "物理", "badgeCat": "振り子"},
-  {"id": "p018-pendulum-amplitude", "comp": "物理編", "pref": "振り子", "cat": "振れ幅と周期", "type": "single", "q": "振れ幅が小さい範囲で、振り子の振れ幅を少し大きくすると周期はどうなる？", "a": ["ほとんど変わらない"], "choices": ["長くなる", "短くなる", "ほとんど変わらない", "0になる"], "note": "小さな振れでは周期は振れ幅にほぼ関係しない。", "region": "物理", "badgeCat": "振り子"},
-  {"id": "p019-sound-vibration", "comp": "物理編", "pref": "音", "cat": "音の発生", "type": "single", "q": "音が出ている物体に共通することはどれ？", "a": ["振動している"], "choices": ["発光している", "振動している", "溶けている", "磁石になっている"], "note": "音の正体は物体の振動。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p020-sound-pitch", "comp": "物理編", "pref": "音", "cat": "音の高さ", "type": "single", "q": "同じ弦で、より高い音を出す方法はどれ？", "a": ["弦を短くする"], "choices": ["弦を長くする", "弦を短くする", "弦をゆるめる", "弦を太くする"], "note": "短く、細く、強く張るほど高い音。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p021-sound-volume", "comp": "物理編", "pref": "音", "cat": "音の大きさ", "type": "single", "q": "音を大きくするには、音源の振動をどうする？", "a": ["振れ幅を大きくする"], "choices": ["振止れめる幅を小さくする", "振れ幅を大きくする", "振動数を少なくする", "振動を"], "note": "音の大きさは振動の振れ幅で決まる。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p022-sound-medium", "comp": "物理編", "pref": "音", "cat": "音の伝わり方", "type": "single", "q": "音が伝わらない場所はどれ？", "a": ["真空"], "choices": ["空気中", "水中", "鉄の中", "真空"], "note": "音は物質の振動で伝わるので真空では伝わらない。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p023-light-straight", "comp": "物理編", "pref": "光", "cat": "光の直進", "type": "single", "q": "光が同じ物質の中をまっすぐ進む性質を何という？", "a": ["光の直進"], "choices": ["光の反射", "光の直進", "光の屈折", "光の分散"], "note": "影ができるのは光が直進するため。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p024-reflection", "comp": "物理編", "pref": "光", "cat": "光の反射", "type": "single", "q": "鏡で光が反射するとき、入射角と反射角の関係はどれ？", "a": ["等しい"], "choices": ["入射角が2倍", "反射角が2倍", "等しい", "合計が180度"], "note": "角度は鏡の面ではなく法線から測る。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p025-refraction", "comp": "物理編", "pref": "光", "cat": "光の屈折", "type": "single", "q": "空気中から水中へ斜めに進む光は、境界でどう曲がる？", "a": ["法線に近づく"], "choices": ["法線から遠ざかる", "法線に近づく", "必ず反射して戻る", "曲がらず進む"], "note": "空気から水やガラスへ進むと法線側に曲がる。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p026-convex-lens", "comp": "物理編", "pref": "光", "cat": "凸レンズ", "type": "single", "q": "凸レンズでスクリーンにうつせる像はどれ？", "a": ["実像"], "choices": ["虚像", "実像", "正立像だけ", "拡大鏡の像だけ"], "note": "スクリーンにうつせる像を実像という。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p027-shadow", "comp": "物理編", "pref": "光", "cat": "影の大きさ", "type": "single", "q": "光源を物体に近づけると、スクリーンにできる影はどうなる？", "a": ["大きくなる"], "choices": ["小さくなる", "大きくなる", "消える", "左右だけ短くなる"], "note": "近い光源ほど光が広がり、影は大きくなる。", "region": "物理", "badgeCat": "光・音"},
-  {"id": "p028-conduction", "comp": "物理編", "pref": "熱", "cat": "熱伝導", "type": "single", "q": "金属の棒の一端を熱すると、反対側も熱くなる伝わり方はどれ？", "a": ["伝導"], "choices": ["対流", "伝導", "放射", "蒸発"], "note": "物質の中を熱が順に伝わるのが伝導。", "region": "物理", "badgeCat": "熱"},
-  {"id": "p029-convection", "comp": "物理編", "pref": "熱", "cat": "対流", "type": "single", "q": "水を下から熱したとき、水全体があたたまる主なしくみはどれ？", "a": ["対流"], "choices": ["反射", "対流", "屈折", "凝結"], "note": "あたためられた水が上がり、冷たい水が下がる。", "region": "物理", "badgeCat": "熱"},
-  {"id": "p030-radiation", "comp": "物理編", "pref": "熱", "cat": "放射", "type": "single", "q": "太陽の熱が宇宙空間を通って地球に届く伝わり方はどれ？", "a": ["放射"], "choices": ["伝導", "対流", "放射", "蒸発"], "note": "放射は物質がない空間でも伝わる。", "region": "物理", "badgeCat": "熱"},
-  {"id": "p031-expansion", "comp": "物理編", "pref": "熱", "cat": "熱膨張", "type": "single", "q": "多くの金属は加熱するとどうなる？", "a": ["体積が大きくなる"], "choices": ["体積が小さくなる", "体積が大きくなる", "質量が増える", "質量が減る"], "note": "加熱で粒の間隔が広がるが、質量は変わらない。", "region": "物理", "badgeCat": "熱"},
-  {"id": "p032-current", "comp": "物理編", "pref": "電気", "cat": "電流", "type": "single", "q": "直列回路の各部分を流れる電流の大きさはどうなる？", "a": ["どこでも同じ"], "choices": ["電池に近いほど大きい", "豆電球の後で0になる", "どこでも同じ", "導線の長さだけで決まる"], "note": "枝分かれのない直列回路では電流は同じ。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "p033-bulb-brightness", "comp": "物理編", "pref": "電気", "cat": "豆電球の直列と並列", "type": "single", "q": "同じ豆電球2個を同じ電池につなぐとき、1個ずつがより明るいのはどれ？", "a": ["並列つなぎ"], "choices": ["直列つなぎ", "並列つなぎ", "どちらも同じ", "どちらも点灯しない"], "note": "並列では各豆電球に電池1個分のはたらきがかかる。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "p034-battery", "comp": "物理編", "pref": "電気", "cat": "乾電池のつなぎ方", "type": "single", "q": "同じ乾電池2個で豆電球を最も明るくするつなぎ方はどれ？", "a": ["直列つなぎ"], "choices": ["直列つなぎ", "並列つなぎ", "逆向きの直列", "1個だけ使う"], "note": "乾電池の直列つなぎは電気を押すはたらきが大きい。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "p035-conductor", "comp": "物理編", "pref": "電気", "cat": "導体と不導体", "type": "multi", "q": "電気を通しやすいものをすべて選んでね", "a": ["銅", "アルミニウム"], "choices": ["銅", "ガラス", "アルミニウム", "ゴム"], "note": "金属は電気を通しやすい。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "p036-electromagnet", "comp": "物理編", "pref": "磁石", "cat": "電磁石", "type": "single", "q": "電磁石を強くする方法として正しいものはどれ？", "a": ["コイルの巻き数を増やす"], "choices": ["コイルの巻き数を減らす", "電流を小さくする", "コイルの巻き数を増やす", "鉄心を抜く"], "note": "巻き数を増やし、電流を大きくし、鉄心を入れる。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "p037-magnet-pole", "comp": "物理編", "pref": "磁石", "cat": "磁極", "type": "single", "q": "磁石の極と極を近づけるとどうなる？NN", "a": ["しりぞけ合う"], "choices": ["引き合う", "しりぞけ合う", "磁力が消える", "必ずくっつく"], "note": "同じ極どうしは反発し、異なる極どうしは引き合う。", "region": "物理", "badgeCat": "電気・磁石"},
-  {"id": "c001-states", "comp": "化学編", "pref": "物質", "cat": "三態", "type": "single", "q": "物質の三態に含まれないものはどれ？", "a": ["光"], "choices": ["固体", "液体", "気体", "光"], "note": "物質の三態は固体・液体・気体。", "region": "化学", "badgeCat": "物質の変化"},
-  {"id": "c002-phase-temp", "comp": "化学編", "pref": "物質", "cat": "状態変化と温度", "type": "single", "q": "純粋な氷がとけている間、温度はどうなる？", "a": ["ほぼ一定"], "choices": ["上がり続ける", "下がり続ける", "ほぼ一定", "0度と100度を往復する"], "note": "状態変化中は加えた熱が変化に使われる。", "region": "化学", "badgeCat": "物質の変化"},
-  {"id": "c003-phase-mass", "comp": "化学編", "pref": "物質", "cat": "状態変化と質量", "type": "single", "q": "密閉容器の中で水が水蒸気になったとき、全体の質量はどうなる？", "a": ["変わらない"], "choices": ["増える", "減る", "変わらない", "必ず2倍になる"], "note": "状態が変わっても、外へ出なければ質量は同じ。", "region": "化学", "badgeCat": "物質の変化"},
-  {"id": "c004-gas-volume", "comp": "化学編", "pref": "気体", "cat": "気体の熱膨張", "type": "single", "q": "やわらかい風船の中の空気をあたためると、体積はどうなりやすい？", "a": ["大きくなる"], "choices": ["小さくなる", "大きくなる", "変わらない", "0になる"], "note": "気体はあたためると大きく膨張する。", "region": "化学", "badgeCat": "物質の変化"},
-  {"id": "c005-dissolution", "comp": "化学編", "pref": "水溶液", "cat": "溶解", "type": "single", "q": "食塩が水にとけたあと、食塩はどうなっている？", "a": ["目に見えない小さな粒として全体に広がる"], "choices": ["消えてなくなる", "目に見えない小さな粒として全体に広がる", "水の底だけに集まる", "別の元素に変わる"], "note": "とけても食塩はなくならず、水中に均一に広がる。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c006-solution-terms", "comp": "化学編", "pref": "水溶液", "cat": "溶質と溶媒", "type": "single", "q": "食塩水で「溶質」にあたるものはどれ？", "a": ["食塩"], "choices": ["水", "食塩", "食塩水", "容器"], "note": "とける物質が溶質、とかす液体が溶媒。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c007-saturation", "comp": "化学編", "pref": "水溶液", "cat": "飽和水溶液", "type": "single", "q": "ある温度で、それ以上物質がとけない水溶液を何という？", "a": ["飽和水溶液"], "choices": ["希薄水溶液", "飽和水溶液", "中性水溶液", "混合水溶液"], "note": "限界までとけた水溶液が飽和水溶液。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c008-solubility-calc", "comp": "化学編", "pref": "水溶液", "cat": "溶解度計算", "type": "single", "q": "20℃で水100gに食塩が36gまでとける。水50gには最大何gとける？", "a": ["18g"], "choices": ["9g", "18g", "36g", "72g"], "note": "水が半分なら、とける量も半分。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c009-recrystallization", "comp": "化学編", "pref": "水溶液", "cat": "再結晶", "type": "single", "q": "高温の飽和水溶液を冷やして結晶を取り出す操作を何という？", "a": ["再結晶"], "choices": ["蒸留", "再結晶", "中和", "ろ過"], "note": "温度による溶解度の差を利用する。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c010-evaporation", "comp": "化学編", "pref": "水溶液", "cat": "蒸発乾固", "type": "single", "q": "食塩水から食塩を取り出す最も直接的な方法はどれ？", "a": ["水を蒸発させる"], "choices": ["磁石を近づける", "水を蒸発させる", "ろ紙を通す", "冷凍するだけ"], "note": "食塩は水と一緒には蒸発しない。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c011-filtration", "comp": "化学編", "pref": "実験", "cat": "ろ過", "type": "single", "q": "ろ過で分けられる組み合わせはどれ？", "a": ["水と砂"], "choices": ["食塩水の食塩と水", "水と砂", "砂糖水の砂糖と水", "空気中の酸素と窒素"], "note": "ろ過は液体にとけていない固体を分ける。", "region": "化学", "badgeCat": "実験操作"},
-  {"id": "c012-separation", "comp": "化学編", "pref": "実験", "cat": "混合物の分離", "type": "single", "q": "鉄粉と砂の混合物から鉄粉を取り出す方法はどれ？", "a": ["磁石を使う"], "choices": ["ろ過する", "磁石を使う", "水に完全にとかす", "加熱して燃やす"], "note": "鉄は磁石につく性質を利用する。", "region": "化学", "badgeCat": "実験操作"},
-  {"id": "c013-concentration", "comp": "化学編", "pref": "水溶液", "cat": "質量パーセント濃度", "type": "single", "q": "食塩10gを水90gにとかした食塩水の濃度は何％？", "a": ["10％"], "choices": ["9％", "10％", "11％", "90％"], "note": "食塩水は100g。10÷100×100＝10％。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "p005-lever-calc", "comp": "物理編", "pref": "てこ", "cat": "てこの計算", "type": "single", "q": "支点から20cmの位置に30gのおもりをつるした。反対側の支点から30cmの位置に何gのおもりをつるすとつり合う？", "a": ["20g"], "choices": ["45g", "30g", "20g", "10g"], "note": "30×20＝□×30より20g。左右の「重さ×支点からの距離」をそろえる。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p006-fixed-pulley", "comp": "物理編", "pref": "滑車", "cat": "定滑車", "type": "single", "q": "定滑車を使う主な利点はどれ？", "a": ["力を加える向きを変えられる"], "choices": ["物体の重さをなくせる", "必要な力を半分にできる", "引く距離を半分にできる", "力を加える向きを変えられる"], "note": "定滑車は力の向きを変える道具。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p007-movable-pulley", "comp": "物理編", "pref": "滑車", "cat": "動滑車", "type": "single", "q": "理想的な動滑車1個で物体を持ち上げるとき、必要な力は物体の重さの何倍？", "a": ["2分の1"], "choices": ["2分の1", "4分の1", "2倍", "1倍"], "note": "動滑車を支えるひもが2本なので力は半分。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p008-wheel-axle", "comp": "物理編", "pref": "てこ", "cat": "輪軸", "type": "single", "q": "輪軸で小さい力を大きな力に変えるには、力をどこに加える？", "a": ["半径の大きい輪"], "choices": ["どこでも同じ", "半径の大きい輪", "中心", "半径の小さい軸"], "note": "大きい輪を回すと、小さい軸に大きな力が出る。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p009-spring", "comp": "物理編", "pref": "ばね", "cat": "ばねののび", "type": "single", "q": "限界をこえない範囲で、ばねののびは加える力に対してどう変わる？", "a": ["比例する"], "choices": ["比例する", "変わらない", "反比例する", "二乗に比例する"], "note": "おもりが2倍なら、のびも2倍。", "region": "物理", "badgeCat": "ばね"},
+  {"id": "p010-spring-parallel", "comp": "物理編", "pref": "ばね", "cat": "ばねの並列", "type": "single", "q": "同じばね2本を並列につないで同じ重さを支えると、1本あたりの力はどうなる？", "a": ["半分になる"], "choices": ["半分になる", "変わらない", "2倍になる", "4倍になる"], "note": "2本で重さを分け合う。", "region": "物理", "badgeCat": "ばね"},
+  {"id": "p011-pressure", "comp": "物理編", "pref": "圧力", "cat": "圧力と面積", "type": "single", "q": "同じ重さの物体を置くとき、床にかかる圧力を小さくする方法はどれ？", "a": ["接する面積を大きくする"], "choices": ["接する面積を小さくする", "物体を高くする", "向きを速く変える", "接する面積を大きくする"], "note": "圧力＝力÷面積。面積が大きいほど圧力は小さい。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p012-water-pressure", "comp": "物理編", "pref": "圧力", "cat": "水圧", "type": "single", "q": "水中の同じ深さでは、水圧は向きによってどうなる？", "a": ["どの向きにも同じ大きさではたらく"], "choices": ["横向きにははたらかない", "上向きだけにはたらく", "下向きだけにはたらく", "どの向きにも同じ大きさではたらく"], "note": "水圧はあらゆる向きにはたらき、深いほど大きい。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p013-buoyancy", "comp": "物理編", "pref": "浮力", "cat": "浮力の向き", "type": "single", "q": "水中の物体にはたらく浮力の向きはどれ？", "a": ["鉛直上向き"], "choices": ["物体の進行方向", "水平方向", "鉛直上向き", "鉛直下向き"], "note": "浮力は重力と反対の上向き。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p014-floating", "comp": "物理編", "pref": "浮力", "cat": "浮く条件", "type": "single", "q": "水に浮いて静止している物体では、浮力と重力の関係はどうなる？", "a": ["大きさが等しい"], "choices": ["どちらも0", "重力の方が大きい", "大きさが等しい", "浮力の方が大きい"], "note": "静止しているので上向きと下向きの力がつり合う。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p015-friction", "comp": "物理編", "pref": "力", "cat": "摩擦力", "type": "single", "q": "摩擦力が大きくなりやすい組み合わせはどれ？", "a": ["ざらざらした面どうし"], "choices": ["ざらざらした面どうし", "なめらかな面どうし", "車輪を使った面", "油をぬった面どうし"], "note": "面の凹凸が大きいほど摩擦は大きくなりやすい。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p016-speed", "comp": "物理編", "pref": "運動", "cat": "速さの計算", "type": "single", "q": "120mを30秒で進む物体の速さは毎秒何m？", "a": ["毎秒4m"], "choices": ["毎秒2m", "毎秒90m", "毎秒4m", "毎秒30m"], "note": "速さ＝道のり÷時間。120÷30＝4。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p017-pendulum-length", "comp": "物理編", "pref": "振り子", "cat": "振り子の周期", "type": "single", "q": "振り子が1往復する時間を長くするにはどうする？", "a": ["糸を長くする"], "choices": ["振れ幅を少し大きくする", "おもりを重くする", "糸を長くする", "おもりの色を変える"], "note": "周期を決める主な条件は糸の長さ。", "region": "物理", "badgeCat": "振り子"},
+  {"id": "p018-pendulum-amplitude", "comp": "物理編", "pref": "振り子", "cat": "振れ幅と周期", "type": "single", "q": "振れ幅が小さい範囲で、振り子の振れ幅を少し大きくすると周期はどうなる？", "a": ["ほとんど変わらない"], "choices": ["短くなる", "長くなる", "0になる", "ほとんど変わらない"], "note": "小さな振れでは周期は振れ幅にほぼ関係しない。", "region": "物理", "badgeCat": "振り子"},
+  {"id": "p019-sound-vibration", "comp": "物理編", "pref": "音", "cat": "音の発生", "type": "single", "q": "音が出ている物体に共通することはどれ？", "a": ["振動している"], "choices": ["磁石になっている", "振動している", "溶けている", "発光している"], "note": "音の正体は物体の振動。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p020-sound-pitch", "comp": "物理編", "pref": "音", "cat": "音の高さ", "type": "single", "q": "弦をはじいて音を出すとき、より高い音を出す方法はどれ？", "a": ["弦を短くする"], "choices": ["弦を長くする", "弦を太くする", "弦をゆるめる", "弦を短くする"], "note": "短く・細く・強く張るほど高い音になる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p021-sound-volume", "comp": "物理編", "pref": "音", "cat": "音の大きさ", "type": "single", "q": "音を大きくするには、音源の振動をどうする？", "a": ["振れ幅を大きくする"], "choices": ["振動を止める", "振動数を少なくする", "振れ幅を小さくする", "振れ幅を大きくする"], "note": "音の大きさは振動の振れ幅で決まる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p022-sound-medium", "comp": "物理編", "pref": "音", "cat": "音の伝わり方", "type": "single", "q": "音が伝わらない場所はどれ？", "a": ["真空"], "choices": ["空気中", "真空", "鉄の中", "水中"], "note": "音は物質の振動で伝わるので真空では伝わらない。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p023-light-straight", "comp": "物理編", "pref": "光", "cat": "光の直進", "type": "single", "q": "光が同じ物質の中をまっすぐ進む性質を何という？", "a": ["光の直進"], "choices": ["光の分散", "光の反射", "光の屈折", "光の直進"], "note": "影ができるのは光が直進するため。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p024-reflection", "comp": "物理編", "pref": "光", "cat": "光の反射", "type": "single", "q": "鏡で光が反射するとき、入射角と反射角の関係はどれ？", "a": ["等しい"], "choices": ["合計が180度", "入射角が2倍", "等しい", "反射角が2倍"], "note": "角度は鏡の面ではなく法線から測る。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p025-refraction", "comp": "物理編", "pref": "光", "cat": "光の屈折", "type": "single", "q": "空気中から水中へ斜めに進む光は、境界でどう曲がる？", "a": ["法線に近づく"], "choices": ["法線から遠ざかる", "必ず反射して戻る", "法線に近づく", "曲がらず進む"], "note": "空気から水やガラスへ進むと法線側に曲がる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p026-convex-lens", "comp": "物理編", "pref": "光", "cat": "凸レンズ", "type": "single", "q": "凸レンズでスクリーンにうつせる像はどれ？", "a": ["実像"], "choices": ["拡大鏡の像だけ", "実像", "虚像", "正立像だけ"], "note": "スクリーンにうつせる像を実像という。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p027-shadow", "comp": "物理編", "pref": "光", "cat": "影の大きさ", "type": "single", "q": "物体とスクリーンの位置を変えずに、小さな電球を物体に近づけると、スクリーンにできる影の大きさはどうなる？", "a": ["大きくなる"], "choices": ["大きくなる", "小さくなる", "消える", "変わらない"], "note": "近い光源ほど光が大きく広がるので、影は大きくなる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p028-conduction", "comp": "物理編", "pref": "熱", "cat": "熱伝導", "type": "single", "q": "金属の棒の一端を熱すると、反対側も熱くなる伝わり方はどれ？", "a": ["伝導"], "choices": ["蒸発", "放射", "伝導", "対流"], "note": "物質の中を熱が順に伝わるのが伝導。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p029-convection", "comp": "物理編", "pref": "熱", "cat": "対流", "type": "single", "q": "水を下から熱したとき、水全体があたたまる主なしくみはどれ？", "a": ["対流"], "choices": ["凝結", "反射", "屈折", "対流"], "note": "あたためられた水が上がり、冷たい水が下がる。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p030-radiation", "comp": "物理編", "pref": "熱", "cat": "放射", "type": "single", "q": "太陽の熱が宇宙空間を通って地球に届く伝わり方はどれ？", "a": ["放射"], "choices": ["蒸発", "放射", "対流", "伝導"], "note": "放射は物質がない空間でも伝わる。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p031-expansion", "comp": "物理編", "pref": "熱", "cat": "熱膨張", "type": "single", "q": "多くの金属は加熱するとどうなる？", "a": ["体積が大きくなる"], "choices": ["体積が小さくなる", "質量が減る", "体積が大きくなる", "質量が増える"], "note": "加熱で粒の間隔が広がるが、質量は変わらない。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p032-current", "comp": "物理編", "pref": "電気", "cat": "電流", "type": "single", "q": "直列回路の各部分を流れる電流の大きさはどうなる？", "a": ["どこでも同じ"], "choices": ["どこでも同じ", "豆電球の後で0になる", "電池に近いほど大きい", "導線の長さだけで決まる"], "note": "枝分かれのない直列回路では電流は同じ。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p033-bulb-brightness", "comp": "物理編", "pref": "電気", "cat": "豆電球の直列と並列", "type": "single", "q": "同じ豆電球2個を同じ電池につなぐとき、1個ずつがより明るいのはどれ？", "a": ["並列つなぎ"], "choices": ["並列つなぎ", "どちらも同じ", "どちらも点灯しない", "直列つなぎ"], "note": "並列では各豆電球に電池1個分のはたらきがかかる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p034-battery", "comp": "物理編", "pref": "電気", "cat": "乾電池のつなぎ方", "type": "single", "q": "同じ乾電池2個で豆電球を最も明るくするつなぎ方はどれ？", "a": ["直列つなぎ"], "choices": ["1個だけ使う", "逆向きの直列", "並列つなぎ", "直列つなぎ"], "note": "乾電池の直列つなぎは電気を押すはたらきが大きい。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p035-conductor", "comp": "物理編", "pref": "電気", "cat": "導体と不導体", "type": "multi", "q": "電気を通しやすいものをすべて選んでね", "a": ["銅", "アルミニウム"], "choices": ["ガラス", "ゴム", "アルミニウム", "銅"], "note": "金属は電気を通しやすい。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p036-electromagnet", "comp": "物理編", "pref": "磁石", "cat": "電磁石", "type": "single", "q": "電磁石を強くする方法として正しいものはどれ？", "a": ["コイルの巻き数を増やす"], "choices": ["コイルの巻き数を減らす", "コイルの巻き数を増やす", "鉄心を抜く", "電流を小さくする"], "note": "巻き数を増やし、電流を大きくし、鉄心を入れる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p037-magnet-pole", "comp": "物理編", "pref": "磁石", "cat": "磁極", "type": "single", "q": "磁石のN極とN極を近づけるとどうなる？", "a": ["しりぞけ合う"], "choices": ["引き合う", "必ずくっつく", "しりぞけ合う", "磁力が消える"], "note": "同じ極どうしは反発し、異なる極どうしは引き合う。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p038-wire-thick", "comp": "物理編", "pref": "電気", "cat": "電熱線の太さ", "type": "single", "q": "同じ長さの電熱線を、太いものに変えると流れる電流はどうなる？", "a": ["大きくなる"], "choices": ["大きくなる", "小さくなる", "変わらない", "0になる"], "note": "太い電熱線は電気が通りやすく、電流は大きくなる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p039-wire-length", "comp": "物理編", "pref": "電気", "cat": "電熱線の長さ", "type": "single", "q": "同じ太さの電熱線を2倍の長さにすると、流れる電流はどうなる？", "a": ["半分になる"], "choices": ["2倍になる", "半分になる", "変わらない", "4倍になる"], "note": "長さが2倍なら電流は半分。長さと電流は反比例。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p040-heat-generation", "comp": "物理編", "pref": "電気", "cat": "電流と発熱", "type": "single", "q": "同じ電熱線に流す電流を大きくすると、発生する熱の量はどうなる？", "a": ["多くなる"], "choices": ["少なくなる", "変わらない", "多くなる", "0になる"], "note": "電流が大きいほど発熱は多い。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p041-hand-generator", "comp": "物理編", "pref": "電気", "cat": "手回し発電機", "type": "single", "q": "手回し発電機のハンドルを速く回すと、つないだ豆電球の明るさはどうなる？", "a": ["明るくなる"], "choices": ["暗くなる", "変わらない", "消える", "明るくなる"], "note": "速く回すほど大きな電流が流れる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p042-capacitor", "comp": "物理編", "pref": "電気", "cat": "コンデンサー", "type": "single", "q": "コンデンサーのはたらきとして正しいものはどれ？", "a": ["電気をたくわえる"], "choices": ["電気をたくわえる", "電気をすべて熱に変える", "電流の向きを必ず変える", "電流を止める"], "note": "コンデンサーは電気をためて、あとから使える。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p043-solar-cell", "comp": "物理編", "pref": "電気", "cat": "光電池", "type": "single", "q": "光電池に当てる光を強くすると、流れる電流はどうなる？", "a": ["大きくなる"], "choices": ["小さくなる", "大きくなる", "変わらない", "逆向きになる"], "note": "光が強いほど電流は大きい。光電池は光を電気に変える。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p044-motor-direction", "comp": "物理編", "pref": "電気", "cat": "モーター", "type": "single", "q": "モーターに流す電流の向きを逆にすると、回り方はどうなる？", "a": ["逆向きに回る"], "choices": ["速くなる", "止まる", "逆向きに回る", "変わらない"], "note": "電流の向きが変わると回転の向きも変わる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p045-coil-compass", "comp": "物理編", "pref": "磁石", "cat": "コイルと方位磁針", "type": "single", "q": "電流を流したコイルのそばに置いた方位磁針の向きは、主に何で決まる？", "a": ["電流の向き"], "choices": ["コイルの色", "部屋の明るさ", "導線の太さ", "電流の向き"], "note": "電流の向きを逆にすると、電磁石のN極とS極も入れかわる。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p046-led", "comp": "物理編", "pref": "電気", "cat": "発光ダイオード", "type": "single", "q": "発光ダイオード（LED）の特徴として正しいものはどれ？", "a": ["豆電球より少ない電気で光る"], "choices": ["豆電球より少ない電気で光る", "どちら向きに電流を流しても光る", "光ると同時に大量の熱を出す", "電池がなくても光る"], "note": "LEDは決まった向きに電流を流したときだけ光り、電気の使用量が少ない。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p047-series-bulbs", "comp": "物理編", "pref": "電気", "cat": "豆電球の直列", "type": "single", "q": "同じ豆電球2個を直列につなぐと、1個だけのときと比べて明るさはどうなる？", "a": ["暗くなる"], "choices": ["明るくなる", "暗くなる", "変わらない", "消える"], "note": "直列では流れる電流が小さくなるので暗い。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "p048-spring-series", "comp": "物理編", "pref": "ばね", "cat": "ばねの直列", "type": "single", "q": "同じばね2本をたてにつないで同じおもりをつるすと、全体ののびはどうなる？", "a": ["2倍になる"], "choices": ["半分になる", "変わらない", "2倍になる", "4倍になる"], "note": "たてつなぎは1本ずつが同じ重さを支えるので、のびは合計で2倍。", "region": "物理", "badgeCat": "ばね"},
+  {"id": "p049-spring-calc", "comp": "物理編", "pref": "ばね", "cat": "ばねののびの計算", "type": "single", "q": "20gのおもりで4cmのびるばねに、50gのおもりをつるすと何cmのびる？", "a": ["10cm"], "choices": ["2cm", "5cm", "8cm", "10cm"], "note": "20gで4cm→1gで0.2cm。0.2×50＝10cm。", "region": "物理", "badgeCat": "ばね"},
+  {"id": "p050-lever-opener", "comp": "物理編", "pref": "てこ", "cat": "てこの種類", "type": "single", "q": "支点・力点・作用点のうち、作用点が真ん中にある道具はどれ？", "a": ["せんぬき"], "choices": ["せんぬき", "ピンセット", "はさみ", "シーソー"], "note": "せんぬきは支点が先、作用点が中央、力点が手。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p051-lever-tweezers", "comp": "物理編", "pref": "てこ", "cat": "てこの種類", "type": "single", "q": "ピンセットで真ん中にあるのは、支点・力点・作用点のうちどれ？", "a": ["力点"], "choices": ["支点", "力点", "作用点", "どれでもない"], "note": "ピンセットは支点が根もと、力点が中央、作用点が先。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p052-lever-bar", "comp": "物理編", "pref": "てこ", "cat": "棒の重さ", "type": "single", "q": "太さが一様な棒の重さを考えるとき、棒の重さはどこにかかっていると考える？", "a": ["棒の中央"], "choices": ["棒の左端", "棒の右端", "棒の中央", "支点の位置"], "note": "一様な棒の重心は中央。そこに全部の重さがかかると考える。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p053-pulley-distance", "comp": "物理編", "pref": "滑車", "cat": "動滑車と距離", "type": "single", "q": "動滑車1個で物体を50cm持ち上げるとき、ひもを何cm引く必要がある？", "a": ["100cm"], "choices": ["25cm", "50cm", "75cm", "100cm"], "note": "力が半分になるかわりに、引く距離は2倍になる。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p054-pulley-combination", "comp": "物理編", "pref": "滑車", "cat": "組み合わせ滑車", "type": "single", "q": "動滑車2個を組み合わせて使うと、必要な力は物体の重さの何分の1になる？", "a": ["4分の1"], "choices": ["4分の1", "2分の1", "3分の1", "8分の1"], "note": "動滑車が1個増えるごとに力は半分。2個で4分の1。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p055-wheel-axle-calc", "comp": "物理編", "pref": "てこ", "cat": "輪軸の計算", "type": "single", "q": "輪の半径20cm、軸の半径5cmの輪軸で、軸に40kgの物をつるした。輪を何kgの力で引くとつり合う？", "a": ["10kg"], "choices": ["5kg", "10kg", "20kg", "160kg"], "note": "40×5＝□×20より10kg。輪軸もてこと同じ計算。", "region": "物理", "badgeCat": "てこ・滑車"},
+  {"id": "p056-buoyancy-size", "comp": "物理編", "pref": "浮力", "cat": "浮力の大きさ", "type": "single", "q": "水中の物体にはたらく浮力の大きさは、何と等しい？", "a": ["物体が押しのけた水の重さ"], "choices": ["物体の重さ", "水そうの水全体の重さ", "物体が押しのけた水の重さ", "物体の表面積"], "note": "浮力＝押しのけた水の重さ。体積が大きいほど浮力も大きい。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p057-buoyancy-calc", "comp": "物理編", "pref": "浮力", "cat": "浮力の計算", "type": "single", "q": "体積60cm³の物体を全部水に沈めたとき、はたらく浮力は何g？（水1cm³は1g）", "a": ["60g"], "choices": ["6g", "30g", "50g", "60g"], "note": "水に完全に沈むと、体積と同じ数字のgだけ浮力がはたらく。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p058-ice-float", "comp": "物理編", "pref": "浮力", "cat": "氷が浮く理由", "type": "single", "q": "氷が水に浮く理由として正しいものはどれ？", "a": ["同じ体積で比べると氷のほうが軽いから"], "choices": ["同じ体積で比べると氷のほうが軽いから", "氷は水より冷たいから", "氷は固体だから", "氷は水にとけないから"], "note": "水は氷になると体積が増えるので、同じ体積なら軽い。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p059-pendulum-4x", "comp": "物理編", "pref": "振り子", "cat": "周期と長さ", "type": "single", "q": "振り子の糸の長さを4倍にすると、1往復する時間はおよそ何倍になる？", "a": ["2倍"], "choices": ["4倍", "2倍", "半分", "変わらない"], "note": "長さ4倍で周期2倍、長さ9倍で周期3倍。", "region": "物理", "badgeCat": "振り子"},
+  {"id": "p060-pendulum-speed", "comp": "物理編", "pref": "振り子", "cat": "おもりの速さ", "type": "single", "q": "振り子のおもりの速さが最も速くなるのはどこ？", "a": ["いちばん低い位置"], "choices": ["振れはじめの位置", "上がりきった位置", "いちばん低い位置", "どこでも同じ"], "note": "最も低い所で速さが最大、両はしで一瞬止まる。", "region": "物理", "badgeCat": "振り子"},
+  {"id": "p061-sound-speed", "comp": "物理編", "pref": "音", "cat": "音の速さ", "type": "single", "q": "空気中を伝わる音の速さはおよそどれくらい？", "a": ["秒速340m"], "choices": ["秒速34m", "秒速100m", "秒速1700m", "秒速340m"], "note": "音は1秒に約340m進む。光よりずっとおそい。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p062-sound-speed-calc", "comp": "物理編", "pref": "音", "cat": "音の速さの計算", "type": "single", "q": "花火が光ってから3秒後に音が聞こえた。花火までの距離はおよそ何m？（音速は秒速340m）", "a": ["1020m"], "choices": ["1020m", "340m", "113m", "680m"], "note": "340×3＝1020m。光が届く時間は無視できる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p063-sound-frequency", "comp": "物理編", "pref": "音", "cat": "振動数と高さ", "type": "single", "q": "1秒間に振動する回数が多いほど、音はどうなる？", "a": ["高い音になる"], "choices": ["低い音になる", "高い音になる", "大きい音になる", "小さい音になる"], "note": "振動数（回数）は高さ、振れ幅は大きさを決める。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p064-prism", "comp": "物理編", "pref": "光", "cat": "光の分散", "type": "single", "q": "白い光をプリズムに通すと、いろいろな色に分かれる。この現象を何という？", "a": ["分散"], "choices": ["反射", "屈折", "分散", "直進"], "note": "にじも太陽の光が分散してできる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p065-mirror-image", "comp": "物理編", "pref": "光", "cat": "鏡の像", "type": "single", "q": "鏡にうつった自分の像はどのように見える？", "a": ["左右が入れかわって見える"], "choices": ["上下が入れかわって見える", "上下も左右も入れかわって見える", "まったく同じに見える", "左右が入れかわって見える"], "note": "鏡の像は左右が反対。上下は変わらない。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p066-mirror-size", "comp": "物理編", "pref": "光", "cat": "全身がうつる鏡", "type": "single", "q": "立ったまま全身をうつすのに必要な鏡の縦の長さは、身長のおよそ何分の1？", "a": ["2分の1"], "choices": ["2分の1", "3分の1", "4分の1", "身長と同じ"], "note": "鏡までの距離に関係なく、身長の半分あれば全身がうつる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p067-lens-focus", "comp": "物理編", "pref": "光", "cat": "焦点", "type": "single", "q": "虫めがねで日光を集めたとき、最も小さく明るい点ができる場所を何という？", "a": ["焦点"], "choices": ["光軸", "焦点", "実像", "中心"], "note": "焦点にはたくさんの光が集まるので、とても熱くなる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p068-lens-image", "comp": "物理編", "pref": "光", "cat": "凸レンズの像", "type": "single", "q": "凸レンズの焦点距離の2倍の位置に物体を置くと、スクリーンにできる実像の大きさはどうなる？", "a": ["物体と同じ大きさ"], "choices": ["物体より大きい", "物体より小さい", "物体と同じ大きさ", "像はできない"], "note": "焦点距離の2倍のとき、反対側の2倍の位置に同じ大きさの実像ができる。", "region": "物理", "badgeCat": "光・音"},
+  {"id": "p069-expansion-order", "comp": "物理編", "pref": "熱", "cat": "体積の増え方", "type": "single", "q": "同じだけ温度を上げたとき、体積の増え方が最も大きいものはどれ？", "a": ["空気"], "choices": ["鉄", "水", "ガラス", "空気"], "note": "増え方は気体＞液体＞固体。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p070-metal-conduction", "comp": "物理編", "pref": "熱", "cat": "熱の伝わりやすさ", "type": "single", "q": "金属・水・空気のうち、熱を最も伝えやすいものはどれ？", "a": ["金属"], "choices": ["金属", "水", "空気", "すべて同じ"], "note": "金属は熱をよく伝えるので、なべややかんに使う。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p071-heat-mixing", "comp": "物理編", "pref": "熱", "cat": "水の混合", "type": "single", "q": "40℃の水100gと20℃の水100gを混ぜると、水温はおよそ何℃になる？", "a": ["30℃"], "choices": ["25℃", "30℃", "35℃", "60℃"], "note": "同じ量どうしなら平均の温度。(40＋20)÷2＝30。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p072-heat-calc", "comp": "物理編", "pref": "熱", "cat": "熱量の比較", "type": "single", "q": "20℃の水200gを60℃にするのに必要な熱は、同じ水100gを20℃から60℃にするときの何倍？", "a": ["2倍"], "choices": ["半分", "同じ", "2倍", "4倍"], "note": "上げる温度が同じなら、必要な熱は水の量に比例する。", "region": "物理", "badgeCat": "熱"},
+  {"id": "p073-slope", "comp": "物理編", "pref": "運動", "cat": "斜面を下る運動", "type": "single", "q": "なめらかな斜面を下る球の速さは、下るにつれてどうなる？", "a": ["だんだん速くなる"], "choices": ["だんだんおそくなる", "変わらない", "速くなったりおそくなったりする", "だんだん速くなる"], "note": "斜面では進む向きに力がはたらき続けるので速くなる。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p074-slope-height", "comp": "物理編", "pref": "運動", "cat": "高さと速さ", "type": "single", "q": "同じ斜面で、球を転がし始める高さを高くすると、斜面の下での速さはどうなる？", "a": ["速くなる"], "choices": ["速くなる", "おそくなる", "変わらない", "0になる"], "note": "高い所から転がすほど、下での速さは大きい。", "region": "物理", "badgeCat": "力・運動"},
+  {"id": "p075-pressure-calc", "comp": "物理編", "pref": "圧力", "cat": "圧力の計算", "type": "single", "q": "重さ600gの直方体を、底面積30cm²の面を下にして置いた。1cm²あたり何gの重さがかかる？", "a": ["20g"], "choices": ["2g", "20g", "200g", "18000g"], "note": "600÷30＝20g。圧力は重さ÷面積。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p076-water-pressure-depth", "comp": "物理編", "pref": "圧力", "cat": "深さと水圧", "type": "single", "q": "水の深さが2倍になると、水圧の大きさはどうなる？", "a": ["2倍になる"], "choices": ["半分になる", "変わらない", "2倍になる", "4倍になる"], "note": "水圧は深さに比例して大きくなる。", "region": "物理", "badgeCat": "圧力・浮力"},
+  {"id": "p077-magnet-material", "comp": "物理編", "pref": "磁石", "cat": "磁石につくもの", "type": "multi", "q": "磁石につくものをすべて選んでね", "a": ["鉄", "スチール缶"], "choices": ["鉄", "アルミニウム", "スチール缶", "十円玉"], "note": "磁石につくのは鉄・ニッケルなど。アルミニウムや銅（十円玉）はつかない。", "region": "物理", "badgeCat": "電気・磁石"},
+  {"id": "g001-spring-read", "comp": "物理編", "pref": "ばね", "cat": "グラフの読み取り", "type": "single", "q": "ばねＡに45gのおもりをつるすと、ばねは何cmのびる？", "a": ["9cm"], "choices": ["6cm", "4.5cm", "11cm", "9cm"], "note": "ばねＡは10gで2cmのびる。1gで0.2cm。0.2×45＝9cm。", "region": "物理", "badgeCat": "ばね", "image": "g001-spring-graph.png"},
+  {"id": "g002-pendulum-read", "comp": "物理編", "pref": "振り子", "cat": "グラフの読み取り", "type": "single", "q": "1往復する時間を3.0秒にするには、振り子の長さを何cmにすればよい？", "a": ["225cm"], "choices": ["300cm", "225cm", "150cm", "900cm"], "note": "長さ25→100→225→400cmで、時間は1→2→3→4秒。長さが9倍で時間は3倍。", "region": "物理", "badgeCat": "振り子", "image": "g002-pendulum-graph.png"},
+  {"id": "g003-heater-read", "comp": "物理編", "pref": "電気", "cat": "グラフの読み取り", "type": "single", "q": "電熱線Ｂを使って、水100gを20℃から60℃にするには何分かかる？", "a": ["20分"], "choices": ["10分", "30分", "20分", "15分"], "note": "Ｂは2分で4℃、つまり1分で2℃上がる。40℃上げるので40÷2＝20分。", "region": "物理", "badgeCat": "電気・磁石", "image": "g003-heater-graph.png"},
+  {"id": "g004-buoyancy-read", "comp": "物理編", "pref": "浮力", "cat": "グラフの読み取り", "type": "single", "q": "この物体が全部水中に入ったとき、はたらいている浮力の大きさは何g？", "a": ["80g"], "choices": ["120g", "80g", "200g", "40g"], "note": "空中で200g、全部沈むと120g。減った分の200－120＝80gが浮力。", "region": "物理", "badgeCat": "圧力・浮力", "image": "g004-buoyancy-graph.png"},
+  {"id": "g005-sound-read", "comp": "物理編", "pref": "音", "cat": "グラフの読み取り", "type": "single", "q": "花火が光ってから2.5秒後に音が聞こえた地点は、花火から何m？", "a": ["850m"], "choices": ["1020m", "750m", "680m", "850m"], "note": "グラフは1秒で340m。340×2.5＝850m。", "region": "物理", "badgeCat": "光・音", "image": "g005-sound-graph.png"},
+  {"id": "g006-slope-read", "comp": "物理編", "pref": "運動", "cat": "グラフの読み取り", "type": "single", "q": "球を高さ50cmから転がすと、木片は何cm動くと考えられる？", "a": ["30cm"], "choices": ["45cm", "30cm", "24cm", "36cm"], "note": "高さ10cmごとに6cmずつ増える比例のグラフ。0.6×50＝30cm。", "region": "物理", "badgeCat": "力・運動", "image": "g006-slope-graph.png"},
+  {"id": "g007-lever-read", "comp": "物理編", "pref": "てこ", "cat": "グラフの読み取り", "type": "single", "q": "支点から40cmの位置につるすと、つり合うおもりは何g？", "a": ["15g"], "choices": ["10g", "15g", "24g", "20g"], "note": "距離×重さがいつも600で一定（反比例）。600÷40＝15g。", "region": "物理", "badgeCat": "てこ・滑車", "image": "g007-lever-graph.png"},
+  {"id": "g008-circuit-read", "comp": "物理編", "pref": "電気", "cat": "グラフの読み取り", "type": "single", "q": "並列に2個つないだとき、豆電球1個に流れる電流は、1個だけのときと比べてどうなっている？", "a": ["同じ"], "choices": ["半分", "4倍", "2倍", "同じ"], "note": "並列は200mAで1個のときと同じ。直列2個は100mAで半分になる。", "region": "物理", "badgeCat": "電気・磁石", "image": "g008-circuit-graph.png"},
+  {"id": "c001-states", "comp": "化学編", "pref": "物質", "cat": "三態", "type": "single", "q": "物質の三態に含まれないものはどれ？", "a": ["光"], "choices": ["光", "固体", "気体", "液体"], "note": "物質の三態は固体・液体・気体。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c002-phase-temp", "comp": "化学編", "pref": "物質", "cat": "状態変化と温度", "type": "single", "q": "純粋な氷がとけている間、温度はどうなる？", "a": ["ほぼ一定"], "choices": ["上がり続ける", "0度と100度を往復する", "下がり続ける", "ほぼ一定"], "note": "状態変化中は加えた熱が変化に使われる。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c003-phase-mass", "comp": "化学編", "pref": "物質", "cat": "状態変化と質量", "type": "single", "q": "密閉容器の中で水が水蒸気になったとき、全体の質量はどうなる？", "a": ["変わらない"], "choices": ["減る", "増える", "変わらない", "必ず2倍になる"], "note": "状態が変わっても、外へ出なければ質量は同じ。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c004-gas-volume", "comp": "化学編", "pref": "気体", "cat": "気体の熱膨張", "type": "single", "q": "やわらかい風船の中の空気をあたためると、体積はどうなりやすい？", "a": ["大きくなる"], "choices": ["小さくなる", "変わらない", "0になる", "大きくなる"], "note": "気体はあたためると大きく膨張する。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c005-dissolution", "comp": "化学編", "pref": "水溶液", "cat": "溶解", "type": "single", "q": "食塩が水にとけたあと、食塩はどうなっている？", "a": ["目に見えない小さな粒として全体に広がる"], "choices": ["水の底だけに集まる", "別の元素に変わる", "消えてなくなる", "目に見えない小さな粒として全体に広がる"], "note": "とけても食塩はなくならず、水中に均一に広がる。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c006-solution-terms", "comp": "化学編", "pref": "水溶液", "cat": "溶質と溶媒", "type": "single", "q": "食塩水で「溶質」にあたるものはどれ？", "a": ["食塩"], "choices": ["食塩水", "食塩", "水", "容器"], "note": "とける物質が溶質、とかす液体が溶媒。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c007-saturation", "comp": "化学編", "pref": "水溶液", "cat": "飽和水溶液", "type": "single", "q": "ある温度で、それ以上物質がとけない水溶液を何という？", "a": ["飽和水溶液"], "choices": ["混合水溶液", "中性水溶液", "希薄水溶液", "飽和水溶液"], "note": "限界までとけた水溶液が飽和水溶液。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c008-solubility-calc", "comp": "化学編", "pref": "水溶液", "cat": "溶解度計算", "type": "single", "q": "20℃の水100gに食塩は約36gまでとける。同じ温度の水50gには最大およそ何gとける？", "a": ["18g"], "choices": ["9g", "36g", "18g", "72g"], "note": "水が半分なら、とける量も半分。36÷2＝18g。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c009-recrystallization", "comp": "化学編", "pref": "水溶液", "cat": "再結晶", "type": "single", "q": "高温の飽和水溶液を冷やして結晶を取り出す操作を何という？", "a": ["再結晶"], "choices": ["再結晶", "蒸留", "ろ過", "中和"], "note": "温度による溶解度の差を利用する。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c010-evaporation", "comp": "化学編", "pref": "水溶液", "cat": "蒸発乾固", "type": "single", "q": "食塩水から食塩を取り出す最も直接的な方法はどれ？", "a": ["水を蒸発させる"], "choices": ["冷凍するだけ", "ろ紙を通す", "水を蒸発させる", "磁石を近づける"], "note": "食塩は水と一緒には蒸発しない。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c011-filtration", "comp": "化学編", "pref": "実験", "cat": "ろ過", "type": "single", "q": "ろ過で分けられる組み合わせはどれ？", "a": ["水と砂"], "choices": ["空気中の酸素と窒素", "砂糖水の砂糖と水", "水と砂", "食塩水の食塩と水"], "note": "ろ過は液体にとけていない固体を分ける。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c012-separation", "comp": "化学編", "pref": "実験", "cat": "混合物の分離", "type": "single", "q": "鉄粉と砂の混合物から鉄粉を取り出す方法はどれ？", "a": ["磁石を使う"], "choices": ["水に完全にとかす", "加熱して燃やす", "磁石を使う", "ろ過する"], "note": "鉄は磁石につく性質を利用する。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c013-concentration", "comp": "化学編", "pref": "水溶液", "cat": "質量パーセント濃度", "type": "single", "q": "食塩10gを水90gにとかした食塩水の濃度は何％？", "a": ["10％"], "choices": ["10％", "9％", "90％", "11％"], "note": "食塩水は100g。10÷100×100＝10％。", "region": "化学", "badgeCat": "水溶液"},
   {"id": "c014-dilution", "comp": "化学編", "pref": "水溶液", "cat": "希釈", "type": "single", "q": "食塩水に水だけを加えると、食塩水の濃度はどうなる？", "a": ["低くなる"], "choices": ["高くなる", "低くなる", "変わらない", "必ず0％になる"], "note": "食塩の量は同じで全体の量が増える。", "region": "化学", "badgeCat": "水溶液"},
-  {"id": "c015-density", "comp": "化学編", "pref": "物質", "cat": "密度", "type": "single", "q": "体積10cm³、質量80gの物質の密度は1cm³あたり何g？", "a": ["8g"], "choices": ["0.8g", "8g", "10g", "80g"], "note": "密度＝質量÷体積。80÷10＝8。", "region": "化学", "badgeCat": "物質の性質"},
-  {"id": "c016-oxygen", "comp": "化学編", "pref": "気体", "cat": "酸素", "type": "single", "q": "酸素の性質として正しいものはどれ？", "a": ["ものを燃やすはたらきを助ける"], "choices": ["石灰水を白くにごらせる", "ものを燃やすはたらきを助ける", "刺激臭があり水に非常によくとける", "最も軽い気体である"], "note": "酸素自体が燃えるのではなく、燃焼を助ける。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c017-carbon-dioxide", "comp": "化学編", "pref": "気体", "cat": "二酸化炭素", "type": "single", "q": "二酸化炭素を通すと白くにごる液体はどれ？", "a": ["石灰水"], "choices": ["食塩水", "石灰水", "アルコール", "アンモニア水"], "note": "石灰水の白いにごりは炭酸カルシウム。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c018-hydrogen", "comp": "化学編", "pref": "気体", "cat": "水素", "type": "single", "q": "火を近づけると「ポン」と音を立てて燃える気体はどれ？", "a": ["水素"], "choices": ["酸素", "水素", "二酸化炭素", "窒素"], "note": "水素は非常に軽く、燃える気体。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c019-ammonia", "comp": "化学編", "pref": "気体", "cat": "アンモニア", "type": "single", "q": "アンモニアの性質として正しいものはどれ？", "a": ["刺激臭があり水に非常によくとける"], "choices": ["無色無臭で水にとけにくい", "刺激臭があり水に非常によくとける", "空気より重く石灰水をにごらせる", "火を近づけると音を立てて燃える"], "note": "アンモニアは刺激臭があり、アルカリ性。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c020-gas-collection", "comp": "化学編", "pref": "気体", "cat": "気体の集め方", "type": "single", "q": "水にとけにくい気体を純粋に集めやすい方法はどれ？", "a": ["水上置換法"], "choices": ["上方置換法", "下方置換法", "水上置換法", "ろ過"], "note": "水上置換法は空気と混ざりにくい。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c021-make-oxygen", "comp": "化学編", "pref": "気体", "cat": "酸素の発生", "type": "single", "q": "うれす？い過酸化水素水から酸素を発生させるときに加えるものはど", "a": ["二酸化マンガン"], "choices": ["食塩", "二酸化マンガン", "石灰石", "アルミニウム"], "note": "二酸化マンガンは反応を助ける触媒。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c022-make-co2", "comp": "化学編", "pref": "気体", "cat": "二酸化炭素の発生", "type": "single", "q": "二酸化炭素を発生させる組み合わせはどれ？", "a": ["石灰石とうすい塩酸"], "choices": ["二酸化マンガンと過酸化水素水", "石灰石とうすい塩酸", "亜鉛とうすい塩酸", "食塩と水"], "note": "石灰石にうすい塩酸を加えると二酸化炭素。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c023-combustion", "comp": "化学編", "pref": "燃焼", "cat": "燃焼の条件", "type": "multi", "q": "ものが燃え続けるために必要な条件をすべて選んでね", "a": ["燃える物", "酸素", "発火点以上の温度"], "choices": ["燃える物", "酸素", "発火点以上の温度", "二酸化炭素"], "note": "燃焼には燃える物、酸素、十分な温度が必要。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "c024-candle", "comp": "化学編", "pref": "燃焼", "cat": "ろうそくの燃焼", "type": "single", "q": "ろうそくで実際に気体となって燃えているものはどれ？", "a": ["ろうの蒸気"], "choices": ["固体のろうだけ", "ろうの蒸気", "しんの灰", "二酸化炭素"], "note": "とけたろうがしんを上がり、気体になって燃える。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "c025-metal-burning", "comp": "化学編", "pref": "燃焼", "cat": "金属の燃焼", "type": "single", "q": "スチールウールを十分に燃やすと、燃える前より質量はどうなる？", "a": ["増える"], "choices": ["増える", "減る", "変わらない", "0になる"], "note": "空気中の酸素と結びつくので増える。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "c026-rust", "comp": "化学編", "pref": "化学変化", "cat": "さび", "type": "single", "q": "鉄がさびるために必要なものの組み合わせはどれ？", "a": ["水と酸素"], "choices": ["水だけ", "酸素だけ", "水と酸素", "二酸化炭素だけ"], "note": "鉄さびには水と酸素が必要。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "c027-acid", "comp": "化学編", "pref": "水溶液", "cat": "酸性水溶液", "type": "multi", "q": "酸性の水溶液をすべて選んでね", "a": ["塩酸", "食酢"], "choices": ["塩酸", "食酢", "石灰水", "アンモニア水"], "note": "塩酸や食酢は酸性、石灰水とアンモニア水はアルカリ性。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c028-alkali", "comp": "化学編", "pref": "水溶液", "cat": "アルカリ性水溶液", "type": "single", "q": "次のうちアルカリ性の水溶液はどれ？", "a": ["石灰水"], "choices": ["炭酸水", "食酢", "石灰水", "うすい塩酸"], "note": "石灰水は水酸化カルシウムの水溶液。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c029-litmus", "comp": "化学編", "pref": "水溶液", "cat": "リトマス紙", "type": "single", "q": "青色リトマス紙を赤色に変える水溶液はどれ？", "a": ["酸性"], "choices": ["酸性", "中性", "アルカリ性", "食塩水だけ"], "note": "酸性は青色リトマス紙を赤色にする。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c030-btb", "comp": "化学編", "pref": "水溶液", "cat": "BTB溶液", "type": "single", "q": "中性の水溶液にBTB溶液を加えたときの色はどれ？", "a": ["緑色"], "choices": ["黄色", "緑色", "青色", "赤色"], "note": "BTBは酸性が黄色、中性が緑、アルカリ性が青。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c031-neutralization", "comp": "化学編", "pref": "水溶液", "cat": "中和", "type": "single", "q": "酸性水溶液とアルカリ性水溶液が互いの性質を打ち消す反応を何という？", "a": ["中和"], "choices": ["燃焼", "中和", "蒸発", "凝結"], "note": "中和では水と塩ができる。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c032-salt", "comp": "化学編", "pref": "水溶液", "cat": "中和でできる塩", "type": "single", "q": "塩酸と水酸化ナトリウム水溶液を中和させるとできる塩はどれ？", "a": ["食塩"], "choices": ["炭酸カルシウム", "食塩", "砂糖", "アンモニア"], "note": "塩酸の塩化物イオンとナトリウムから食塩ができる。", "region": "化学", "badgeCat": "酸・アルカリ"},
-  {"id": "c033-limewater", "comp": "化学編", "pref": "気体", "cat": "石灰水の反応", "type": "single", "q": "二酸化炭素を石灰水に長時間通し続けると、いったんできた白いにごりはどうなる？", "a": ["消えて透明になる"], "choices": ["さらに濃くなるだけ", "消えて透明になる", "赤色になる", "固体が燃える"], "note": "二酸化炭素が多すぎると水にとける物質に変わる。", "region": "化学", "badgeCat": "気体"},
-  {"id": "c034-identify-solution", "comp": "化学編", "pref": "実験", "cat": "水溶液の見分け", "type": "single", "q": "食塩水と砂糖水を区別するために最も適した方法はどれ？", "a": ["蒸発させて残った物質を加熱する"], "choices": ["色を見るだけ", "においを直接かぐ", "蒸発させて残った物質を加熱する", "ろ紙を通すだけ"], "note": "砂糖は加熱でこげるが、食塩はこげない。", "region": "化学", "badgeCat": "実験操作"},
-  {"id": "c035-mass-conservation", "comp": "化学編", "pref": "化学変化", "cat": "質量保存", "type": "single", "q": "密なる閉？容器内で化学変化が起きたとき、反応前後の全体の質量はどう", "a": ["等しい"], "choices": ["必ず増える", "必ず減る", "等しい", "気体ができると0になる"], "note": "出入りのない容器では物質全体の質量は保存される。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "c036-catalyst", "comp": "化学編", "pref": "化学変化", "cat": "触媒", "type": "single", "q": "過酸化水素水から酸素を発生させたあとの二酸化マンガンはどうなる？", "a": ["ほとんど変化せず残る"], "choices": ["すべて酸素になる", "ほとんど変化せず残る", "水に完全にとける", "質量が必ず2倍になる"], "note": "触媒は反応を助けるが、自身はほとんど変化しない。", "region": "化学", "badgeCat": "燃焼・化学変化"},
-  {"id": "b001-flower", "comp": "生物編", "pref": "植物", "cat": "花のつくり", "type": "single", "q": "花粉がつくられる部分はどれ？", "a": ["やく"], "choices": ["柱頭", "やく", "子房", "がく"], "note": "おしべの先の「やく」で花粉ができる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b002-pollination", "comp": "生物編", "pref": "植物", "cat": "受粉", "type": "single", "q": "花粉がめしべの柱頭につくことを何という？", "a": ["受粉"], "choices": ["発芽", "受粉", "受精", "結実"], "note": "受粉のあと、花粉管がのびて受精へ進む。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b003-fertilization", "comp": "生物編", "pref": "植物", "cat": "受精", "type": "single", "q": "植物で、精細胞の核と卵細胞の核が合体することを何という？", "a": ["受精"], "choices": ["受粉", "受精", "発芽", "蒸散"], "note": "受粉は柱頭につくこと、受精は核が合体すること。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b004-seed-fruit", "comp": "生物編", "pref": "植物", "cat": "種子と果実", "type": "single", "q": "受精後、胚珠は何になる？", "a": ["種子"], "choices": ["果実", "種子", "花粉", "葉"], "note": "胚珠は種子、子房は果実になる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b005-germination", "comp": "生物編", "pref": "植物", "cat": "発芽の条件", "type": "multi", "q": "多くの種子の発芽に必要な条件をすべて選んでね", "a": ["水", "空気", "適当な温度"], "choices": ["水", "空気", "適当な温度", "日光"], "note": "発芽に必要なのは水、空気、適温。日光は必須ではない。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b006-seed-nutrient", "comp": "生物編", "pref": "植物", "cat": "種子の養分", "type": "single", "q": "インゲンマメの種子で、発芽に使う養分をたくわえる部分はどれ？", "a": ["子葉"], "choices": ["胚乳", "子葉", "種皮", "幼根"], "note": "マメ類は大きな子葉に養分をたくわえる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b007-root-hair", "comp": "生物編", "pref": "植物", "cat": "根の吸水", "type": "single", "q": "根毛が多数ある主な利点はどれ？", "a": ["水や養分を吸収する表面積が大きくなる"], "choices": ["根を重くできる", "水や養分を吸収する表面積が大きくなる", "光合成ができる", "花粉を運べる"], "note": "細い根毛が土とふれる面積を広げる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b008-vessels", "comp": "生物編", "pref": "植物", "cat": "道管と師管", "type": "single", "q": "根から吸収した水が主に通る管はどれ？", "a": ["道管"], "choices": ["師管", "道管", "気管", "血管"], "note": "水は道管、葉でできた養分は師管。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b009-transpiration", "comp": "生物編", "pref": "植物", "cat": "蒸散", "type": "single", "q": "植物の葉から水蒸気が出ていくはたらきを何という？", "a": ["蒸散"], "choices": ["蒸発", "蒸散", "呼吸", "受粉"], "note": "蒸散は根から水を吸い上げる力にもなる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b010-stomata", "comp": "生物編", "pref": "植物", "cat": "気孔", "type": "single", "q": "多くの陸上植物で、気孔が多く見られる葉の部分はどこ？", "a": ["裏側の表皮"], "choices": ["表側の葉脈だけ", "裏側の表皮", "葉の中心だけ", "根の先端"], "note": "多くの陸上植物では葉の裏に気孔が多い。", "region": "生物", "badgeCat": "植物"},
+  {"id": "c015-density", "comp": "化学編", "pref": "物質", "cat": "1cm³あたりの重さ", "type": "single", "q": "体積10cm³、重さ80gの物質は、1cm³あたり何gになる？", "a": ["8g"], "choices": ["0.8g", "10g", "80g", "8g"], "note": "80÷10＝8g。1cm³あたりの重さが大きいほど水に沈みやすい。", "region": "化学", "badgeCat": "物質の性質"},
+  {"id": "c016-oxygen", "comp": "化学編", "pref": "気体", "cat": "酸素", "type": "single", "q": "酸素の性質として正しいものはどれ？", "a": ["ものを燃やすはたらきを助ける"], "choices": ["ものを燃やすはたらきを助ける", "最も軽い気体である", "刺激臭があり水に非常によくとける", "石灰水を白くにごらせる"], "note": "酸素自体が燃えるのではなく、燃焼を助ける。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c017-carbon-dioxide", "comp": "化学編", "pref": "気体", "cat": "二酸化炭素", "type": "single", "q": "二酸化炭素を通すと白くにごる液体はどれ？", "a": ["石灰水"], "choices": ["アンモニア水", "食塩水", "アルコール", "石灰水"], "note": "石灰水の白いにごりは炭酸カルシウム。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c018-hydrogen", "comp": "化学編", "pref": "気体", "cat": "水素", "type": "single", "q": "火を近づけると「ポン」と音を立てて燃える気体はどれ？", "a": ["水素"], "choices": ["二酸化炭素", "酸素", "水素", "窒素"], "note": "水素は非常に軽く、燃える気体。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c019-ammonia", "comp": "化学編", "pref": "気体", "cat": "アンモニア", "type": "single", "q": "アンモニアの性質として正しいものはどれ？", "a": ["刺激臭があり水に非常によくとける"], "choices": ["無色無臭で水にとけにくい", "空気より重く石灰水をにごらせる", "刺激臭があり水に非常によくとける", "火を近づけると音を立てて燃える"], "note": "アンモニアは刺激臭があり、アルカリ性。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c020-gas-collection", "comp": "化学編", "pref": "気体", "cat": "気体の集め方", "type": "single", "q": "水にとけにくい気体を純粋に集めやすい方法はどれ？", "a": ["水上置換法"], "choices": ["上方置換法", "水上置換法", "ろ過", "下方置換法"], "note": "水上置換法は空気と混ざりにくい。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c021-make-oxygen", "comp": "化学編", "pref": "気体", "cat": "酸素の発生", "type": "single", "q": "うすい過酸化水素水から酸素を発生させるときに加えるものはどれ？", "a": ["二酸化マンガン"], "choices": ["石灰石", "アルミニウム", "二酸化マンガン", "食塩"], "note": "二酸化マンガンは反応を助ける触媒。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c022-make-co2", "comp": "化学編", "pref": "気体", "cat": "二酸化炭素の発生", "type": "single", "q": "二酸化炭素を発生させる組み合わせはどれ？", "a": ["石灰石とうすい塩酸"], "choices": ["二酸化マンガンと過酸化水素水", "石灰石とうすい塩酸", "食塩と水", "亜鉛とうすい塩酸"], "note": "石灰石にうすい塩酸を加えると二酸化炭素。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c023-combustion", "comp": "化学編", "pref": "燃焼", "cat": "燃焼の条件", "type": "multi", "q": "ものが燃え続けるために必要な条件をすべて選んでね", "a": ["燃える物", "酸素", "発火点以上の温度"], "choices": ["二酸化炭素", "燃える物", "酸素", "発火点以上の温度"], "note": "燃焼には燃える物、酸素、十分な温度が必要。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c024-candle", "comp": "化学編", "pref": "燃焼", "cat": "ろうそくの燃焼", "type": "single", "q": "ろうそくで実際に気体となって燃えているものはどれ？", "a": ["ろうの蒸気"], "choices": ["ろうの蒸気", "しんの灰", "固体のろうだけ", "二酸化炭素"], "note": "とけたろうがしんを上がり、気体になって燃える。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c025-metal-burning", "comp": "化学編", "pref": "燃焼", "cat": "金属の燃焼", "type": "single", "q": "スチールウールを十分に燃やすと、燃える前より質量はどうなる？", "a": ["増える"], "choices": ["減る", "0になる", "変わらない", "増える"], "note": "空気中の酸素と結びつくので増える。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c026-rust", "comp": "化学編", "pref": "化学変化", "cat": "さび", "type": "single", "q": "鉄がさびるために必要なものの組み合わせはどれ？", "a": ["水と酸素"], "choices": ["二酸化炭素だけ", "水と酸素", "酸素だけ", "水だけ"], "note": "鉄さびには水と酸素が必要。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c027-acid", "comp": "化学編", "pref": "水溶液", "cat": "酸性水溶液", "type": "multi", "q": "酸性の水溶液をすべて選んでね", "a": ["塩酸", "食酢"], "choices": ["塩酸", "アンモニア水", "石灰水", "食酢"], "note": "塩酸や食酢は酸性、石灰水とアンモニア水はアルカリ性。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c028-alkali", "comp": "化学編", "pref": "水溶液", "cat": "アルカリ性水溶液", "type": "single", "q": "次のうちアルカリ性の水溶液はどれ？", "a": ["石灰水"], "choices": ["石灰水", "食酢", "炭酸水", "うすい塩酸"], "note": "石灰水は水酸化カルシウムの水溶液。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c029-litmus", "comp": "化学編", "pref": "水溶液", "cat": "リトマス紙", "type": "single", "q": "青色リトマス紙を赤色に変える水溶液はどれ？", "a": ["うすい塩酸"], "choices": ["食塩水", "うすい塩酸", "石灰水", "アンモニア水"], "note": "酸性は青→赤、アルカリ性は赤→青。中性はどちらも変えない。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c030-btb", "comp": "化学編", "pref": "水溶液", "cat": "BTB溶液", "type": "single", "q": "中性の水溶液にBTB溶液を加えたときの色はどれ？", "a": ["緑色"], "choices": ["赤色", "黄色", "緑色", "青色"], "note": "BTBは酸性が黄色、中性が緑、アルカリ性が青。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c031-neutralization", "comp": "化学編", "pref": "水溶液", "cat": "中和", "type": "single", "q": "酸性水溶液とアルカリ性水溶液が互いの性質を打ち消す反応を何という？", "a": ["中和"], "choices": ["中和", "燃焼", "蒸発", "凝結"], "note": "中和では水と塩ができる。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c032-salt", "comp": "化学編", "pref": "水溶液", "cat": "中和でできる塩", "type": "single", "q": "塩酸と水酸化ナトリウム水溶液を中和させるとできる物質はどれ？", "a": ["食塩"], "choices": ["炭酸カルシウム", "砂糖", "食塩", "アンモニア"], "note": "塩酸＋水酸化ナトリウム水溶液→食塩＋水。蒸発させると食塩が残る。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c033-limewater", "comp": "化学編", "pref": "気体", "cat": "石灰水の反応", "type": "single", "q": "二酸化炭素を石灰水に長時間通し続けると、いったんできた白いにごりはどうなる？", "a": ["消えて透明になる"], "choices": ["さらに濃くなるだけ", "赤色になる", "固体が燃える", "消えて透明になる"], "note": "二酸化炭素が多すぎると、水にとける炭酸水素カルシウムに変わるため、にごりが消える。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c034-identify-solution", "comp": "化学編", "pref": "実験", "cat": "水溶液の見分け", "type": "single", "q": "食塩水と砂糖水を区別するために最も適した方法はどれ？", "a": ["蒸発させて残った物質を加熱する"], "choices": ["蒸発させて残った物質を加熱する", "色を見るだけ", "においを直接かぐ", "ろ紙を通すだけ"], "note": "砂糖は加熱でこげるが、食塩はこげない。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c035-mass-conservation", "comp": "化学編", "pref": "化学変化", "cat": "質量保存", "type": "single", "q": "密閉容器内で化学変化が起きたとき、反応前後の全体の質量はどうなる？", "a": ["等しい"], "choices": ["気体ができると0になる", "必ず増える", "必ず減る", "等しい"], "note": "出入りのない容器では物質全体の質量は保存される。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c036-catalyst", "comp": "化学編", "pref": "化学変化", "cat": "触媒", "type": "single", "q": "過酸化水素水から酸素を発生させたあとの二酸化マンガンはどうなる？", "a": ["ほとんど変化せず残る"], "choices": ["水に完全にとける", "質量が必ず2倍になる", "すべて酸素になる", "ほとんど変化せず残る"], "note": "触媒は反応を助けるが、自身はほとんど変化しない。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c037-air-composition", "comp": "化学編", "pref": "気体", "cat": "空気の成分", "type": "single", "q": "空気に最も多くふくまれる気体はどれ？", "a": ["窒素"], "choices": ["窒素", "酸素", "二酸化炭素", "アルゴン"], "note": "空気は窒素が約78％、酸素が約21％。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c038-air-oxygen", "comp": "化学編", "pref": "気体", "cat": "空気中の酸素", "type": "single", "q": "空気にふくまれる酸素の体積の割合はおよそ何％？", "a": ["21％"], "choices": ["0.04％", "21％", "78％", "50％"], "note": "酸素は約21％、二酸化炭素は約0.04％。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c039-organic", "comp": "化学編", "pref": "燃焼", "cat": "有機物と無機物", "type": "single", "q": "燃やすと二酸化炭素が発生するもののなかまを何という？", "a": ["有機物"], "choices": ["無機物", "金属", "有機物", "鉱物"], "note": "有機物は炭素をふくむので、燃やすと二酸化炭素ができる。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c040-flame", "comp": "化学編", "pref": "燃焼", "cat": "炎のつくり", "type": "single", "q": "ろうそくの炎で最も温度が高い部分はどれ？", "a": ["外炎"], "choices": ["炎心", "内炎", "しん", "外炎"], "note": "外炎は空気にふれて完全に燃えるので最も高温。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c041-flame-soot", "comp": "化学編", "pref": "燃焼", "cat": "すすのつく場所", "type": "single", "q": "ろうそくの炎に金あみを入れると、すすが最もつきやすいのはどの部分？", "a": ["内炎"], "choices": ["内炎", "外炎", "炎心", "すすはつかない"], "note": "内炎は空気が足りず不完全燃焼して、炭素の粒（すす）が多い。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c042-closed-candle", "comp": "化学編", "pref": "燃焼", "cat": "集気びんの中の燃焼", "type": "single", "q": "集気びんの中でろうそくを燃やすと火が消えた。びんの中の酸素はどうなっている？", "a": ["減っているが、まだ残っている"], "choices": ["まったくなくなっている", "減っているが、まだ残っている", "増えている", "変わっていない"], "note": "酸素の割合が約16％より下がると火は消える。0にはならない。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c043-burner", "comp": "化学編", "pref": "実験", "cat": "ガスバーナー", "type": "single", "q": "ガスバーナーに火をつけるとき、正しい順序はどれ？", "a": ["元せん→ガス調節ねじ→空気調節ねじ"], "choices": ["空気調節ねじ→ガス調節ねじ→元せん", "ガス調節ねじ→元せん→空気調節ねじ", "元せん→ガス調節ねじ→空気調節ねじ", "空気調節ねじ→元せん→ガス調節ねじ"], "note": "元せんを開き、火を近づけてガス調節ねじ、最後に空気調節ねじ。消すときは逆順。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c044-alcohol-lamp", "comp": "化学編", "pref": "実験", "cat": "アルコールランプ", "type": "single", "q": "アルコールランプの火を消すときの正しい方法はどれ？", "a": ["ふたを横からかぶせる"], "choices": ["息をふきかける", "水をかける", "ふたをせずに放置する", "ふたを横からかぶせる"], "note": "上から近づけると危険。横からふたをかぶせて空気を断つ。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c045-cylinder", "comp": "化学編", "pref": "実験", "cat": "メスシリンダー", "type": "single", "q": "メスシリンダーで水の体積を読むとき、目を合わせる位置はどこ？", "a": ["液面のへこんだ面の底と同じ高さ"], "choices": ["液面のへこんだ面の底と同じ高さ", "液面より上から見おろす", "液面より下からのぞく", "目盛りの一番上"], "note": "真横から、へこんだ面の底を最小目盛りの10分の1まで読む。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c046-filtration-method", "comp": "化学編", "pref": "実験", "cat": "ろ過の操作", "type": "single", "q": "ろ過の操作として正しいものはどれ？", "a": ["ろうとの足のとがった方をビーカーの内側の壁につける"], "choices": ["液をろうとに直接いきおいよく注ぐ", "ろうとの足のとがった方をビーカーの内側の壁につける", "ろ紙は水でぬらさずに使う", "ろうとの足を液の中に深く入れる"], "note": "液はガラス棒を伝わらせて注ぎ、ろ紙は水でぬらしてろうとに密着させる。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c047-distillation", "comp": "化学編", "pref": "実験", "cat": "蒸留", "type": "single", "q": "食塩水を加熱し、出てきた水蒸気を冷やして水を取り出す方法を何という？", "a": ["蒸留"], "choices": ["ろ過", "再結晶", "蒸留", "中和"], "note": "沸点のちがいを利用して分ける方法。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "c048-boiling-bubble", "comp": "化学編", "pref": "物質", "cat": "沸騰のあわ", "type": "single", "q": "水を熱し続けたとき、さかんに出てくるあわの正体はどれ？", "a": ["水蒸気"], "choices": ["空気", "酸素", "二酸化炭素", "水蒸気"], "note": "あわは水が気体になった水蒸気。冷やすと水にもどる。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c049-ice-volume", "comp": "化学編", "pref": "物質", "cat": "水と氷の体積", "type": "single", "q": "水が氷になると、体積はどうなる？", "a": ["増える"], "choices": ["増える", "減る", "変わらない", "半分になる"], "note": "水は氷になると約1.1倍に体積が増える。重さは変わらない。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c050-water-4c", "comp": "化学編", "pref": "物質", "cat": "水の体積が最小の温度", "type": "single", "q": "水の温度を0℃から4℃まで上げると、体積はどうなる？", "a": ["小さくなる"], "choices": ["大きくなる", "小さくなる", "変わらない", "2倍になる"], "note": "水は4℃のとき体積が最も小さい（同じ重さでいちばん重い）。", "region": "化学", "badgeCat": "物質の変化"},
+  {"id": "c051-solubility-temp", "comp": "化学編", "pref": "水溶液", "cat": "温度と溶解度", "type": "single", "q": "水の温度を上げても、とける量がほとんど変わらない物質はどれ？", "a": ["食塩"], "choices": ["ミョウバン", "ホウ酸", "食塩", "硝酸カリウム"], "note": "食塩は温度でほとんど変わらないので、再結晶では取り出しにくい。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c052-solubility-curve", "comp": "化学編", "pref": "水溶液", "cat": "結晶が出る量の計算", "type": "single", "q": "60℃の水100gにミョウバンを57gとかした。20℃では100gの水に11gしかとけないとすると、冷やしたとき出てくる結晶は何g？", "a": ["46g"], "choices": ["11g", "34g", "40g", "46g"], "note": "57－11＝46g。とけきれなくなった分が結晶になる。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c053-recrystal-fit", "comp": "化学編", "pref": "水溶液", "cat": "再結晶に向く物質", "type": "single", "q": "冷やして結晶を取り出す方法（再結晶）に向いている物質はどれ？", "a": ["ミョウバン"], "choices": ["ミョウバン", "食塩", "水", "でんぷん"], "note": "温度で溶解度が大きく変わる物質ほど、再結晶で多く取り出せる。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c054-solution-mass", "comp": "化学編", "pref": "水溶液", "cat": "水溶液の重さ", "type": "single", "q": "水95gに食塩5gを完全にとかすと、できた食塩水の重さは何g？", "a": ["100g"], "choices": ["95g", "100g", "105g", "5g"], "note": "水溶液の重さ＝水の重さ＋とかした物の重さ。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c055-concentration-dilute", "comp": "化学編", "pref": "水溶液", "cat": "うすめる計算", "type": "single", "q": "20％の食塩水100gに水を100g加えると、濃度は何％になる？", "a": ["10％"], "choices": ["5％", "8％", "10％", "20％"], "note": "食塩は20gのまま、全体が200gになるので20÷200＝10％。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c056-concentration-mix", "comp": "化学編", "pref": "水溶液", "cat": "混ぜる計算", "type": "single", "q": "10％の食塩水100gと20％の食塩水100gを混ぜると、濃度は何％になる？", "a": ["15％"], "choices": ["10％", "12％", "13％", "15％"], "note": "食塩は10＋20＝30g、全体は200g。30÷200＝15％。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c057-metal-acid", "comp": "化学編", "pref": "化学変化", "cat": "金属と塩酸", "type": "single", "q": "うすい塩酸を加えると、水素を出してとける金属はどれ？", "a": ["アルミニウム"], "choices": ["アルミニウム", "銅", "金", "銀"], "note": "アルミニウム・鉄・亜鉛・マグネシウムは塩酸にとけて水素が出る。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c058-alkali-metal", "comp": "化学編", "pref": "化学変化", "cat": "両方にとける金属", "type": "single", "q": "うすい塩酸にも水酸化ナトリウム水溶液にもとけて、水素を出す金属はどれ？", "a": ["アルミニウム"], "choices": ["鉄", "アルミニウム", "銅", "銀"], "note": "アルミニウムは酸にもアルカリにもとける。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c059-copper-acid", "comp": "化学編", "pref": "化学変化", "cat": "塩酸にとけない金属", "type": "single", "q": "うすい塩酸に入れても変化しない金属はどれ？", "a": ["銅"], "choices": ["鉄", "アルミニウム", "銅", "マグネシウム"], "note": "銅・銀・金はうすい塩酸にとけない。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c060-limestone-graph", "comp": "化学編", "pref": "化学変化", "cat": "反応の限界", "type": "single", "q": "石灰石にうすい塩酸を加え続けると、発生する二酸化炭素の量は最後にはどうなる？", "a": ["それ以上増えなくなる"], "choices": ["増え続ける", "減り始める", "0にもどる", "それ以上増えなくなる"], "note": "石灰石が全部反応してなくなると、それ以上気体は出ない。グラフは横ばいになる。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c061-neutral-calc", "comp": "化学編", "pref": "水溶液", "cat": "中和の計算", "type": "single", "q": "うすい塩酸50cm³をちょうど中和するのに水酸化ナトリウム水溶液が40cm³必要だった。同じ塩酸100cm³をちょうど中和するには何cm³必要？", "a": ["80cm³"], "choices": ["80cm³", "50cm³", "60cm³", "160cm³"], "note": "塩酸が2倍なら必要な量も2倍。40×2＝80cm³。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c062-neutral-evaporate", "comp": "化学編", "pref": "水溶液", "cat": "中和後の蒸発", "type": "single", "q": "塩酸と水酸化ナトリウム水溶液をちょうど中和させた液を蒸発させると、あとに残るものはどれ？", "a": ["食塩"], "choices": ["何も残らない", "食塩", "水酸化ナトリウム", "石灰"], "note": "中和すると水と食塩ができる。水は蒸発し、食塩が残る。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c063-smell", "comp": "化学編", "pref": "水溶液", "cat": "においのある水溶液", "type": "multi", "q": "鼻をさすようなにおいのある水溶液をすべて選んでね", "a": ["うすい塩酸", "アンモニア水", "食酢"], "choices": ["うすい塩酸", "アンモニア水", "食酢", "食塩水"], "note": "気体や酢酸がとけた水溶液はにおいがある。食塩水は無臭。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c064-evaporate-nothing", "comp": "化学編", "pref": "水溶液", "cat": "蒸発させると何も残らない", "type": "single", "q": "蒸発させても、あとに何も残らない水溶液はどれ？", "a": ["炭酸水"], "choices": ["食塩水", "石灰水", "炭酸水", "砂糖水"], "note": "気体がとけた水溶液（炭酸水・塩酸・アンモニア水）は何も残らない。", "region": "化学", "badgeCat": "水溶液"},
+  {"id": "c065-upward", "comp": "化学編", "pref": "気体", "cat": "上方置換法", "type": "single", "q": "水にとけやすく、空気より軽い気体を集めるのに適した方法はどれ？", "a": ["上方置換法"], "choices": ["水上置換法", "下方置換法", "ろ過", "上方置換法"], "note": "水にとける気体は置換法。空気より軽ければ上方、重ければ下方。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c066-ammonia-collect", "comp": "化学編", "pref": "気体", "cat": "集め方の選び方", "type": "single", "q": "上方置換法で集めるのに適した気体はどれ？", "a": ["アンモニア"], "choices": ["アンモニア", "二酸化炭素", "酸素", "水素"], "note": "アンモニアは水にとけやすく空気より軽いので上方置換。水素は水にとけにくいので水上置換。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c067-nitrogen", "comp": "化学編", "pref": "気体", "cat": "窒素", "type": "single", "q": "窒素の性質として正しいものはどれ？", "a": ["無色無臭で、ものを燃やすはたらきがない"], "choices": ["刺激臭がある", "無色無臭で、ものを燃やすはたらきがない", "石灰水を白くにごらせる", "火をつけると爆発する"], "note": "窒素は空気の約78％。他の物質と反応しにくい。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c068-gas-weight", "comp": "化学編", "pref": "気体", "cat": "気体の重さ", "type": "single", "q": "空気より軽い気体はどれ？", "a": ["水素"], "choices": ["酸素", "二酸化炭素", "水素", "塩素"], "note": "水素は最も軽い気体。アンモニアも空気より軽い。", "region": "化学", "badgeCat": "気体"},
+  {"id": "c069-carbonated", "comp": "化学編", "pref": "気体", "cat": "炭酸水", "type": "single", "q": "二酸化炭素がとけた水（炭酸水）は何性？", "a": ["酸性"], "choices": ["アルカリ性", "中性", "強いアルカリ性", "酸性"], "note": "炭酸水は弱い酸性。青色リトマス紙を赤色に変える。", "region": "化学", "badgeCat": "酸・アルカリ"},
+  {"id": "c070-steel-wool-acid", "comp": "化学編", "pref": "燃焼", "cat": "燃やす前と後のちがい", "type": "single", "q": "スチールウール（鉄）を燃やしてできた物質にうすい塩酸を加えると、燃やす前の鉄と比べてどうなる？", "a": ["あわがほとんど出ない"], "choices": ["あわがほとんど出ない", "同じようにあわが出る", "より激しくあわが出る", "水素が2倍出る"], "note": "燃やしてできた物質は鉄とは別の物質なので、性質もちがう。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c071-copper-oxide", "comp": "化学編", "pref": "化学変化", "cat": "銅の加熱", "type": "single", "q": "銅を空気中で十分に加熱すると、何色に変わる？", "a": ["黒色"], "choices": ["白色", "黒色", "赤色", "銀色"], "note": "銅＋酸素→酸化銅（黒色）。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c072-copper-ratio", "comp": "化学編", "pref": "化学変化", "cat": "結びつく重さの計算", "type": "single", "q": "銅4gを十分に加熱すると酸化銅5gができる。銅8gを十分に加熱すると酸化銅は何gできる？", "a": ["10g"], "choices": ["8g", "9g", "10g", "16g"], "note": "銅：酸化銅＝4：5。8gなら10g。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c073-magnesium-ratio", "comp": "化学編", "pref": "化学変化", "cat": "結びついた酸素の量", "type": "single", "q": "マグネシウム3gを十分に加熱すると酸化マグネシウム5gができた。結びついた酸素は何g？", "a": ["2g"], "choices": ["8g", "5g", "3g", "2g"], "note": "5－3＝2g。増えた分が結びついた酸素の重さ。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c074-baking-soda", "comp": "化学編", "pref": "化学変化", "cat": "重そうの加熱", "type": "single", "q": "炭酸水素ナトリウム（重そう）を加熱すると発生する気体はどれ？", "a": ["二酸化炭素"], "choices": ["二酸化炭素", "酸素", "水素", "アンモニア"], "note": "ホットケーキがふくらむのは、重そうから二酸化炭素が出るため。", "region": "化学", "badgeCat": "燃焼・化学変化"},
+  {"id": "c075-mixture", "comp": "化学編", "pref": "物質", "cat": "混合物", "type": "single", "q": "いくつかの物質が混ざった「混合物」にあたるものはどれ？", "a": ["空気"], "choices": ["酸素", "空気", "水", "食塩"], "note": "空気は窒素・酸素などの混合物。食塩水も混合物。", "region": "化学", "badgeCat": "物質の性質"},
+  {"id": "c076-safety-smell", "comp": "化学編", "pref": "実験", "cat": "においのかぎ方", "type": "single", "q": "薬品のにおいを調べるときの正しい方法はどれ？", "a": ["手であおいでかぐ"], "choices": ["容器に鼻を近づけて深く吸いこむ", "少し口に入れる", "手であおいでかぐ", "においはかがない"], "note": "直接かぐと危険。手であおいで少しだけかぐ。", "region": "化学", "badgeCat": "実験操作"},
+  {"id": "g009-solubility-read", "comp": "化学編", "pref": "水溶液", "cat": "グラフの読み取り", "type": "single", "q": "60℃の水100gにミョウバンをとけるだけとかし、20℃まで冷やすと、出てくる結晶はおよそ何g？", "a": ["46g"], "choices": ["57g", "11g", "24g", "46g"], "note": "60℃で57g、20℃で11gとける。57－11＝46g。", "region": "化学", "badgeCat": "水溶液", "image": "g009-solubility-graph.png"},
+  {"id": "g010-limestone-read", "comp": "化学編", "pref": "化学変化", "cat": "グラフの読み取り", "type": "single", "q": "石灰石1gをすべて反応させるには、うすい塩酸が少なくとも何cm³必要？", "a": ["30cm³"], "choices": ["30cm³", "20cm³", "60cm³", "40cm³"], "note": "30cm³をこえるとグラフが横ばい。それ以上加えても気体は増えない。", "region": "化学", "badgeCat": "燃焼・化学変化", "image": "g010-limestone-graph.png"},
+  {"id": "g011-neutral-read", "comp": "化学編", "pref": "水溶液", "cat": "グラフの読み取り", "type": "single", "q": "うすい塩酸20cm³がちょうど中和されたのは、水酸化ナトリウム水溶液を何cm³加えたとき？", "a": ["30cm³"], "choices": ["30cm³", "20cm³", "50cm³", "10cm³"], "note": "30cm³までは食塩だけが増える。それ以降は残った水酸化ナトリウムが加わり、増え方（傾き）が変わる。", "region": "化学", "badgeCat": "酸・アルカリ", "image": "g011-neutral-graph.png"},
+  {"id": "g012-metal-read", "comp": "化学編", "pref": "化学変化", "cat": "グラフの読み取り", "type": "single", "q": "同じ重さで比べると、アルミニウムから発生する水素は鉄の何倍？", "a": ["3倍"], "choices": ["3倍", "2倍", "3分の1", "4倍"], "note": "1gあたりアルミニウムは1200cm³、鉄は400cm³。1200÷400＝3倍。", "region": "化学", "badgeCat": "燃焼・化学変化", "image": "g012-metal-acid-graph.png"},
+  {"id": "g013-heating-read", "comp": "化学編", "pref": "物質", "cat": "グラフの読み取り", "type": "single", "q": "氷がとけている（固体から液体に変わっている）のは、ア・イ・ウのどこ？", "a": ["ア"], "choices": ["ウ", "アとウ", "ア", "イ"], "note": "0℃で温度が変わらないアが融解。100℃で平らなウは沸騰。イは液体の水があたたまっている。", "region": "化学", "badgeCat": "物質の変化", "image": "g013-heating-ice-graph.png"},
+  {"id": "g014-copper-read", "comp": "化学編", "pref": "化学変化", "cat": "グラフの読み取り", "type": "single", "q": "銅3.2gを十分に加熱すると、酸化銅は何gできる？", "a": ["4.0g"], "choices": ["4.4g", "4.0g", "3.6g", "8.0g"], "note": "銅：酸化銅＝4：5の比例。3.2×1.25＝4.0g。", "region": "化学", "badgeCat": "燃焼・化学変化", "image": "g014-copper-graph.png"},
+  {"id": "g015-gas-read", "comp": "化学編", "pref": "気体", "cat": "グラフの読み取り", "type": "single", "q": "このグラフからわかることとして正しいものはどれ？", "a": ["水の温度が高いほど、とける気体の量は少なくなる"], "choices": ["水の温度が高いほど、とける気体の量は少なくなる", "温度が変わってもとける量は変わらない", "酸素は二酸化炭素よりとけやすい", "水の温度が高いほど、とける気体の量は多くなる"], "note": "気体は固体と逆で、温度が上がるととける量が減る。夏に川の魚が苦しくなる理由。", "region": "化学", "badgeCat": "気体", "image": "g015-gas-solubility-graph.png"},
+  {"id": "g016-candle-read", "comp": "化学編", "pref": "燃焼", "cat": "グラフの読み取り", "type": "single", "q": "火が消えた後の集気びんの中の酸素について、正しいものはどれ？", "a": ["減ったが、まだ16％ほど残っている"], "choices": ["減ったが、まだ16％ほど残っている", "変わっていない", "すべて使われて0％になっている", "燃やす前より増えている"], "note": "酸素の割合が約16％より下がると火は消える。酸素がなくなるわけではない。", "region": "化学", "badgeCat": "燃焼・化学変化", "image": "g016-candle-oxygen-graph.png"},
+  {"id": "b001-flower", "comp": "生物編", "pref": "植物", "cat": "花のつくり", "type": "single", "q": "花粉がつくられる部分はどれ？", "a": ["やく"], "choices": ["子房", "やく", "がく", "柱頭"], "note": "おしべの先の「やく」で花粉ができる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b002-pollination", "comp": "生物編", "pref": "植物", "cat": "受粉", "type": "single", "q": "花粉がめしべの柱頭につくことを何という？", "a": ["受粉"], "choices": ["発芽", "受粉", "結実", "受精"], "note": "受粉のあと、花粉管がのびて受精へ進む。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b003-fertilization", "comp": "生物編", "pref": "植物", "cat": "受精", "type": "single", "q": "花粉から出た花粉管が胚珠に達し、中身が結びつくことを何という？", "a": ["受精"], "choices": ["発芽", "蒸散", "受粉", "受精"], "note": "受粉は花粉が柱頭につくこと、受精はそのあと胚珠の中で結びつくこと。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b004-seed-fruit", "comp": "生物編", "pref": "植物", "cat": "種子と果実", "type": "single", "q": "受精後、胚珠は何になる？", "a": ["種子"], "choices": ["花粉", "果実", "葉", "種子"], "note": "胚珠は種子、子房は果実になる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b005-germination", "comp": "生物編", "pref": "植物", "cat": "発芽の条件", "type": "multi", "q": "多くの種子の発芽に必要な条件をすべて選んでね", "a": ["水", "空気", "適当な温度"], "choices": ["日光", "水", "空気", "適当な温度"], "note": "発芽に必要なのは水、空気、適温。日光は必須ではない。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b006-seed-nutrient", "comp": "生物編", "pref": "植物", "cat": "種子の養分", "type": "single", "q": "インゲンマメの種子で、発芽に使う養分をたくわえる部分はどれ？", "a": ["子葉"], "choices": ["幼根", "胚乳", "種皮", "子葉"], "note": "マメ類は大きな子葉に養分をたくわえる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b007-root-hair", "comp": "生物編", "pref": "植物", "cat": "根の吸水", "type": "single", "q": "根毛が多数ある主な利点はどれ？", "a": ["水や養分を吸収する表面積が大きくなる"], "choices": ["光合成ができる", "根を重くできる", "花粉を運べる", "水や養分を吸収する表面積が大きくなる"], "note": "細い根毛が土とふれる面積を広げる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b008-vessels", "comp": "生物編", "pref": "植物", "cat": "道管と師管", "type": "single", "q": "根から吸収した水が主に通る管はどれ？", "a": ["道管"], "choices": ["血管", "道管", "気管", "師管"], "note": "水は道管、葉でできた養分は師管。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b009-transpiration", "comp": "生物編", "pref": "植物", "cat": "蒸散", "type": "single", "q": "植物の葉から水蒸気が出ていくはたらきを何という？", "a": ["蒸散"], "choices": ["蒸散", "呼吸", "蒸発", "受粉"], "note": "蒸散は根から水を吸い上げる力にもなる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b010-stomata", "comp": "生物編", "pref": "植物", "cat": "気孔", "type": "single", "q": "多くの陸上植物で、気孔が多く見られる葉の部分はどこ？", "a": ["裏側の表皮"], "choices": ["葉の中心だけ", "表側の葉脈だけ", "裏側の表皮", "根の先端"], "note": "多くの陸上植物では葉の裏に気孔が多い。", "region": "生物", "badgeCat": "植物"},
   {"id": "b011-photosynthesis", "comp": "生物編", "pref": "植物", "cat": "光合成", "type": "single", "q": "光合成で植物が取り入れる気体はどれ？", "a": ["二酸化炭素"], "choices": ["酸素", "二酸化炭素", "窒素", "水素"], "note": "光合成では二酸化炭素と水から養分をつくり、酸素を出す。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b012-plant-respiration", "comp": "生物編", "pref": "植物", "cat": "植物の呼吸", "type": "single", "q": "植物が呼吸で取り入れる気体はどれ？", "a": ["酸素"], "choices": ["二酸化炭素", "酸素", "水素", "アンモニア"], "note": "植物も昼夜を通して呼吸し、酸素を使う。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b013-starch-test", "comp": "生物編", "pref": "植物", "cat": "光合成の実験", "type": "single", "q": "葉にできたでんぷんを調べる薬品はどれ？", "a": ["ヨウ素液"], "choices": ["石灰水", "ヨウ素液", "BTB溶液", "リトマス液"], "note": "ヨウ素液はでんぷんで青紫色になる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b014-cotyledon", "comp": "生物編", "pref": "植物", "cat": "単子葉類と双子葉類", "type": "single", "q": "平行な葉脈をもつことが多い植物はどれ？", "a": ["単子葉類"], "choices": ["双子葉類", "単子葉類", "シダ植物だけ", "コケ植物だけ"], "note": "単子葉類は平行脈、ひげ根が代表的。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b015-flower-type", "comp": "生物編", "pref": "植物", "cat": "単性花", "type": "single", "q": "雄花と雌花が分かれている植物はどれ？", "a": ["ヘチマ"], "choices": ["アブラナ", "サクラ", "ヘチマ", "エンドウ"], "note": "ヘチマやカボチャは雄花と雌花が分かれる。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b016-vegetative", "comp": "生物編", "pref": "植物", "cat": "栄養生殖", "type": "single", "q": "ジャガイモがいもから新しい個体をふやす方法はどれ？", "a": ["栄養生殖"], "choices": ["種子生殖", "栄養生殖", "受粉", "変態"], "note": "根・茎・葉などからふえるのが栄養生殖。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b017-phototropism", "comp": "生物編", "pref": "植物", "cat": "屈光性", "type": "single", "q": "植物の茎が光の方向へ曲がって成長する性質を何という？", "a": ["屈光性"], "choices": ["屈地性", "屈光性", "走性", "蒸散"], "note": "茎は光の方向へ、根は重力の方向へ成長しやすい。", "region": "生物", "badgeCat": "植物"},
-  {"id": "b018-microscope", "comp": "生物編", "pref": "観察", "cat": "顕微鏡", "type": "single", "q": "顕微鏡で観察を始めるとき、最初に使う対物レンズはどれ？", "a": ["低倍率"], "choices": ["高倍率", "低倍率", "どちらでも同じ", "対物レンズは使わない"], "note": "低倍率は視野が広く、観察物を見つけやすい。", "region": "生物", "badgeCat": "観察"},
-  {"id": "b019-insect-body", "comp": "生物編", "pref": "動物", "cat": "昆虫の体", "type": "single", "q": "昆虫のあしは何本？", "a": ["6本"], "choices": ["4本", "6本", "8本", "10本"], "note": "昆虫は頭・胸・腹に分かれ、胸に6本のあし。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b012-plant-respiration", "comp": "生物編", "pref": "植物", "cat": "植物の呼吸", "type": "single", "q": "植物が呼吸で取り入れる気体はどれ？", "a": ["酸素"], "choices": ["水素", "二酸化炭素", "アンモニア", "酸素"], "note": "植物も昼夜を通して呼吸し、酸素を使う。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b013-starch-test", "comp": "生物編", "pref": "植物", "cat": "光合成の実験", "type": "single", "q": "葉にできたでんぷんを調べる薬品はどれ？", "a": ["ヨウ素液"], "choices": ["ヨウ素液", "石灰水", "リトマス液", "BTB溶液"], "note": "ヨウ素液はでんぷんで青紫色になる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b014-cotyledon", "comp": "生物編", "pref": "植物", "cat": "単子葉類と双子葉類", "type": "single", "q": "平行な葉脈をもつことが多い植物はどれ？", "a": ["単子葉類"], "choices": ["双子葉類", "シダ植物だけ", "単子葉類", "コケ植物だけ"], "note": "単子葉類は平行脈、ひげ根が代表的。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b015-flower-type", "comp": "生物編", "pref": "植物", "cat": "単性花", "type": "single", "q": "雄花と雌花が分かれている植物はどれ？", "a": ["ヘチマ"], "choices": ["アブラナ", "ヘチマ", "エンドウ", "サクラ"], "note": "ヘチマやカボチャは雄花と雌花が分かれる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b016-vegetative", "comp": "生物編", "pref": "植物", "cat": "栄養生殖", "type": "single", "q": "ジャガイモがいもから新しい個体をふやす方法はどれ？", "a": ["栄養生殖"], "choices": ["栄養生殖", "種子生殖", "変態", "受粉"], "note": "根・茎・葉などからふえるのが栄養生殖。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b017-phototropism", "comp": "生物編", "pref": "植物", "cat": "屈光性", "type": "single", "q": "植物の茎が光の方向へ曲がって成長する性質を何という？", "a": ["屈光性"], "choices": ["走性", "蒸散", "屈地性", "屈光性"], "note": "茎は光の方向へ、根は重力の方向へ成長しやすい。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b018-microscope", "comp": "生物編", "pref": "観察", "cat": "顕微鏡", "type": "single", "q": "顕微鏡で観察を始めるとき、最初に使う対物レンズはどれ？", "a": ["低倍率"], "choices": ["対物レンズは使わない", "高倍率", "どちらでも同じ", "低倍率"], "note": "低倍率は視野が広く、観察物を見つけやすい。", "region": "生物", "badgeCat": "観察"},
+  {"id": "b019-insect-body", "comp": "生物編", "pref": "動物", "cat": "昆虫の体", "type": "single", "q": "昆虫のあしは何本？", "a": ["6本"], "choices": ["10本", "6本", "4本", "8本"], "note": "昆虫は頭・胸・腹に分かれ、胸に6本のあし。", "region": "生物", "badgeCat": "動物"},
   {"id": "b020-metamorphosis", "comp": "生物編", "pref": "動物", "cat": "完全変態", "type": "single", "q": "卵→幼虫→さなぎ→成虫と育つ昆虫はどれ？", "a": ["モンシロチョウ"], "choices": ["バッタ", "トンボ", "モンシロチョウ", "セミ"], "note": "さなぎの時期があるのが完全変態。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b021-fish", "comp": "生物編", "pref": "動物", "cat": "魚類", "type": "single", "q": "魚類が水中の酸素を取り入れる器官はどれ？", "a": ["えら"], "choices": ["肺", "えら", "気管", "皮膚だけ"], "note": "魚類はえら呼吸をする。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b022-amphibian", "comp": "生物編", "pref": "動物", "cat": "両生類", "type": "single", "q": "カエルの子と成体の主な呼吸器官の組み合わせはどれ？", "a": ["子はえら、成体は肺と皮膚"], "choices": ["子も成体も肺だけ", "子はえら、成体は肺と皮膚", "子は気管、成体はえら", "子も成体も気孔"], "note": "水中生活の子から陸上でも生活する成体へ変化する。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b023-reptile", "comp": "生物編", "pref": "動物", "cat": "は虫類", "type": "single", "q": "は虫類の卵の特徴として正しいものはどれ？", "a": ["乾燥を防ぐ殻や膜がある"], "choices": ["水中に殻のない卵を産む", "乾燥を防ぐ殻や膜がある", "必ず親の体内で育つ", "卵を産まない"], "note": "陸上で育つ卵は乾燥を防ぐつくりをもつ。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b024-bird", "comp": "生物編", "pref": "動物", "cat": "鳥類", "type": "single", "q": "鳥類に共通する特徴はどれ？", "a": ["体が羽毛でおおわれる"], "choices": ["体温が外気と同じ", "体が羽毛でおおわれる", "えらで呼吸する", "子を乳で育てる"], "note": "鳥類は羽毛、肺呼吸、恒温、卵生。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b025-mammal", "comp": "生物編", "pref": "動物", "cat": "ほ乳類", "type": "single", "q": "ほ乳類に共通する特徴はどれ？", "a": ["子を乳で育てる"], "choices": ["必ず卵を産む", "子を乳で育てる", "えらで呼吸する", "体温が外気で大きく変わる"], "note": "ほ乳類は母乳で子を育てる。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b026-vertebrate", "comp": "生物編", "pref": "動物", "cat": "せきつい動物", "type": "multi", "q": "せきつい動物をすべて選んでね", "a": ["メダカ", "カエル", "ハト"], "choices": ["メダカ", "カエル", "ハト", "アサリ"], "note": "背骨をもつ動物がせきつい動物。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b027-invertebrate", "comp": "生物編", "pref": "動物", "cat": "無せきつい動物", "type": "single", "q": "軟体動物に分類されるものはどれ？", "a": ["アサリ"], "choices": ["ミミズ", "アサリ", "カブトムシ", "ヒトデ"], "note": "アサリやイカ、タコは軟体動物。", "region": "生物", "badgeCat": "動物"},
-  {"id": "b028-food-chain", "comp": "生物編", "pref": "生態", "cat": "食物連鎖", "type": "single", "q": "「草→バッタ→カエル→ヘビ」で、生産者はどれ？", "a": ["草"], "choices": ["草", "バッタ", "カエル", "ヘビ"], "note": "光合成で養分をつくる植物が生産者。", "region": "生物", "badgeCat": "生態系"},
-  {"id": "b029-decomposer", "comp": "生物編", "pref": "生態", "cat": "分解者", "type": "single", "q": "落ち葉や動物の死がいを分解する生物の代表はどれ？", "a": ["菌類や細菌"], "choices": ["鳥類やほ乳類", "菌類や細菌", "魚類だけ", "植物の根だけ"], "note": "分解者は有機物を無機物へ戻す。", "region": "生物", "badgeCat": "生態系"},
-  {"id": "b030-ecosystem", "comp": "生物編", "pref": "生態", "cat": "生態系のつり合い", "type": "single", "q": "食物連鎖の中でヘビが急に減ると、ヘビに食べられていたカエルは最初どうなりやすい？", "a": ["増える"], "choices": ["増える", "減る", "すぐ絶滅する", "必ず変わらない"], "note": "捕食者が減ると、えさになっていた生物は増えやすい。", "region": "生物", "badgeCat": "生態系"},
-  {"id": "b031-digestion", "comp": "生物編", "pref": "人体", "cat": "消化", "type": "single", "q": "だ液に含まれ、でんぷんを分解する消化酵素はどれ？", "a": ["アミラーゼ"], "choices": ["ペプシン", "アミラーゼ", "リパーゼ", "インスリン"], "note": "だ液のアミラーゼがでんぷんを糖へ分解する。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b032-human-respiration", "comp": "生物編", "pref": "人体", "cat": "呼吸", "type": "single", "q": "肺で酸素と二酸化炭素を交換する小さな袋状の部分はどれ？", "a": ["肺胞"], "choices": ["気管", "肺胞", "横隔膜", "心室"], "note": "肺胞は表面積が大きく、毛細血管に囲まれる。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b033-circulation", "comp": "生物編", "pref": "人体", "cat": "血液循環", "type": "single", "q": "心臓から全身へ血液を送り出す血管はどれ？", "a": ["動脈"], "choices": ["静脈", "動脈", "毛細血管", "リンパ管"], "note": "心臓から出るのが動脈、心臓へ戻るのが静脈。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b034-blood", "comp": "生物編", "pref": "人体", "cat": "血液の成分", "type": "single", "q": "酸素を運ぶはたらきをする血液の成分はどれ？", "a": ["赤血球"], "choices": ["白血球", "赤血球", "血小板", "血しょうだけ"], "note": "赤血球のヘモグロビンが酸素を運ぶ。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b035-kidney", "comp": "生物編", "pref": "人体", "cat": "排出", "type": "single", "q": "血液から不要な物質をこし取り、尿をつくる器官はどれ？", "a": ["腎臓"], "choices": ["肝臓", "腎臓", "すい臓", "胆のう"], "note": "腎臓は血液をろ過して尿をつくる。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b036-muscle", "comp": "生物編", "pref": "人体", "cat": "骨と筋肉", "type": "single", "q": "ひじを曲げるとき、上腕の前側の筋肉はどうなる？", "a": ["縮む"], "choices": ["縮む", "ゆるむ", "なくなる", "骨に変わる"], "note": "筋肉は縮むことで骨を引っ張る。", "region": "生物", "badgeCat": "人体"},
-  {"id": "b037-reflex", "comp": "生物編", "pref": "人体", "cat": "反射", "type": "single", "q": "熱いものに触れて思わず手を引く反応を何という？", "a": ["反射"], "choices": ["消化", "反射", "蒸散", "変態"], "note": "危険から体を守るすばやい反応が反射。", "region": "生物", "badgeCat": "人体"},
-  {"id": "e001-weathering", "comp": "地学編", "pref": "大地", "cat": "風化と侵食", "type": "single", "q": "岩石が気温の変化や水などで、もろく細かくなることを何という？", "a": ["風化"], "choices": ["侵食", "風化", "堆積", "凝結"], "note": "風化で細かくなり、流水などが侵食して運ぶ。", "region": "地学", "badgeCat": "大地"},
-  {"id": "e002-river-upper", "comp": "地学編", "pref": "大地", "cat": "川の上流", "type": "single", "q": "川の上流で多く見られる石の特徴はどれ？", "a": ["大きく角ばっている"], "choices": ["小さく丸い", "大きく角ばっている", "泥だけでできる", "すべて同じ大きさ"], "note": "上流は流れが速く、大きな石も運ぶが、まだ丸くなりにくい。", "region": "地学", "badgeCat": "大地"},
-  {"id": "e003-river-middle", "comp": "地学編", "pref": "大地", "cat": "川の中流", "type": "single", "q": "川の中流で川が曲がる場所では、侵食が強いのはどちら側？", "a": ["外側"], "choices": ["内側", "外側", "中央だけ", "両側とも必ず同じ"], "note": "外側は流れが速く侵食、内側は流れが遅く堆積。", "region": "地学", "badgeCat": "大地"},
-  {"id": "e004-river-lower", "comp": "地学編", "pref": "大地", "cat": "川の下流", "type": "single", "q": "川の下流や河口付近で起こりやすい作用はどれ？", "a": ["堆積"], "choices": ["侵食だけ", "運搬だけ", "堆積", "風化だけ"], "note": "流れが遅くなり、砂や泥が積もる。", "region": "地学", "badgeCat": "大地"},
-  {"id": "e005-sediment-order", "comp": "地学編", "pref": "地層", "cat": "堆積", "type": "single", "q": "れき・砂・泥を含む水を静かに置くと、最初に沈みやすいものはどれ？", "a": ["れき"], "choices": ["泥", "砂", "れき", "すべて同時"], "note": "粒が大きく重いものから沈みやすい。", "region": "地学", "badgeCat": "地層"},
-  {"id": "e006-sedimentary-rock", "comp": "地学編", "pref": "地層", "cat": "堆積岩", "type": "single", "q": "砂が固まってできた堆積岩はどれ？", "a": ["砂岩"], "choices": ["れき岩", "砂岩", "泥岩", "石灰岩"], "note": "粒の大きさで、れき岩・砂岩・泥岩を区別する。", "region": "地学", "badgeCat": "地層"},
+  {"id": "b021-fish", "comp": "生物編", "pref": "動物", "cat": "魚類", "type": "single", "q": "魚類が水中の酸素を取り入れる器官はどれ？", "a": ["えら"], "choices": ["えら", "皮膚だけ", "肺", "気管"], "note": "魚類はえら呼吸をする。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b022-amphibian", "comp": "生物編", "pref": "動物", "cat": "両生類", "type": "single", "q": "カエルの子と成体の主な呼吸器官の組み合わせはどれ？", "a": ["子はえら、成体は肺と皮膚"], "choices": ["子はえら、成体は肺と皮膚", "子も成体も気孔", "子も成体も肺だけ", "子は気管、成体はえら"], "note": "水中生活の子から陸上でも生活する成体へ変化する。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b023-reptile", "comp": "生物編", "pref": "動物", "cat": "は虫類", "type": "single", "q": "は虫類の卵の特徴として正しいものはどれ？", "a": ["乾燥を防ぐ殻や膜がある"], "choices": ["卵を産まない", "必ず親の体内で育つ", "水中に殻のない卵を産む", "乾燥を防ぐ殻や膜がある"], "note": "陸上で育つ卵は乾燥を防ぐつくりをもつ。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b024-bird", "comp": "生物編", "pref": "動物", "cat": "鳥類", "type": "single", "q": "鳥類に共通する特徴はどれ？", "a": ["体が羽毛でおおわれる"], "choices": ["えらで呼吸する", "体が羽毛でおおわれる", "子を乳で育てる", "体温が外気と同じ"], "note": "鳥類は羽毛、肺呼吸、恒温、卵生。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b025-mammal", "comp": "生物編", "pref": "動物", "cat": "ほ乳類", "type": "single", "q": "ほ乳類に共通する特徴はどれ？", "a": ["子を乳で育てる"], "choices": ["体温が外気で大きく変わる", "子を乳で育てる", "えらで呼吸する", "必ず卵を産む"], "note": "ほ乳類は母乳で子を育てる。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b026-vertebrate", "comp": "生物編", "pref": "動物", "cat": "せきつい動物", "type": "multi", "q": "せきつい動物をすべて選んでね", "a": ["メダカ", "カエル", "ハト"], "choices": ["ハト", "メダカ", "カエル", "アサリ"], "note": "背骨をもつ動物がせきつい動物。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b027-invertebrate", "comp": "生物編", "pref": "動物", "cat": "無せきつい動物", "type": "single", "q": "軟体動物に分類されるものはどれ？", "a": ["アサリ"], "choices": ["ミミズ", "ヒトデ", "アサリ", "カブトムシ"], "note": "アサリやイカ、タコは軟体動物。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b028-food-chain", "comp": "生物編", "pref": "生態", "cat": "食物連鎖", "type": "single", "q": "「草→バッタ→カエル→ヘビ」で、生産者はどれ？", "a": ["草"], "choices": ["バッタ", "草", "カエル", "ヘビ"], "note": "光合成で養分をつくる植物が生産者。", "region": "生物", "badgeCat": "生態系"},
+  {"id": "b029-decomposer", "comp": "生物編", "pref": "生態", "cat": "分解者", "type": "single", "q": "落ち葉や動物の死がいを分解する生物の代表はどれ？", "a": ["菌類や細菌"], "choices": ["鳥類やほ乳類", "植物の根だけ", "魚類だけ", "菌類や細菌"], "note": "分解者は有機物を無機物へ戻す。", "region": "生物", "badgeCat": "生態系"},
+  {"id": "b030-ecosystem", "comp": "生物編", "pref": "生態", "cat": "生態系のつり合い", "type": "single", "q": "食物連鎖の中でヘビが急に減ると、ヘビに食べられていたカエルは最初どうなりやすい？", "a": ["増える"], "choices": ["すぐ絶滅する", "必ず変わらない", "増える", "減る"], "note": "捕食者が減ると、えさになっていた生物は増えやすい。", "region": "生物", "badgeCat": "生態系"},
+  {"id": "b031-digestion", "comp": "生物編", "pref": "人体", "cat": "消化", "type": "single", "q": "だ液に含まれ、でんぷんを分解する消化酵素はどれ？", "a": ["アミラーゼ"], "choices": ["インスリン", "リパーゼ", "ペプシン", "アミラーゼ"], "note": "だ液のアミラーゼがでんぷんを糖へ分解する。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b032-human-respiration", "comp": "生物編", "pref": "人体", "cat": "呼吸", "type": "single", "q": "肺で酸素と二酸化炭素を交換する小さな袋状の部分はどれ？", "a": ["肺胞"], "choices": ["肺胞", "気管", "横隔膜", "心室"], "note": "肺胞は表面積が大きく、毛細血管に囲まれる。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b033-circulation", "comp": "生物編", "pref": "人体", "cat": "血液循環", "type": "single", "q": "心臓から全身へ血液を送り出す血管はどれ？", "a": ["動脈"], "choices": ["動脈", "毛細血管", "静脈", "リンパ管"], "note": "心臓から出るのが動脈、心臓へ戻るのが静脈。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b034-blood", "comp": "生物編", "pref": "人体", "cat": "血液の成分", "type": "single", "q": "酸素を運ぶはたらきをする血液の成分はどれ？", "a": ["赤血球"], "choices": ["血小板", "血しょうだけ", "赤血球", "白血球"], "note": "赤血球のヘモグロビンが酸素を運ぶ。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b035-kidney", "comp": "生物編", "pref": "人体", "cat": "排出", "type": "single", "q": "血液から不要な物質をこし取り、尿をつくる器官はどれ？", "a": ["腎臓"], "choices": ["胆のう", "肝臓", "すい臓", "腎臓"], "note": "腎臓は血液をろ過して尿をつくる。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b036-muscle", "comp": "生物編", "pref": "人体", "cat": "骨と筋肉", "type": "single", "q": "ひじを曲げるとき、上腕の前側の筋肉はどうなる？", "a": ["縮む"], "choices": ["骨に変わる", "なくなる", "縮む", "ゆるむ"], "note": "筋肉は縮むことで骨を引っ張る。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b037-reflex", "comp": "生物編", "pref": "人体", "cat": "反射", "type": "single", "q": "熱いものに触れて思わず手を引く反応を何という？", "a": ["反射"], "choices": ["蒸散", "消化", "変態", "反射"], "note": "危険から体を守るすばやい反応が反射。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b038-medaka-male", "comp": "生物編", "pref": "動物", "cat": "メダカのオスとメス", "type": "single", "q": "メダカのオスの特徴として正しいものはどれ？", "a": ["背びれに切れこみがある"], "choices": ["背びれに切れこみがある", "背びれがない", "腹が大きくふくらむ", "しりびれが小さい三角形"], "note": "オスは背びれに切れこみ、しりびれが平行四辺形に近い形。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b039-medaka-care", "comp": "生物編", "pref": "動物", "cat": "メダカの飼い方", "type": "single", "q": "メダカの水そうを置く場所として適切なものはどれ？", "a": ["日光が直接当たらない明るい場所"], "choices": ["一日中日光が直接当たる場所", "日光が直接当たらない明るい場所", "まったく光の入らない暗い場所", "暖房の風が当たる場所"], "note": "水温が上がりすぎない明るい場所がよい。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b040-medaka-water", "comp": "生物編", "pref": "動物", "cat": "メダカの水", "type": "single", "q": "メダカの水そうに入れる水として適切なものはどれ？", "a": ["くみおきした水道水"], "choices": ["入れたばかりの水道水", "湯ざまし", "くみおきした水道水", "食塩水"], "note": "水道水は1日ほどくみおきして、消毒用の薬品をぬく。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b041-medaka-egg", "comp": "生物編", "pref": "動物", "cat": "メダカの卵の変化", "type": "single", "q": "メダカの受精卵が育つとき、比較的早い時期にはっきり見えてくるものはどれ？", "a": ["目"], "choices": ["うろこ", "ひれ", "えら", "目"], "note": "黒い2つの点（目）が早くから目立ち、やがて心臓の動きも見える。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b042-human-womb", "comp": "生物編", "pref": "人体", "cat": "ヒトの誕生", "type": "single", "q": "ヒトの受精卵が育つ場所はどこ？", "a": ["子宮"], "choices": ["子宮", "卵巣", "たいばん", "胃"], "note": "受精は卵管で起こり、受精卵は子宮の中で育つ。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b043-umbilical", "comp": "生物編", "pref": "人体", "cat": "へそのお", "type": "single", "q": "へそのおのはたらきとして正しいものはどれ？", "a": ["母親と胎児の間で養分や不要物をやりとりする"], "choices": ["胎児を衝げきから守る", "母親と胎児の間で養分や不要物をやりとりする", "胎児の骨をつくる", "胎児が呼吸する空気を送る"], "note": "たいばんとへそのおで、養分や酸素と不要物を交換する。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b044-amniotic", "comp": "生物編", "pref": "人体", "cat": "羊水", "type": "single", "q": "羊水のはたらきとして正しいものはどれ？", "a": ["外からの衝げきから胎児を守る"], "choices": ["胎児に養分を送る", "胎児の不要物を運び出す", "外からの衝げきから胎児を守る", "胎児の呼吸を助ける"], "note": "羊水はクッションの役目。養分の受けわたしはへそのお。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b045-birth-weeks", "comp": "生物編", "pref": "人体", "cat": "誕生までの期間", "type": "single", "q": "ヒトは受精してからおよそどれくらいで生まれる？", "a": ["約38週"], "choices": ["約20週", "約28週", "約48週", "約38週"], "note": "受精からおよそ38週（約266日）。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b046-heart-chambers", "comp": "生物編", "pref": "人体", "cat": "心臓のつくり", "type": "single", "q": "ヒトの心臓はいくつの部屋に分かれている？", "a": ["4つ"], "choices": ["4つ", "2つ", "3つ", "5つ"], "note": "右心房・右心室・左心房・左心室の4つ。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b047-pulmonary", "comp": "生物編", "pref": "人体", "cat": "血液の流れ", "type": "single", "q": "肺で酸素を取り入れた血液が、最初にもどってくる心臓の部屋はどれ？", "a": ["左心房"], "choices": ["右心房", "左心房", "右心室", "左心室"], "note": "肺→左心房→左心室→全身。全身→右心房→右心室→肺。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b048-villi", "comp": "生物編", "pref": "人体", "cat": "小腸", "type": "single", "q": "小腸の内側にある、養分を吸収するための小さな突起を何という？", "a": ["柔毛（じゅう毛）"], "choices": ["肺胞", "気孔", "柔毛（じゅう毛）", "根毛"], "note": "たくさんの突起で表面積を広げ、効率よく吸収する。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b049-digestive-order", "comp": "生物編", "pref": "人体", "cat": "消化管の順序", "type": "single", "q": "食べ物が通る順序として正しいものはどれ？", "a": ["口→食道→胃→小腸→大腸"], "choices": ["口→胃→食道→小腸→大腸", "口→食道→小腸→胃→大腸", "口→食道→胃→大腸→小腸", "口→食道→胃→小腸→大腸"], "note": "消化管は口から肛門まで1本の管でつながっている。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b050-liver", "comp": "生物編", "pref": "人体", "cat": "肝臓", "type": "single", "q": "肝臓のはたらきとして正しいものはどれ？", "a": ["養分をたくわえたり、害のある物質を無害にする"], "choices": ["養分をたくわえたり、害のある物質を無害にする", "血液から尿をつくる", "空気を取り入れる", "食べ物をかみくだく"], "note": "肝臓は体の中の化学工場。たんじゅうもつくる。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b051-bile", "comp": "生物編", "pref": "人体", "cat": "たんじゅう", "type": "single", "q": "たんじゅう（胆汁）について正しいものはどれ？", "a": ["消化酵素をふくまないが、脂肪の消化を助ける"], "choices": ["でんぷんを分解する酵素をふくむ", "消化酵素をふくまないが、脂肪の消化を助ける", "胃でつくられる", "たんぱく質を直接分解する"], "note": "肝臓でつくられ、胆のうにためられる。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b052-saliva-exp", "comp": "生物編", "pref": "人体", "cat": "だ液の実験", "type": "single", "q": "だ液のはたらきを調べる実験で、試験管をあたためる温度として最も適切なのはどれ？", "a": ["約40℃"], "choices": ["約0℃", "約20℃", "約40℃", "約100℃"], "note": "だ液は体温くらい（約40℃）で最もよくはたらく。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b053-benedict", "comp": "生物編", "pref": "人体", "cat": "糖の検出", "type": "single", "q": "糖があるかを調べるために使い、加熱すると赤かっ色のにごりができる薬品はどれ？", "a": ["ベネジクト液"], "choices": ["ヨウ素液", "石灰水", "BTB溶液", "ベネジクト液"], "note": "でんぷんはヨウ素液（青紫）、糖はベネジクト液（赤かっ色）。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b054-breath-gas", "comp": "生物編", "pref": "人体", "cat": "呼気と吸気", "type": "single", "q": "はいた空気が、吸う空気と比べて増えている気体はどれ？", "a": ["二酸化炭素"], "choices": ["二酸化炭素", "酸素", "窒素", "水素"], "note": "二酸化炭素と水蒸気が増え、酸素は減る。窒素は変わらない。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b055-diaphragm", "comp": "生物編", "pref": "人体", "cat": "呼吸のしくみ", "type": "single", "q": "息を吸うとき、横かくまくはどうなる？", "a": ["下がる"], "choices": ["上がる", "下がる", "動かない", "左右に開く"], "note": "横かくまくが下がり、ろっ骨が上がって胸が広がる。", "region": "生物", "badgeCat": "人体"},
+  {"id": "b056-chloroplast", "comp": "生物編", "pref": "植物", "cat": "葉緑体", "type": "single", "q": "光合成が行われる、葉の細胞の中の緑色の粒を何という？", "a": ["葉緑体"], "choices": ["気孔", "道管", "葉緑体", "師管"], "note": "葉緑体で日光を受けてでんぷんをつくる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b057-photo-control", "comp": "生物編", "pref": "植物", "cat": "光合成の対照実験", "type": "single", "q": "ふ入りの葉（一部が白い葉）を使って光合成を調べるのは、何を確かめるため？", "a": ["葉緑体が必要かどうか"], "choices": ["水が必要かどうか", "空気が必要かどうか", "温度が関係するかどうか", "葉緑体が必要かどうか"], "note": "白い部分には葉緑体がないので、でんぷんができない。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b058-alcohol-decolor", "comp": "生物編", "pref": "植物", "cat": "葉の脱色", "type": "single", "q": "光合成の実験で、葉をあたためたアルコールにひたす理由はどれ？", "a": ["葉の緑色をぬいて、ヨウ素液の色の変化を見やすくするため"], "choices": ["葉の緑色をぬいて、ヨウ素液の色の変化を見やすくするため", "葉をやわらかくして切りやすくするため", "でんぷんを増やすため", "気孔を開かせるため"], "note": "アルコールは直接火にかけず、湯であたためる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b059-transpiration-exp", "comp": "生物編", "pref": "植物", "cat": "蒸散の実験", "type": "single", "q": "蒸散量を調べる実験で、葉の裏にワセリンをぬるのは何のため？", "a": ["葉の裏からの蒸散を止めるため"], "choices": ["葉の裏を観察しやすくするため", "葉の裏からの蒸散を止めるため", "葉の裏の温度を上げるため", "光合成を止めるため"], "note": "ぬった場所からは蒸散できなくなる。差を比べて場所ごとの量を求める。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b060-transpiration-calc", "comp": "生物編", "pref": "植物", "cat": "蒸散量の計算", "type": "single", "q": "何もしないと水が10g減る枝で、葉の裏だけにワセリンをぬると3gしか減らなかった。葉の裏からの蒸散はおよそ何g？", "a": ["7g"], "choices": ["3g", "5g", "7g", "10g"], "note": "10－3＝7g。ふさいだ分だけ減る量が小さくなる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b061-stomata-open", "comp": "生物編", "pref": "植物", "cat": "気孔のはたらき", "type": "single", "q": "気孔が開くと、主に行われやすくなるはたらきはどれ？", "a": ["蒸散と気体の出入り"], "choices": ["光合成だけ", "受粉", "栄養生殖", "蒸散と気体の出入り"], "note": "気孔は水蒸気・酸素・二酸化炭素の出入り口。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b062-dicot-stem", "comp": "生物編", "pref": "植物", "cat": "茎の維管束", "type": "single", "q": "双子葉類の茎の断面で、維管束はどのように並んでいる？", "a": ["輪のように並ぶ"], "choices": ["輪のように並ぶ", "ばらばらに散らばる", "中心に1本だけ", "外側にはない"], "note": "双子葉類は輪状、単子葉類はばらばら。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b063-monocot-root", "comp": "生物編", "pref": "植物", "cat": "単子葉類の根", "type": "single", "q": "単子葉類の根の特徴はどれ？", "a": ["ひげ根"], "choices": ["主根と側根", "ひげ根", "根がない", "根毛がない"], "note": "単子葉類はひげ根、双子葉類は主根と側根。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b064-fern", "comp": "生物編", "pref": "植物", "cat": "胞子でふえる植物", "type": "single", "q": "種子をつくらず、胞子でふえる植物はどれ？", "a": ["イヌワラビ"], "choices": ["アブラナ", "マツ", "イヌワラビ", "タンポポ"], "note": "シダ植物・コケ植物は胞子でふえる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b065-gymnosperm", "comp": "生物編", "pref": "植物", "cat": "裸子植物", "type": "multi", "q": "胚珠がむき出しで、子房がない植物をすべて選んでね", "a": ["マツ", "イチョウ"], "choices": ["マツ", "イチョウ", "サクラ", "アブラナ"], "note": "マツ・スギ・イチョウは裸子植物。果実ができない。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b066-wind-pollination", "comp": "生物編", "pref": "植物", "cat": "風媒花", "type": "single", "q": "風によって花粉が運ばれる花はどれ？", "a": ["トウモロコシ"], "choices": ["ヘチマ", "アブラナ", "ヒマワリ", "トウモロコシ"], "note": "マツ・イネ・トウモロコシは風媒花。花びらが目立たない。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b067-flower-order", "comp": "生物編", "pref": "植物", "cat": "花のつくりの順序", "type": "single", "q": "花のつくりを外側から順に並べたものはどれ？", "a": ["がく→花びら→おしべ→めしべ"], "choices": ["がく→花びら→おしべ→めしべ", "花びら→がく→めしべ→おしべ", "おしべ→めしべ→がく→花びら", "めしべ→おしべ→花びら→がく"], "note": "外側から、がく・花びら・おしべ・めしべ。中心はめしべ1本。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b068-insect-mouth", "comp": "生物編", "pref": "動物", "cat": "こん虫の口", "type": "single", "q": "モンシロチョウの口の形として正しいものはどれ？", "a": ["細長いストローのような形"], "choices": ["かみくだく形", "細長いストローのような形", "平たいブラシの形", "口がない"], "note": "チョウはみつを吸うストロー型、バッタはかみくだく型。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b069-incomplete-meta", "comp": "生物編", "pref": "動物", "cat": "不完全変態", "type": "single", "q": "さなぎの時期がない育ち方をするこん虫はどれ？", "a": ["トノサマバッタ"], "choices": ["カブトムシ", "モンシロチョウ", "トノサマバッタ", "アゲハ"], "note": "バッタ・トンボ・セミ・カマキリは不完全変態。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b070-winter-mantis", "comp": "生物編", "pref": "動物", "cat": "こん虫の冬ごし", "type": "single", "q": "オオカマキリが冬をこす姿はどれ？", "a": ["卵"], "choices": ["成虫", "幼虫", "さなぎ", "卵"], "note": "カマキリ・バッタ・コオロギは卵で冬をこす。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b071-winter-ladybug", "comp": "生物編", "pref": "動物", "cat": "こん虫の冬ごし", "type": "single", "q": "テントウムシが冬をこす姿はどれ？", "a": ["成虫"], "choices": ["成虫", "幼虫", "さなぎ", "卵"], "note": "テントウムシ・ミツバチは成虫、モンシロチョウはさなぎで冬ごし。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b072-migratory", "comp": "生物編", "pref": "動物", "cat": "わたり鳥", "type": "single", "q": "春に日本へやってきて、秋に南の国へ帰る鳥はどれ？", "a": ["ツバメ"], "choices": ["ハクチョウ", "ツバメ", "カモ", "ツグミ"], "note": "ツバメは夏鳥。ハクチョウ・カモは冬鳥。", "region": "生物", "badgeCat": "動物"},
+  {"id": "b073-rosette", "comp": "生物編", "pref": "植物", "cat": "植物の冬ごし", "type": "single", "q": "タンポポなどが、冬に葉を地面に広げた形で過ごすすがたを何という？", "a": ["ロゼット"], "choices": ["球根", "種子", "ロゼット", "胞子"], "note": "地面に近く風を受けにくいので、日光を受けながら寒さにたえられる。", "region": "生物", "badgeCat": "植物"},
+  {"id": "b074-microscope-mag", "comp": "生物編", "pref": "観察", "cat": "顕微鏡の倍率", "type": "single", "q": "接眼レンズが10倍、対物レンズが40倍のとき、顕微鏡の倍率は何倍？", "a": ["400倍"], "choices": ["4倍", "50倍", "30倍", "400倍"], "note": "倍率＝接眼×対物。10×40＝400倍。", "region": "生物", "badgeCat": "観察"},
+  {"id": "b075-microscope-move", "comp": "生物編", "pref": "観察", "cat": "像の動かし方", "type": "single", "q": "顕微鏡で見ている像を右下に動かしたいとき、プレパラートをどちらへ動かす？", "a": ["左上"], "choices": ["左上", "右下", "右上", "左下"], "note": "顕微鏡の像は上下左右が逆。動かしたい向きと反対へ動かす。", "region": "生物", "badgeCat": "観察"},
+  {"id": "b076-pond-life", "comp": "生物編", "pref": "観察", "cat": "水中の小さな生物", "type": "multi", "q": "けんび鏡で観察される、水中の小さな生物をすべて選んでね", "a": ["ミジンコ", "ゾウリムシ", "ミカヅキモ"], "choices": ["ミジンコ", "ゾウリムシ", "ミカヅキモ", "アメンボ"], "note": "アメンボは水面にいるこん虫で、肉眼で見える大きさ。", "region": "生物", "badgeCat": "観察"},
+  {"id": "b077-forest-role", "comp": "生物編", "pref": "生態", "cat": "森林のはたらき", "type": "single", "q": "森林のはたらきとして正しいものはどれ？", "a": ["雨水をたくわえ、土砂が流れ出るのを防ぐ"], "choices": ["二酸化炭素を増やす", "雨水をたくわえ、土砂が流れ出るのを防ぐ", "気温の変化を大きくする", "地下水をなくす"], "note": "森林は「緑のダム」。光合成で二酸化炭素を減らす。", "region": "生物", "badgeCat": "生態系"},
+  {"id": "g017-photo-read", "comp": "生物編", "pref": "植物", "cat": "グラフの読み取り", "type": "single", "q": "イの明るさのとき、この植物について正しいものはどれ？", "a": ["光合成と呼吸がほぼ同じ量で行われている"], "choices": ["呼吸だけが行われている", "光合成だけが行われている", "光合成と呼吸がほぼ同じ量で行われている", "光合成も呼吸も行われていない"], "note": "二酸化炭素の出入りが0でも、内側では両方が同じ量で進んでいる。", "region": "生物", "badgeCat": "植物", "image": "g017-photosynthesis-graph.png"},
+  {"id": "g018-transpiration-read", "comp": "生物編", "pref": "植物", "cat": "グラフの読み取り", "type": "single", "q": "葉の裏から蒸散した水の量は何g？", "a": ["8g"], "choices": ["2g", "5g", "8g", "3g"], "note": "Ａ13－Ｃ5＝8g（Ｂ11－Ｄ3でも8g）。ワセリンでふさいだ差が、その場所からの蒸散量。", "region": "生物", "badgeCat": "植物", "image": "g018-transpiration-graph.png"},
+  {"id": "g019-saliva-read", "comp": "生物編", "pref": "人体", "cat": "グラフの読み取り", "type": "single", "q": "このグラフからわかることとして正しいものはどれ？", "a": ["約40℃で最もよくはたらき、それより高温では急に弱くなる"], "choices": ["温度に関係なく同じようにはたらく", "約40℃で最もよくはたらき、それより高温では急に弱くなる", "温度が低いほどよくはたらく", "温度が高いほどよくはたらく"], "note": "だ液は体温くらいで最もよくはたらく。高温では性質が変わってはたらかなくなる。", "region": "生物", "badgeCat": "人体", "image": "g019-saliva-graph.png"},
+  {"id": "g020-oxygen-read", "comp": "生物編", "pref": "植物", "cat": "グラフの読み取り", "type": "single", "q": "植物を入れないＲの容器を用意したのは、何のため？", "a": ["酸素の変化が植物によるものだと確かめるため"], "choices": ["温度を一定に保つため", "光の強さを測るため", "酸素の変化が植物によるものだと確かめるため", "容器の大きさをそろえるため"], "note": "調べたい条件だけを変え、他をそろえて比べるのが対照実験。", "region": "生物", "badgeCat": "植物", "image": "g020-oxygen-plant-graph.png"},
+  {"id": "g021-pyramid-read", "comp": "生物編", "pref": "生態", "cat": "図の読み取り", "type": "single", "q": "いちばん下のＰにあてはまる生物はどれ？", "a": ["草などの植物"], "choices": ["バッタ", "カエル", "草などの植物", "ヘビ"], "note": "下ほど数が多く、いちばん下は自分で養分をつくる生産者（植物）。", "region": "生物", "badgeCat": "生態系", "image": "g021-pyramid-graph.png"},
+  {"id": "g022-germination-read", "comp": "生物編", "pref": "植物", "cat": "グラフの読み取り", "type": "single", "q": "発芽に日光が必要ないことを確かめるには、どれとどれを比べればよい？", "a": ["ＡとＥ"], "choices": ["ＡとＥ", "ＡとＢ", "ＡとＣ", "ＡとＤ"], "note": "ＡとＥは明るさだけがちがい、両方とも95％発芽している。1つの条件だけを変えて比べる。", "region": "生物", "badgeCat": "植物", "image": "g022-germination-graph.png"},
+  {"id": "g023-heartbeat-read", "comp": "生物編", "pref": "人体", "cat": "グラフの読み取り", "type": "single", "q": "拍動数が最も多かったときは、運動前のおよそ何倍？", "a": ["約2倍"], "choices": ["約5倍", "約1.2倍", "約3倍", "約2倍"], "note": "運動前70回、最大150回。150÷70＝約2.1倍。", "region": "生物", "badgeCat": "人体", "image": "g023-heartbeat-graph.png"},
+  {"id": "g024-medaka-read", "comp": "生物編", "pref": "動物", "cat": "グラフの読み取り", "type": "single", "q": "水温を15℃から25℃に上げると、ふ化までの日数は何日短くなる？", "a": ["10日"], "choices": ["4日", "20日", "10日", "6日"], "note": "15℃で20日、25℃で10日。20－10＝10日。", "region": "生物", "badgeCat": "動物", "image": "g024-medaka-graph.png"},
+  {"id": "e001-weathering", "comp": "地学編", "pref": "大地", "cat": "風化と侵食", "type": "single", "q": "岩石が気温の変化や水などで、もろく細かくなることを何という？", "a": ["風化"], "choices": ["堆積", "侵食", "凝結", "風化"], "note": "風化で細かくなり、流水などが侵食して運ぶ。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e002-river-upper", "comp": "地学編", "pref": "大地", "cat": "川の上流", "type": "single", "q": "川の上流で多く見られる石の特徴はどれ？", "a": ["大きく角ばっている"], "choices": ["小さく丸い", "泥だけでできる", "すべて同じ大きさ", "大きく角ばっている"], "note": "上流は運ばれた距離が短いため、角がとれずに大きく角ばった石が多い。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e003-river-middle", "comp": "地学編", "pref": "大地", "cat": "川の中流", "type": "single", "q": "川の中流で川が曲がる場所では、侵食が強いのはどちら側？", "a": ["外側"], "choices": ["内側", "両側とも必ず同じ", "中央だけ", "外側"], "note": "外側は流れが速く侵食、内側は流れが遅く堆積。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e004-river-lower", "comp": "地学編", "pref": "大地", "cat": "川の下流", "type": "single", "q": "川の下流や河口付近で起こりやすい作用はどれ？", "a": ["堆積"], "choices": ["堆積", "運搬だけ", "侵食だけ", "風化だけ"], "note": "流れが遅くなり、砂や泥が積もる。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e005-sediment-order", "comp": "地学編", "pref": "地層", "cat": "堆積", "type": "single", "q": "れき・砂・泥を含む水を静かに置くと、最初に沈みやすいものはどれ？", "a": ["れき"], "choices": ["すべて同時", "砂", "れき", "泥"], "note": "粒が大きく重いものから沈みやすい。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e006-sedimentary-rock", "comp": "地学編", "pref": "地層", "cat": "堆積岩", "type": "single", "q": "砂が固まってできた堆積岩はどれ？", "a": ["砂岩"], "choices": ["砂岩", "泥岩", "石灰岩", "れき岩"], "note": "粒の大きさで、れき岩・砂岩・泥岩を区別する。", "region": "地学", "badgeCat": "地層"},
   {"id": "e007-index-fossil", "comp": "地学編", "pref": "地層", "cat": "示準化石", "type": "single", "q": "地層ができた年代を知る手がかりになる化石を何という？", "a": ["示準化石"], "choices": ["示相化石", "示準化石", "生痕化石", "鉱物"], "note": "示準化石は年代、示相化石は環境を示す。", "region": "地学", "badgeCat": "地層"},
-  {"id": "e008-facies-fossil", "comp": "地学編", "pref": "地層", "cat": "示相化石", "type": "single", "q": "サンゴの化石から推測しやすい昔の環境はどれ？", "a": ["あたたかく浅い海"], "choices": ["寒く深い海", "あたたかく浅い海", "乾燥した砂漠", "高い山の頂上"], "note": "サンゴはあたたかく浅い海にすむ。", "region": "地学", "badgeCat": "地層"},
-  {"id": "e009-strata-order", "comp": "地学編", "pref": "地層", "cat": "地層のできた順序", "type": "single", "q": "地層が逆転していないとき、一般に最も古い地層はどこにある？", "a": ["いちばん下"], "choices": ["いちばん上", "いちばん下", "中央", "どこでも同じ"], "note": "堆積は下から上へ重なる。", "region": "地学", "badgeCat": "地層"},
-  {"id": "e010-fault-fold", "comp": "地学編", "pref": "地層", "cat": "断層としゅう曲", "type": "single", "q": "地層が強い力で切れてずれた構造を何という？", "a": ["断層"], "choices": ["しゅう曲", "断層", "不整合", "火口"], "note": "曲がったものはしゅう曲、切れてずれたものは断層。", "region": "地学", "badgeCat": "地層"},
-  {"id": "e011-volcano-shape", "comp": "地学編", "pref": "火山", "cat": "火山の形", "type": "single", "q": "ねばりけの小さいマグマでできやすい火山の形はどれ？", "a": ["傾斜がゆるやか"], "choices": ["傾斜が急な円すい形", "傾斜がゆるやか", "必ずカルデラだけ", "平らな地層だけ"], "note": "さらさらの溶岩は遠くまで流れ、ゆるやかな火山をつくる。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e012-volcanic-products", "comp": "地学編", "pref": "火山", "cat": "火山噴出物", "type": "multi", "q": "火山噴出物をすべて選んでね", "a": ["火山灰", "火山弾", "溶岩"], "choices": ["火山灰", "火山弾", "溶岩", "花粉"], "note": "火山からは火山灰、火山弾、溶岩、火山ガスなどが出る。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e013-igneous-rock", "comp": "地学編", "pref": "火山", "cat": "火成岩", "type": "single", "q": "マグマが冷えて固まってできた岩石を何という？", "a": ["火成岩"], "choices": ["堆積岩", "火成岩", "変成岩だけ", "石灰岩だけ"], "note": "火成岩は火山岩と深成岩に分ける。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e014-granite-basalt", "comp": "地学編", "pref": "火山", "cat": "花こう岩と玄武岩", "type": "single", "q": "地下深くでゆっくり冷えて、大きな結晶ができた岩石はどれ？", "a": ["花こう岩"], "choices": ["玄武岩", "花こう岩", "泥岩", "石灰岩"], "note": "深成岩の花こう岩は等粒状組織。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e015-focus-epicenter", "comp": "地学編", "pref": "地震", "cat": "震源と震央", "type": "single", "q": "地震が地下で発生した場所を何という？", "a": ["震源"], "choices": ["震央", "震源", "断層面の地表全体", "火口"], "note": "震源の真上の地表が震央。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e016-p-s-wave", "comp": "地学編", "pref": "地震", "cat": "初期微動と主要動", "type": "single", "q": "地震で最初に伝わり、初期微動を起こす波はどれ？", "a": ["P波"], "choices": ["S波", "P波", "表面波だけ", "音波"], "note": "速いP波のあと、遅いS波が主要動を起こす。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e017-intensity-magnitude", "comp": "地学編", "pref": "地震", "cat": "震度とマグニチュード", "type": "single", "q": "地震そのものの規模を表す値はどれ？", "a": ["マグニチュード"], "choices": ["震度", "マグニチュード", "気圧", "湿度"], "note": "震度は場所ごとの揺れ、マグニチュードは地震の規模。", "region": "地学", "badgeCat": "火山・地震"},
-  {"id": "e018-weather-tools", "comp": "地学編", "pref": "気象", "cat": "気象観測", "type": "single", "q": "気圧を測る器具はどれ？", "a": ["気圧計"], "choices": ["温度計", "湿度計", "気圧計", "風向計"], "note": "気圧は気圧計、湿度は乾湿計などで測る。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e019-air-pressure", "comp": "地学編", "pref": "気象", "cat": "気圧", "type": "single", "q": "標高が高くなると、一般に気圧はどうなる？", "a": ["低くなる"], "choices": ["高くなる", "低くなる", "変わらない", "必ず0になる"], "note": "上にある空気の量が減るため気圧は低くなる。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e020-wind-direction", "comp": "地学編", "pref": "気象", "cat": "風向", "type": "single", "q": "北風とは、どちらから吹いてくる風？", "a": ["北"], "choices": ["南", "北", "東", "西"], "note": "風向は風が吹いてくる方向で表す。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e021-cloud-formation", "comp": "地学編", "pref": "気象", "cat": "雲のでき方", "type": "single", "q": "上昇した空気が冷やされると、雲ができる主な理由はどれ？", "a": ["水蒸気が細かな水滴や氷の粒になる"], "choices": ["酸素が燃える", "水蒸気が細かな水滴や氷の粒になる", "窒素が固まる", "二酸化炭素だけが凍る"], "note": "空気が露点まで冷えると凝結が始まる。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e008-facies-fossil", "comp": "地学編", "pref": "地層", "cat": "示相化石", "type": "single", "q": "サンゴの化石から推測しやすい昔の環境はどれ？", "a": ["あたたかく浅い海"], "choices": ["あたたかく浅い海", "寒く深い海", "乾燥した砂漠", "高い山の頂上"], "note": "サンゴはあたたかく浅い海にすむ。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e009-strata-order", "comp": "地学編", "pref": "地層", "cat": "地層のできた順序", "type": "single", "q": "地層が逆転していないとき、一般に最も古い地層はどこにある？", "a": ["いちばん下"], "choices": ["いちばん下", "どこでも同じ", "中央", "いちばん上"], "note": "堆積は下から上へ重なる。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e010-fault-fold", "comp": "地学編", "pref": "地層", "cat": "断層としゅう曲", "type": "single", "q": "地層が強い力で切れてずれた構造を何という？", "a": ["断層"], "choices": ["火口", "不整合", "しゅう曲", "断層"], "note": "曲がったものはしゅう曲、切れてずれたものは断層。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e011-volcano-shape", "comp": "地学編", "pref": "火山", "cat": "火山の形", "type": "single", "q": "ねばりけの小さいマグマでできやすい火山の形はどれ？", "a": ["傾斜がゆるやか"], "choices": ["必ずカルデラだけ", "平らな地層だけ", "傾斜が急な円すい形", "傾斜がゆるやか"], "note": "さらさらの溶岩は遠くまで流れ、ゆるやかな火山をつくる。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e012-volcanic-products", "comp": "地学編", "pref": "火山", "cat": "火山噴出物", "type": "multi", "q": "火山噴出物をすべて選んでね", "a": ["火山灰", "火山弾", "溶岩"], "choices": ["溶岩", "火山弾", "花粉", "火山灰"], "note": "火山からは火山灰、火山弾、溶岩、火山ガスなどが出る。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e013-igneous-rock", "comp": "地学編", "pref": "火山", "cat": "火成岩", "type": "single", "q": "マグマが冷えて固まってできた岩石を何という？", "a": ["火成岩"], "choices": ["石灰岩だけ", "堆積岩", "変成岩だけ", "火成岩"], "note": "火成岩は火山岩と深成岩に分ける。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e014-granite-basalt", "comp": "地学編", "pref": "火山", "cat": "花こう岩と玄武岩", "type": "single", "q": "地下深くでゆっくり冷えて、大きな結晶ができた岩石はどれ？", "a": ["花こう岩"], "choices": ["泥岩", "花こう岩", "玄武岩", "石灰岩"], "note": "深成岩の花こう岩は等粒状組織。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e015-focus-epicenter", "comp": "地学編", "pref": "地震", "cat": "震源と震央", "type": "single", "q": "地震が地下で発生した場所を何という？", "a": ["震源"], "choices": ["火口", "断層面の地表全体", "震源", "震央"], "note": "震源の真上の地表が震央。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e016-p-s-wave", "comp": "地学編", "pref": "地震", "cat": "初期微動と主要動", "type": "single", "q": "地震で最初に伝わり、初期微動を起こす波はどれ？", "a": ["P波"], "choices": ["S波", "P波", "音波", "表面波だけ"], "note": "速いP波のあと、遅いS波が主要動を起こす。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e017-intensity-magnitude", "comp": "地学編", "pref": "地震", "cat": "震度とマグニチュード", "type": "single", "q": "地震そのものの規模を表す値はどれ？", "a": ["マグニチュード"], "choices": ["マグニチュード", "湿度", "気圧", "震度"], "note": "震度は場所ごとの揺れ、マグニチュードは地震の規模。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e018-weather-tools", "comp": "地学編", "pref": "気象", "cat": "気象観測", "type": "single", "q": "気圧を測る器具はどれ？", "a": ["気圧計"], "choices": ["風向計", "湿度計", "気圧計", "温度計"], "note": "気圧は気圧計、湿度は乾湿計などで測る。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e019-air-pressure", "comp": "地学編", "pref": "気象", "cat": "気圧", "type": "single", "q": "標高が高くなると、一般に気圧はどうなる？", "a": ["低くなる"], "choices": ["低くなる", "必ず0になる", "変わらない", "高くなる"], "note": "上にある空気の量が減るため気圧は低くなる。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e020-wind-direction", "comp": "地学編", "pref": "気象", "cat": "風向", "type": "single", "q": "北風とは、どちらから吹いてくる風？", "a": ["北"], "choices": ["北", "西", "東", "南"], "note": "風向は風が吹いてくる方向で表す。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e021-cloud-formation", "comp": "地学編", "pref": "気象", "cat": "雲のでき方", "type": "single", "q": "上昇した空気が冷やされると、雲ができる主な理由はどれ？", "a": ["水蒸気が細かな水滴や氷の粒になる"], "choices": ["窒素が固まる", "水蒸気が細かな水滴や氷の粒になる", "二酸化炭素だけが凍る", "酸素が燃える"], "note": "空気が露点まで冷えると凝結が始まる。", "region": "地学", "badgeCat": "天気"},
   {"id": "e022-cloud-cover", "comp": "地学編", "pref": "気象", "cat": "雲量と天気", "type": "single", "q": "日本の気象観測で、雲量が0または1の天気はどれ？", "a": ["快晴"], "choices": ["快晴", "晴れ", "くもり", "雨"], "note": "雲量0〜1が快晴、2〜8が晴れ、9〜10がくもり。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e023-fronts", "comp": "地学編", "pref": "気象", "cat": "前線", "type": "single", "q": "寒気が暖気の下にもぐりこみ、暖気を急に押し上げる前線はどれ？", "a": ["寒冷前線"], "choices": ["温暖前線", "寒冷前線", "停滞前線", "閉塞前線"], "note": "寒冷前線ではせまい範囲に強い雨が降りやすい。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e024-pressure-system", "comp": "地学編", "pref": "気象", "cat": "高気圧と低気圧", "type": "single", "q": "北半球の低気圧のまわりで、風はどのように吹きこむ？", "a": ["反時計回り"], "choices": ["時計回り", "反時計回り", "東から西へ直線だけ", "風は吹かない"], "note": "低気圧は反時計回りに中心へ、高気圧は時計回りに外へ。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e025-weather-map", "comp": "地学編", "pref": "気象", "cat": "天気図", "type": "single", "q": "天気図で同じ気圧の地点を結んだ線を何という？", "a": ["等圧線"], "choices": ["等温線", "等圧線", "前線", "経線"], "note": "等圧線の間隔がせまいほど風が強いことが多い。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e026-humidity", "comp": "地学編", "pref": "気象", "cat": "湿度", "type": "single", "q": "同じ気温で空気中の水蒸気量が増えると、湿度はどうなる？", "a": ["高くなる"], "choices": ["高くなる", "低くなる", "変わらない", "必ず100％を超える"], "note": "湿度は実際の水蒸気量が飽和量の何％かを表す。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e027-dew-point", "comp": "地学編", "pref": "気象", "cat": "露点", "type": "single", "q": "空気を冷やしたとき、水滴ができ始める温度を何という？", "a": ["露点"], "choices": ["沸点", "融点", "露点", "発火点"], "note": "露点に達すると水蒸気が凝結する。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e028-typhoon", "comp": "地学編", "pref": "気象", "cat": "台風", "type": "single", "q": "台風の中心付近の気圧は、周囲と比べてどうなっている？", "a": ["低い"], "choices": ["高い", "低い", "同じ", "毎回0"], "note": "台風は発達した熱帯低気圧。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e029-monsoon", "comp": "地学編", "pref": "気象", "cat": "季節風", "type": "single", "q": "日本の冬に大陸から日本へ吹きやすい季節風の向きはどれ？", "a": ["北西"], "choices": ["南東", "北西", "南西", "北東"], "note": "冬はシベリア高気圧から北西の季節風が吹く。", "region": "地学", "badgeCat": "天気"},
-  {"id": "e030-sun-daily", "comp": "地学編", "pref": "天体", "cat": "太陽の日周運動", "type": "single", "q": "日本で太陽は1日のうち、どの方角から昇る？", "a": ["東"], "choices": ["北", "東", "南", "西"], "note": "太陽は東から昇り、南の空を通って西へ沈む。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e031-sun-season", "comp": "地学編", "pref": "天体", "cat": "太陽の季節変化", "type": "single", "q": "日本で正午の太陽高度が最も高くなるころはどれ？", "a": ["夏至"], "choices": ["春分", "夏至", "秋分", "冬至"], "note": "夏至は昼が最も長く、南中高度も最も高い。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e032-moon-phase", "comp": "地学編", "pref": "天体", "cat": "月の満ち欠け", "type": "single", "q": "太陽・地球・月の順にほぼ一直線に並ぶとき、地球から見える月はどれ？", "a": ["満月"], "choices": ["新月", "上弦の月", "満月", "下弦の月"], "note": "地球をはさんで太陽と月が反対側にあると満月。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e033-moon-motion", "comp": "地学編", "pref": "天体", "cat": "月の日周運動", "type": "single", "q": "月が東から西へ動いて見える主な理由はどれ？", "a": ["地球が西から東へ自転するため"], "choices": ["月が毎日地球のまわりを1周するため", "地球が西から東へ自転するため", "太陽が月を押すため", "雲が動くため"], "note": "天体の日周運動は地球の自転による見かけの動き。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e034-eclipse", "comp": "地学編", "pref": "天体", "cat": "日食と月食", "type": "single", "q": "太陽と地球の間に月が入り、太陽がかくされる現象はどれ？", "a": ["日食"], "choices": ["月食", "日食", "満潮", "流星"], "note": "日食は太陽－月－地球、月食は太陽－地球－月。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e035-stars", "comp": "地学編", "pref": "天体", "cat": "星の動き", "type": "single", "q": "北の空の星が中心として回って見える星はどれ？", "a": ["北極星"], "choices": ["シリウス", "北極星", "ベテルギウス", "スピカ"], "note": "北極星は北の空でほとんど動かない。", "region": "地学", "badgeCat": "天体"},
-  {"id": "e036-solar-system", "comp": "地学編", "pref": "天体", "cat": "太陽系", "type": "single", "q": "太陽に最も近い惑星はどれ？", "a": ["水星"], "choices": ["金星", "地球", "水星", "火星"], "note": "太陽から水星、金星、地球、火星の順。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e023-fronts", "comp": "地学編", "pref": "気象", "cat": "前線", "type": "single", "q": "寒気が暖気の下にもぐりこみ、暖気を急に押し上げる前線はどれ？", "a": ["寒冷前線"], "choices": ["停滞前線", "寒冷前線", "閉塞前線", "温暖前線"], "note": "寒冷前線ではせまい範囲に強い雨が降りやすい。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e024-pressure-system", "comp": "地学編", "pref": "気象", "cat": "高気圧と低気圧", "type": "single", "q": "北半球の低気圧のまわりで、風はどのように吹きこむ？", "a": ["反時計回り"], "choices": ["東から西へ直線だけ", "風は吹かない", "時計回り", "反時計回り"], "note": "低気圧は反時計回りに中心へ、高気圧は時計回りに外へ。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e025-weather-map", "comp": "地学編", "pref": "気象", "cat": "天気図", "type": "single", "q": "天気図で同じ気圧の地点を結んだ線を何という？", "a": ["等圧線"], "choices": ["等圧線", "等温線", "前線", "経線"], "note": "等圧線の間隔がせまいほど風が強いことが多い。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e026-humidity", "comp": "地学編", "pref": "気象", "cat": "湿度", "type": "single", "q": "同じ気温で空気中の水蒸気量が増えると、湿度はどうなる？", "a": ["高くなる"], "choices": ["高くなる", "必ず100％を超える", "変わらない", "低くなる"], "note": "湿度は実際の水蒸気量が飽和量の何％かを表す。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e027-dew-point", "comp": "地学編", "pref": "気象", "cat": "露点", "type": "single", "q": "空気を冷やしたとき、水滴ができ始める温度を何という？", "a": ["露点"], "choices": ["融点", "発火点", "沸点", "露点"], "note": "露点に達すると水蒸気が凝結する。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e028-typhoon", "comp": "地学編", "pref": "気象", "cat": "台風", "type": "single", "q": "台風の中心付近の気圧は、周囲と比べてどうなっている？", "a": ["低い"], "choices": ["低い", "毎回0", "同じ", "高い"], "note": "台風は発達した熱帯低気圧。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e029-monsoon", "comp": "地学編", "pref": "気象", "cat": "季節風", "type": "single", "q": "日本の冬に大陸から日本へ吹きやすい季節風の向きはどれ？", "a": ["北西"], "choices": ["北西", "北東", "南東", "南西"], "note": "冬はシベリア高気圧から北西の季節風が吹く。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e030-sun-daily", "comp": "地学編", "pref": "天体", "cat": "太陽の日周運動", "type": "single", "q": "日本で太陽は1日のうち、どの方角から昇る？", "a": ["東"], "choices": ["北", "西", "東", "南"], "note": "太陽は東から昇り、南の空を通って西へ沈む。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e031-sun-season", "comp": "地学編", "pref": "天体", "cat": "太陽の季節変化", "type": "single", "q": "日本で太陽の南中高度が最も高くなるのはいつごろ？", "a": ["夏至"], "choices": ["春分", "秋分", "冬至", "夏至"], "note": "夏至は昼が最も長く、南中高度も最も高い。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e032-moon-phase", "comp": "地学編", "pref": "天体", "cat": "月の満ち欠け", "type": "single", "q": "太陽・地球・月の順にほぼ一直線に並ぶとき、地球から見える月はどれ？", "a": ["満月"], "choices": ["満月", "下弦の月", "新月", "上弦の月"], "note": "地球をはさんで太陽と月が反対側にあると満月。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e033-moon-motion", "comp": "地学編", "pref": "天体", "cat": "月の日周運動", "type": "single", "q": "月が東から西へ動いて見える主な理由はどれ？", "a": ["地球が西から東へ自転するため"], "choices": ["月が毎日地球のまわりを1周するため", "地球が西から東へ自転するため", "雲が動くため", "太陽が月を押すため"], "note": "天体の日周運動は地球の自転による見かけの動き。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e034-eclipse", "comp": "地学編", "pref": "天体", "cat": "日食と月食", "type": "single", "q": "太陽と地球の間に月が入り、太陽がかくされる現象はどれ？", "a": ["日食"], "choices": ["流星", "日食", "満潮", "月食"], "note": "日食は太陽－月－地球、月食は太陽－地球－月。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e035-stars", "comp": "地学編", "pref": "天体", "cat": "星の動き", "type": "single", "q": "北の空の星が中心として回って見える星はどれ？", "a": ["北極星"], "choices": ["スピカ", "ベテルギウス", "北極星", "シリウス"], "note": "北極星は北の空でほとんど動かない。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e036-solar-system", "comp": "地学編", "pref": "天体", "cat": "太陽系", "type": "single", "q": "太陽に最も近い惑星はどれ？", "a": ["水星"], "choices": ["地球", "水星", "金星", "火星"], "note": "太陽から水星、金星、地球、火星の順。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e037-orion", "comp": "地学編", "pref": "天体", "cat": "オリオン座", "type": "single", "q": "オリオン座にある赤色の1等星はどれ？", "a": ["ベテルギウス"], "choices": ["ベテルギウス", "リゲル", "シリウス", "プロキオン"], "note": "ベテルギウスは赤色、リゲルは青白色。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e038-winter-triangle", "comp": "地学編", "pref": "天体", "cat": "冬の大三角", "type": "multi", "q": "冬の大三角をつくる星をすべて選んでね", "a": ["ベテルギウス", "シリウス", "プロキオン"], "choices": ["ベテルギウス", "シリウス", "プロキオン", "リゲル"], "note": "リゲルは同じオリオン座だが冬の大三角には入らない。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e039-summer-triangle", "comp": "地学編", "pref": "天体", "cat": "夏の大三角", "type": "single", "q": "夏の大三角にふくまれない星はどれ？", "a": ["シリウス"], "choices": ["ベガ", "アルタイル", "デネブ", "シリウス"], "note": "こと座のベガ、わし座のアルタイル、はくちょう座のデネブ。シリウスは冬の星。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e040-star-color", "comp": "地学編", "pref": "天体", "cat": "星の色と温度", "type": "single", "q": "星の色のうち、表面温度が最も高いものはどれ？", "a": ["青白色"], "choices": ["赤色", "黄色", "白色", "青白色"], "note": "温度が高い順に、青白→白→黄→赤。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e041-star-magnitude", "comp": "地学編", "pref": "天体", "cat": "星の明るさ", "type": "single", "q": "1等星の明るさは6等星のおよそ何倍？", "a": ["100倍"], "choices": ["100倍", "6倍", "10倍", "1000倍"], "note": "5等級ちがうと明るさは100倍。数字が小さいほど明るい。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e042-star-daily", "comp": "地学編", "pref": "天体", "cat": "星の日周運動", "type": "single", "q": "星は1時間におよそ何度動いて見える？", "a": ["15度"], "choices": ["1度", "15度", "30度", "360度"], "note": "360度÷24時間＝1時間に15度。地球の自転による。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e043-star-annual", "comp": "地学編", "pref": "天体", "cat": "星の年周運動", "type": "single", "q": "同じ時刻に見える星の位置は、1か月でおよそ何度動く？", "a": ["30度"], "choices": ["1度", "15度", "30度", "90度"], "note": "360度÷12か月＝1か月に30度。地球の公転による。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e044-polaris", "comp": "地学編", "pref": "天体", "cat": "北極星の高度", "type": "single", "q": "北極星の高度は、その土地の何とほぼ同じ？", "a": ["北緯（緯度）"], "choices": ["経度", "標高", "気温", "北緯（緯度）"], "note": "北緯35度の東京では、北極星は地平線から約35度の高さ。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e045-find-polaris", "comp": "地学編", "pref": "天体", "cat": "北極星のさがし方", "type": "multi", "q": "北極星をさがす目印になるものをすべて選んでね", "a": ["カシオペヤ座", "北斗七星"], "choices": ["カシオペヤ座", "北斗七星", "オリオン座", "さそり座"], "note": "カシオペヤ座（W字）と北斗七星から北極星を見つけられる。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e046-altitude-equinox", "comp": "地学編", "pref": "天体", "cat": "南中高度の計算", "type": "single", "q": "春分の日、北緯35度の地点での太陽の南中高度は何度？", "a": ["55度"], "choices": ["55度", "35度", "78度", "32度"], "note": "春分・秋分は90－緯度。90－35＝55度。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e047-altitude-summer", "comp": "地学編", "pref": "天体", "cat": "夏至の南中高度", "type": "single", "q": "夏至の日、北緯35度の地点での太陽の南中高度はおよそ何度？", "a": ["約78度"], "choices": ["約55度", "約78度", "約32度", "約90度"], "note": "夏至は90－緯度＋23.4。90－35＋23.4＝約78度。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e048-sunrise-season", "comp": "地学編", "pref": "天体", "cat": "日の出の方角", "type": "single", "q": "夏至のころ、日本での日の出の方角はどちらにかたよる？", "a": ["真東より北より"], "choices": ["真東", "真東より南より", "真東より北より", "真西"], "note": "夏至は北よりから出て北よりに沈み、冬至は南よりになる。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e049-shadow-move", "comp": "地学編", "pref": "天体", "cat": "棒の影の動き", "type": "single", "q": "日本で、棒の影は1日のうちどのように動く？", "a": ["西→北→東"], "choices": ["東→南→西", "西→南→東", "東→北→西", "西→北→東"], "note": "太陽が東→南→西と動くので、影はその反対側を動く。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e050-sunspot", "comp": "地学編", "pref": "天体", "cat": "太陽の黒点", "type": "single", "q": "太陽の黒点が黒く見える理由はどれ？", "a": ["まわりより温度が低いから"], "choices": ["まわりより温度が低いから", "光を通さない雲だから", "地球の影だから", "穴があいているから"], "note": "黒点は約4000℃で、まわり（約6000℃）より低い。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e051-sunspot-move", "comp": "地学編", "pref": "天体", "cat": "太陽の自転", "type": "single", "q": "黒点の位置が日がたつにつれて動いて見えることから、何がわかる？", "a": ["太陽が自転していること"], "choices": ["太陽が地球のまわりを回っていること", "太陽が自転していること", "太陽が冷えていること", "太陽が近づいていること"], "note": "黒点は約27日で1周する。太陽が回っている証拠。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e052-moon-period", "comp": "地学編", "pref": "天体", "cat": "月の公転", "type": "single", "q": "月が地球のまわりを1周する期間はおよそどれくらい？", "a": ["約27日"], "choices": ["約7日", "約15日", "約27日", "約365日"], "note": "公転は約27.3日、満ち欠けの周期は約29.5日でずれる。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e053-moon-phase-period", "comp": "地学編", "pref": "天体", "cat": "満ち欠けの周期", "type": "single", "q": "新月から次の新月までの期間はおよそどれくらい？", "a": ["約29.5日"], "choices": ["約27日", "約24時間", "約15日", "約29.5日"], "note": "約29.5日。新月→上弦→満月→下弦→新月。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e054-crescent", "comp": "地学編", "pref": "天体", "cat": "三日月", "type": "single", "q": "夕方、西の低い空に見える細い月はどれ？", "a": ["三日月"], "choices": ["三日月", "満月", "下弦の月", "新月"], "note": "新月の3日後ごろ。夕方西の空に見えてすぐ沈む。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e055-fullmoon-time", "comp": "地学編", "pref": "天体", "cat": "満月の南中時刻", "type": "single", "q": "満月が南の空で最も高くなる（南中する）のはいつごろ？", "a": ["真夜中（午前0時ごろ）"], "choices": ["夕方6時ごろ", "真夜中（午前0時ごろ）", "正午ごろ", "明け方6時ごろ"], "note": "満月は太陽と正反対にあるので、真夜中に南中する。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e056-first-quarter", "comp": "地学編", "pref": "天体", "cat": "上弦の月", "type": "single", "q": "上弦の月が南中するのはいつごろ？", "a": ["夕方6時ごろ"], "choices": ["正午ごろ", "真夜中ごろ", "夕方6時ごろ", "明け方6時ごろ"], "note": "上弦は夕方6時に南中、真夜中に西へ沈む。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e057-moon-crater", "comp": "地学編", "pref": "天体", "cat": "月の表面", "type": "single", "q": "月にクレーターがそのまま残っている理由として正しいものはどれ？", "a": ["空気や水がなく、風や雨でけずられないから"], "choices": ["月がとても新しいから", "月に生物がいるから", "月が地球に近いから", "空気や水がなく、風や雨でけずられないから"], "note": "風化や侵食が起こらないので、昔のあとが残る。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e058-venus", "comp": "地学編", "pref": "天体", "cat": "金星", "type": "single", "q": "明け方の東の空に見える金星の呼び名はどれ？", "a": ["明けの明星"], "choices": ["明けの明星", "宵の明星", "北極星", "すい星"], "note": "夕方西の空に見えるときは宵の明星。真夜中には見えない。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e059-planet-count", "comp": "地学編", "pref": "天体", "cat": "太陽系の惑星", "type": "single", "q": "太陽系の惑星は全部でいくつ？", "a": ["8個"], "choices": ["7個", "8個", "9個", "10個"], "note": "水金地火木土天海の8個。冥王星は準惑星。", "region": "地学", "badgeCat": "天体"},
+  {"id": "e060-thermometer", "comp": "地学編", "pref": "気象", "cat": "気温のはかり方", "type": "single", "q": "気温をはかるときの正しい条件はどれ？", "a": ["風通しのよい日かげで、地上1.2〜1.5mの高さ"], "choices": ["日なたで地面すれすれ", "日かげで地面すれすれ", "風通しのよい日かげで、地上1.2〜1.5mの高さ", "日なたで地上3mの高さ"], "note": "百葉箱もこの条件に合わせてつくられている。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e061-eq-time", "comp": "地学編", "pref": "地震", "cat": "初期微動継続時間", "type": "single", "q": "初期微動継続時間が長い地点について、正しいものはどれ？", "a": ["震源からの距離が遠い"], "choices": ["震源からの距離が近い", "震度が必ず大きい", "マグニチュードが大きい", "震源からの距離が遠い"], "note": "P波とS波の速さの差で、遠いほど差が開く。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e062-eq-calc", "comp": "地学編", "pref": "地震", "cat": "距離の計算", "type": "single", "q": "初期微動継続時間が10秒の地点は、5秒の地点と比べて震源までの距離はおよそ何倍？", "a": ["2倍"], "choices": ["2倍", "半分", "4倍", "変わらない"], "note": "初期微動継続時間は震源距離に比例する。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e063-shindo-scale", "comp": "地学編", "pref": "地震", "cat": "震度階級", "type": "single", "q": "気象庁の震度は全部でいくつの段階に分かれている？", "a": ["10段階"], "choices": ["7段階", "10段階", "8段階", "12段階"], "note": "0〜4、5弱・5強、6弱・6強、7の10段階。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e064-eew", "comp": "地学編", "pref": "地震", "cat": "緊急地震速報", "type": "single", "q": "緊急地震速報は、何を利用して強いゆれが来る前に知らせている？", "a": ["P波がS波より速く伝わること"], "choices": ["マグニチュードが大きいこと", "震度が場所でちがうこと", "P波がS波より速く伝わること", "地震雲が出ること"], "note": "先に届くP波をとらえて、S波が来る前に知らせる。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e065-plate", "comp": "地学編", "pref": "地震", "cat": "日本の地震", "type": "single", "q": "日本で地震が多い理由として正しいものはどれ？", "a": ["複数のプレートがぶつかり合う場所にあるから"], "choices": ["島国だから", "火山がないから", "海に囲まれているから", "複数のプレートがぶつかり合う場所にあるから"], "note": "日本列島は4つのプレートが集まる場所にある。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e066-ash-layer", "comp": "地学編", "pref": "地層", "cat": "かぎ層", "type": "single", "q": "はなれた場所の地層を比べるとき、同じ時期にできたことを知る目印になるものはどれ？", "a": ["火山灰の層"], "choices": ["火山灰の層", "砂の層", "泥の層", "れきの層"], "note": "火山灰は広い範囲に同時に降り積もるので目印になる。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e067-unconformity", "comp": "地学編", "pref": "地層", "cat": "不整合", "type": "single", "q": "地層の重なりが途中で途切れ、その間に陸地になっていたことを示す面を何という？", "a": ["不整合"], "choices": ["断層", "不整合", "しゅう曲", "整合"], "note": "不整合面の上には、けずられてできたれきが乗ることが多い。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e068-volcanic-ash", "comp": "地学編", "pref": "火山", "cat": "火山灰の粒", "type": "single", "q": "火山灰にふくまれる粒の特徴はどれ？", "a": ["角ばっている"], "choices": ["丸みをおびている", "すべて同じ大きさ", "角ばっている", "すべて黒色"], "note": "水に運ばれていないので角がとれていない。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e069-texture", "comp": "地学編", "pref": "火山", "cat": "岩石のつくり", "type": "single", "q": "火山岩に見られる、細かい粒の中に大きな結晶が散らばったつくりを何という？", "a": ["斑状組織"], "choices": ["等粒状組織", "層状組織", "柱状組織", "斑状組織"], "note": "火山岩は急に冷えて斑状、深成岩はゆっくり冷えて等粒状。", "region": "地学", "badgeCat": "火山・地震"},
+  {"id": "e070-limestone", "comp": "地学編", "pref": "地層", "cat": "石灰岩", "type": "single", "q": "うすい塩酸をかけると気体が出る岩石はどれ？", "a": ["石灰岩"], "choices": ["石灰岩", "チャート", "砂岩", "花こう岩"], "note": "石灰岩は塩酸で二酸化炭素が出る。チャートは出ない。", "region": "地学", "badgeCat": "地層"},
+  {"id": "e071-vshape", "comp": "地学編", "pref": "大地", "cat": "Ｖ字谷", "type": "single", "q": "川の上流で、川が地面を深くけずってできる谷を何という？", "a": ["Ｖ字谷"], "choices": ["三角州", "Ｖ字谷", "扇状地", "三日月湖"], "note": "上流は侵食のはたらきが強く、深い谷ができる。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e072-fan", "comp": "地学編", "pref": "大地", "cat": "扇状地", "type": "single", "q": "川が山地から平地に出るところに、土砂が扇のように積もってできる地形はどれ？", "a": ["扇状地"], "choices": ["三角州", "Ｖ字谷", "扇状地", "三日月湖"], "note": "流れが急に遅くなり、粒の大きい石から積もる。河口は三角州。", "region": "地学", "badgeCat": "大地"},
+  {"id": "e073-temp-daily", "comp": "地学編", "pref": "気象", "cat": "気温の1日の変化", "type": "single", "q": "晴れた日に、気温が最も高くなるのはいつごろ？", "a": ["午後2時ごろ"], "choices": ["正午ごろ", "午前10時ごろ", "午後4時ごろ", "午後2時ごろ"], "note": "太陽高度が最も高いのは正午だが、地面が温まってから空気が温まるので約2時間おくれる。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e074-weather-west", "comp": "地学編", "pref": "気象", "cat": "天気の変化", "type": "single", "q": "日本付近で天気が変わっていく向きはどれ？", "a": ["西から東"], "choices": ["西から東", "東から西", "北から南", "南から北"], "note": "上空の偏西風によって、雲は西から東へ動く。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e075-winter-pattern", "comp": "地学編", "pref": "気象", "cat": "冬の気圧配置", "type": "single", "q": "日本の冬に多い気圧配置を何という？", "a": ["西高東低"], "choices": ["南高北低", "西高東低", "東高西低", "北高南低"], "note": "大陸に高気圧、太平洋上に低気圧。等圧線がたてにこむ。", "region": "地学", "badgeCat": "天気"},
+  {"id": "e076-baiu", "comp": "地学編", "pref": "気象", "cat": "梅雨前線", "type": "single", "q": "梅雨のころ、日本付近に長くとどまる前線はどれ？", "a": ["停滞前線"], "choices": ["寒冷前線", "温暖前線", "停滞前線", "閉塞前線"], "note": "暖気と寒気の勢力がつり合い、ほとんど動かない前線。", "region": "地学", "badgeCat": "天気"},
+  {"id": "g025-eq-read", "comp": "地学編", "pref": "地震", "cat": "グラフの読み取り", "type": "single", "q": "震源から120kmの地点で、初期微動が続く時間は何秒？", "a": ["15秒"], "choices": ["15秒", "20秒", "10秒", "30秒"], "note": "Ｘは120÷8＝15秒後、Ｙは120÷4＝30秒後に到達。差の15秒が初期微動継続時間。", "region": "地学", "badgeCat": "火山・地震", "image": "g025-earthquake-graph.png"},
+  {"id": "g026-temp-sun-read", "comp": "地学編", "pref": "気象", "cat": "グラフの読み取り", "type": "single", "q": "気温を表すＡが最高になる時刻が、太陽の高さＢより約2時間おそいのはなぜ？", "a": ["日光がまず地面をあたため、その地面が空気をあたためるから"], "choices": ["午後は風が弱くなるから", "太陽が午後2時に最も近づくから", "温度計が日かげにあるから", "日光がまず地面をあたため、その地面が空気をあたためるから"], "note": "太陽→地面→空気の順に熱が伝わるので、気温の最高はおくれる。", "region": "地学", "badgeCat": "天気", "image": "g026-temp-sun-graph.png"},
+  {"id": "g027-humidity-read", "comp": "地学編", "pref": "気象", "cat": "グラフの読み取り", "type": "single", "q": "気温20℃で空気1m³に水蒸気が12.8gふくまれている。この空気を冷やすと、何℃で水滴ができ始める？", "a": ["15℃"], "choices": ["5℃", "20℃", "15℃", "10℃"], "note": "12.8gが最大量になる温度＝15℃。この温度を露点という。", "region": "地学", "badgeCat": "天気", "image": "g027-humidity-graph.png"},
+  {"id": "g028-strata-read", "comp": "地学編", "pref": "地層", "cat": "図の読み取り", "type": "single", "q": "地層が水平に積もっているとすると、標高95mの地点Ｄでは火山灰の層は地表から何mの深さ？", "a": ["25m"], "choices": ["30m", "15m", "20m", "25m"], "note": "Ａ〜Ｃとも火山灰の層は標高70m。95－70＝25m。", "region": "地学", "badgeCat": "地層", "image": "g028-strata-graph.png"},
+  {"id": "g029-star-read", "comp": "地学編", "pref": "天体", "cat": "グラフの読み取り", "type": "single", "q": "この星が150度動くには何時間かかる？", "a": ["10時間"], "choices": ["10時間", "8時間", "6時間", "15時間"], "note": "1時間で15度動く。150÷15＝10時間。", "region": "地学", "badgeCat": "天体", "image": "g029-star-motion-graph.png"},
+  {"id": "g030-altitude-read", "comp": "地学編", "pref": "天体", "cat": "グラフの読み取り", "type": "single", "q": "1年で昼の長さが最も長い日をふくむのは、ア〜エのどれ？", "a": ["イ"], "choices": ["エ", "イ", "ウ", "ア"], "note": "南中高度が最も高い6月ごろが夏至。昼が最も長い。", "region": "地学", "badgeCat": "天体", "image": "g030-noon-altitude-graph.png"},
+  {"id": "g031-sunrise-read", "comp": "地学編", "pref": "天体", "cat": "グラフの読み取り", "type": "single", "q": "昼の長さが最も長いのは何月ごろ？", "a": ["6月ごろ"], "choices": ["9月ごろ", "12月ごろ", "3月ごろ", "6月ごろ"], "note": "日の出が最も早く、日の入りが最もおそい6月ごろ。差が約14時間半になる。", "region": "地学", "badgeCat": "天体", "image": "g031-sunrise-graph.png"},
+  {"id": "g032-erosion-read", "comp": "地学編", "pref": "大地", "cat": "グラフの読み取り", "type": "single", "q": "最も小さい流れの速さで運ばれ始めるのは、どの粒？", "a": ["0.1mmの砂"], "choices": ["10mmのれき", "0.1mmの砂", "0.01mmの泥", "100mmのれき"], "note": "大きい粒は重くて動きにくいが、泥は細かい粒どうしがくっつくため、かえって速い流れが必要。", "region": "地学", "badgeCat": "大地", "image": "g032-erosion-graph.png"},
 ];
 /* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
 const PREF_REGION = {
-  "北海道":"北海道",
-  "青森県":"東北","岩手県":"東北","宮城県":"東北","秋田県":"東北","山形県":"東北","福島県":"東北",
-  "茨城県":"関東","栃木県":"関東","群馬県":"関東","埼玉県":"関東","千葉県":"関東","東京都":"関東","神奈川県":"関東",
-  "新潟県":"中部","富山県":"中部","石川県":"中部","福井県":"中部","山梨県":"中部","長野県":"中部","岐阜県":"中部","静岡県":"中部","愛知県":"中部",
-  "三重県":"近畿","滋賀県":"近畿","京都府":"近畿","大阪府":"近畿","兵庫県":"近畿","奈良県":"近畿","和歌山県":"近畿",
-  "鳥取県":"中国四国","島根県":"中国四国","岡山県":"中国四国","広島県":"中国四国","山口県":"中国四国","徳島県":"中国四国","香川県":"中国四国","愛媛県":"中国四国","高知県":"中国四国",
-  "福岡県":"九州沖縄","佐賀県":"九州沖縄","長崎県":"九州沖縄","熊本県":"九州沖縄","大分県":"九州沖縄","宮崎県":"九州沖縄","鹿児島県":"九州沖縄","沖縄県":"九州沖縄",
-  // 県をまたぐ・広域の表記
-  "全国":"全国","太平洋":"全国","日本海":"全国",
-  "関東":"関東","東北":"東北","中部":"中部","近畿":"近畿","中国":"中国四国","四国":"中国四国"
+  "力": "物理",
+  "てこ": "物理",
+  "滑車": "物理",
+  "ばね": "物理",
+  "圧力": "物理",
+  "浮力": "物理",
+  "運動": "物理",
+  "振り子": "物理",
+  "音": "物理",
+  "光": "物理",
+  "熱": "物理",
+  "電気": "物理",
+  "磁石": "物理",
+  "物質": "化学",
+  "気体": "化学",
+  "水溶液": "化学",
+  "実験": "化学",
+  "燃焼": "化学",
+  "化学変化": "化学",
+  "植物": "生物",
+  "観察": "生物",
+  "動物": "生物",
+  "生態": "生物",
+  "人体": "生物",
+  "大地": "地学",
+  "地層": "地学",
+  "火山": "地学",
+  "地震": "地学",
+  "気象": "地学",
+  "天体": "地学"
 };
-const CAT_BADGE = {
-  "県庁所在地":"県庁所在地","道庁所在地":"県庁所在地","政令指定都市":"県庁所在地",
-  "河川":"水","湖":"水","海流":"水","海岸":"水","湾":"水",
-  "山地・山脈":"陸","山・台地・盆地":"陸","半島":"陸",
-  "特産品":"農業","畜産":"農業",
-  "漁港":"漁業","養殖":"漁業",   // 漁港・養殖は産業として「漁業」称号に寄せる
-  "林業":"林業",
-  "工業":"工業","工業都市":"工業","公害":"工業",
-  "伝統的工芸品":"伝統工芸品",
-  "日本三景":"その他","日本三名園":"その他"
-};
-function regionOf(pref){ return PREF_REGION[pref] || "全国"; }
-function badgeCatOf(cat){ return CAT_BADGE[cat] || "その他"; }
+const CAT_BADGE = {};
+function regionOf(pref){ return PREF_REGION[pref] || "物理"; }
+function badgeCatOf(cat){ return CAT_BADGE[cat] || "力・運動"; }
 function enrichCards(cards){
   cards.forEach(c=>{
     if(!c.region) c.region = regionOf(c.pref);
@@ -557,54 +829,73 @@ let CARDS; // 初期化は LS_CARDS 定義後（下記）。ここで loadCards(
 
 /* ===== 2. 日本地図（47都道府県タイルマップ。1県=1マス、マスター県が緑に塗られる） ===== */
 function buildMap(mset){
-  // 教科版：カード(pref)からユニークな分野を拾って自動でタイルを並べる
-  const prefs=[...new Set(CARDS.map(c=>c.pref))];
-  const COLS=5, CELL=34, GAP=4, PAD=6;
-  const rows=Math.ceil(prefs.length/COLS);
-  const W=PAD*2+COLS*(CELL+GAP), H=PAD*2+rows*(CELL+GAP);
+  // 47都道府県タイルマップ。1県=1マス。地理配置に沿わせた簡略地図。
+  // mset に含まれる県（マスター済み）は緑に塗られる。
+  const T = {"北海道": {"c": 11, "r": 0, "s": "北海"}, "青森県": {"c": 10, "r": 2, "s": "青森"}, "秋田県": {"c": 9, "r": 3, "s": "秋田"}, "岩手県": {"c": 10, "r": 3, "s": "岩手"}, "山形県": {"c": 9, "r": 4, "s": "山形"}, "宮城県": {"c": 10, "r": 4, "s": "宮城"}, "福島県": {"c": 10, "r": 5, "s": "福島"}, "群馬県": {"c": 9, "r": 6, "s": "群馬"}, "栃木県": {"c": 10, "r": 6, "s": "栃木"}, "茨城県": {"c": 11, "r": 6, "s": "茨城"}, "埼玉県": {"c": 9, "r": 7, "s": "埼玉"}, "東京都": {"c": 10, "r": 7, "s": "東京"}, "千葉県": {"c": 11, "r": 7, "s": "千葉"}, "神奈川県": {"c": 10, "r": 8, "s": "神奈"}, "新潟県": {"c": 8, "r": 5, "s": "新潟"}, "富山県": {"c": 7, "r": 6, "s": "富山"}, "長野県": {"c": 8, "r": 6, "s": "長野"}, "石川県": {"c": 6, "r": 6, "s": "石川"}, "福井県": {"c": 6, "r": 7, "s": "福井"}, "山梨県": {"c": 8, "r": 7, "s": "山梨"}, "岐阜県": {"c": 7, "r": 7, "s": "岐阜"}, "静岡県": {"c": 8, "r": 8, "s": "静岡"}, "愛知県": {"c": 7, "r": 8, "s": "愛知"}, "滋賀県": {"c": 6, "r": 8, "s": "滋賀"}, "三重県": {"c": 6, "r": 9, "s": "三重"}, "京都府": {"c": 5, "r": 7, "s": "京都"}, "奈良県": {"c": 5, "r": 9, "s": "奈良"}, "大阪府": {"c": 5, "r": 8, "s": "大阪"}, "兵庫県": {"c": 4, "r": 8, "s": "兵庫"}, "和歌山県": {"c": 5, "r": 10, "s": "和歌"}, "鳥取県": {"c": 3, "r": 7, "s": "鳥取"}, "島根県": {"c": 2, "r": 7, "s": "島根"}, "岡山県": {"c": 3, "r": 8, "s": "岡山"}, "広島県": {"c": 2, "r": 8, "s": "広島"}, "山口県": {"c": 1, "r": 8, "s": "山口"}, "香川県": {"c": 3, "r": 9, "s": "香川"}, "徳島県": {"c": 4, "r": 9, "s": "徳島"}, "愛媛県": {"c": 2, "r": 9, "s": "愛媛"}, "高知県": {"c": 3, "r": 10, "s": "高知"}, "福岡県": {"c": 1, "r": 9, "s": "福岡"}, "佐賀県": {"c": 0, "r": 9, "s": "佐賀"}, "大分県": {"c": 1, "r": 10, "s": "大分"}, "長崎県": {"c": 0, "r": 10, "s": "長崎"}, "熊本県": {"c": 1, "r": 11, "s": "熊本"}, "宮崎県": {"c": 2, "r": 11, "s": "宮崎"}, "鹿児島県": {"c": 1, "r": 12, "s": "鹿児"}, "沖縄県": {"c": 0, "r": 13, "s": "沖縄"}};
+  const CELL=20, GAP=2.5, PAD=6;
+  let maxC=0,maxR=0;
+  for(const k in T){ if(T[k].c>maxC)maxC=T[k].c; if(T[k].r>maxR)maxR=T[k].r; }
+  const W = PAD*2 + (maxC+1)*(CELL+GAP);
+  const H = PAD*2 + (maxR+1)*(CELL+GAP);
   let cells="";
-  prefs.forEach((name,i)=>{
-    const x=PAD+(i%COLS)*(CELL+GAP), y=PAD+Math.floor(i/COLS)*(CELL+GAP);
+  for(const name in T){
+    const t=T[name];
+    const x=PAD+t.c*(CELL+GAP), y=PAD+t.r*(CELL+GAP);
     const on=mset.has(name);
-    const fill=on?"var(--green)":"#e7e2d4", tcol=on?"#ffffff":"#a79e8b";
-    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="6" fill="${fill}"></rect>`;
-    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+4}" text-anchor="middle" font-size="11" fill="${tcol}" font-weight="700">${name.slice(0,2)}</text></g>`;
-  });
+    const fill=on?"var(--green)":"#e7e2d4";
+    const tcol=on?"#ffffff":"#a79e8b";
+    cells+=`<g><rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3.5" fill="${fill}"></rect>`;
+    cells+=`<text x="${x+CELL/2}" y="${y+CELL/2+3.2}" text-anchor="middle" font-size="7.3" fill="${tcol}" font-weight="700">${t.s}</text></g>`;
+  }
   return `<svg class="jpmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${cells}</svg>`;
 }
 
 /* ===== 3. 保存（端末内 localStorage、ニックネーム+PINごと） ===== */
 const DAILY_GOAL=10;
 const LS_CARDS="rikatan_cards";
+const CARD_DATA_VERSION=2; // 2026-07バッジ再編。これより古い取り込み済み問題セット(旧カテゴリ)は無効化して埋め込み問題に戻す
 const userKey=(n,p)=>"rikatan_user_"+n+"_"+p;
 let state=null;
 
 function loadCards(){
-  try{const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}}catch(e){}
+  try{
+    if(+(localStorage.getItem(LS_CARDS+"_ver")||1)<CARD_DATA_VERSION){
+      localStorage.removeItem(LS_CARDS);
+      localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
+    }else{
+      const j=localStorage.getItem(LS_CARDS); if(j){const a=JSON.parse(j); if(a&&a.length)return a;}
+    }
+  }catch(e){}
   return DEFAULT_CARDS.slice();
 }
 CARDS = enrichCards(loadCards()); // 取り込み済みCSVがあればそれを、なければ埋め込み問題を使う
-function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0};}
+function freshState(n,p){return{nick:n,pin:p,campus:"",xp:0,streak:0,reviews:{},doneToday:0,accCorrect:0,accTotal:0,lastDay:todayStr(),streakedToday:false,badges:{},weekPending:0,weekScore:0,review:[],daily30Date:""};}
 function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
-function saveState(){ if(state) try{localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
+function saveState(){ if(state) try{state.savedAt=Date.now();localStorage.setItem(userKey(state.nick,state.pin),JSON.stringify(state));}catch(e){} }
 function loadState(n,p){
   try{const j=localStorage.getItem(userKey(n,p)); if(j)return JSON.parse(j);}catch(e){}
   return null;
 }
+function dayGap(a,b){
+  // "YYYY-M-D"文字列の日数差。Safariは"2026-7-11"をDate()で解釈できないため手動パース
+  const p=s=>{const[y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
+  return Math.round((p(b)-p(a))/864e5);
+}
 function rolloverDay(){
-  // 日付が変わっていたら「今日の学習」をリセット。前日にゴール未達ならストリークを途切れさせる簡易版
+  // 日付が変わっていたら「今日の学習」をリセット。
+  // 前回の記録日に30問未完了、または丸1日以上あいていたら連続記録を0に戻す
   const t=todayStr();
   if(state.lastDay!==t){
+    if(dayGap(state.lastDay,t)>=2 || !state.streakedToday) state.streak=0;
     state.doneToday=0; state.streakedToday=false; state.lastDay=t;
   }
 }
 
 /* ===== 4. SRS（SM-2簡易版）＋出題ステージ ===== */
-/* stage: 0=4択, 1=文字を選ぶ, 2=入力。reps（連続正解数）で決まる */
+/* stage: 0=4択, 1=文字を並べ替え。の2段階（入力ステージは廃止）。reps（連続正解数）で決まる */
 function stageOf(r){
   if(!r||r.reps<=0) return 0;
-  if(r.reps===1) return 1;
-  return 2;
+  return 1;
 }
 function schedule(id,correct){
   const r=state.reviews[id]||{ef:2.3,interval:0,reps:0,mastered:false};
@@ -612,11 +903,12 @@ function schedule(id,correct){
     r.reps+=1;
     if(r.reps===1)r.interval=1; else if(r.reps===2)r.interval=3; else r.interval=Math.round(r.interval*r.ef);
     r.ef=Math.min(2.6,r.ef+0.05);
-    if(r.reps>=3)r.mastered=true;
+    if(r.reps>=2)r.mastered=true; // 4択→並べ替えの2回正解でマスター（並べ替え2回は冗長のため）
+    r.everCorrect=true; // ポイント制用：一度でも正解したことがある印（初正解の判定に使う）
   }else{
     r.reps=Math.max(0,r.reps-1); // 1段階だけ戻す（完全リセットより優しい）
     r.interval=1; r.ef=Math.max(1.6,r.ef-0.2); r.mastered=false;
-    r.wrong=(r.wrong||0)+1; // にがて復習用：まちがえた回数を記録
+    r.wrong=(r.wrong||0)+1; // 苦手復習用：まちがえた回数を記録
   }
   r.due=Date.now()+r.interval*864e5;
   state.reviews[id]=r;
@@ -627,40 +919,41 @@ function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastere
 /* ===== 4b. 称号（バッジ）：カテゴリ/地方の mastered率で解放 ===== */
 const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
 const BADGES = [
-  {key:"butsuri",  name:"物理マスター",       emoji:"⚡", type:"region", match:"物理"},
-  {key:"kagaku",   name:"化学マスター",       emoji:"🧪", type:"region", match:"化学"},
-  {key:"seibutsu", name:"生物マスター",       emoji:"🌱", type:"region", match:"生物"},
-  {key:"chigaku",  name:"地学マスター",       emoji:"🌋", type:"region", match:"地学"},
-  {key:"chikara",  name:"力・運動マスター",   emoji:"💪", type:"badgeCat", match:"力・運動"},
-  {key:"teko",     name:"てこ・滑車マスター", emoji:"⚖️", type:"badgeCat", match:"てこ・滑車"},
-  {key:"bane",     name:"ばねマスター",       emoji:"🌀", type:"badgeCat", match:"ばね"},
-  {key:"furiko",   name:"振り子マスター",     emoji:"🕰️", type:"badgeCat", match:"振り子"},
-  {key:"atsuryoku",name:"圧力・浮力マスター", emoji:"🛟", type:"badgeCat", match:"圧力・浮力"},
-  {key:"hikari",   name:"光・音マスター",     emoji:"🔦", type:"badgeCat", match:"光・音"},
-  {key:"netsu",    name:"熱マスター",         emoji:"🌡️", type:"badgeCat", match:"熱"},
-  {key:"denki",    name:"電気・磁石マスター", emoji:"🧲", type:"badgeCat", match:"電気・磁石"},
-  {key:"henka",    name:"物質の変化マスター", emoji:"⚗️", type:"badgeCat", match:"物質の変化"},
-  {key:"seishitsu",name:"物質の性質マスター", emoji:"⚛️", type:"badgeCat", match:"物質の性質"},
-  {key:"kitai",    name:"気体マスター",       emoji:"💨", type:"badgeCat", match:"気体"},
-  {key:"suiyou",   name:"水溶液マスター",     emoji:"💧", type:"badgeCat", match:"水溶液"},
-  {key:"san",      name:"酸・アルカリマスター",emoji:"🍋", type:"badgeCat", match:"酸・アルカリ"},
-  {key:"nensho",   name:"燃焼・化学変化マスター",emoji:"🔥", type:"badgeCat", match:"燃焼・化学変化"},
-  {key:"jikken",   name:"実験操作マスター",   emoji:"🔬", type:"badgeCat", match:"実験操作"},
-  {key:"kansatsu", name:"観察マスター",       emoji:"🔍", type:"badgeCat", match:"観察"},
-  {key:"plant",    name:"植物マスター",       emoji:"🌻", type:"badgeCat", match:"植物"},
-  {key:"animal",   name:"動物マスター",       emoji:"🐟", type:"badgeCat", match:"動物"},
-  {key:"body",     name:"人体マスター",       emoji:"🏃", type:"badgeCat", match:"人体"},
-  {key:"seitai",   name:"生態系マスター",     emoji:"🐾", type:"badgeCat", match:"生態系"},
-  {key:"daichi",   name:"大地マスター",       emoji:"⛰️", type:"badgeCat", match:"大地"},
-  {key:"chisou",   name:"地層マスター",       emoji:"🪨", type:"badgeCat", match:"地層"},
-  {key:"kazan",    name:"火山・地震マスター", emoji:"🗻", type:"badgeCat", match:"火山・地震"},
-  {key:"tenki",    name:"天気マスター",       emoji:"⛅", type:"badgeCat", match:"天気"},
-  {key:"tentai",   name:"天体マスター",       emoji:"🌙", type:"badgeCat", match:"天体"},
-  {key:"diagram",  name:"図表マスター",       emoji:"📊", type:"badgeCat", match:"図表"},
+  {key:"bunya_butsuri", name:"物理マスター", emoji:"⚡", type:"region", match:"物理"},
+  {key:"bunya_kagaku", name:"化学マスター", emoji:"🧪", type:"region", match:"化学"},
+  {key:"bunya_seibutsu", name:"生物マスター", emoji:"🌱", type:"region", match:"生物"},
+  {key:"bunya_chigaku", name:"地学マスター", emoji:"🌋", type:"region", match:"地学"},
+  {key:"chikara", name:"力・運動マスター", emoji:"💪", type:"badgeCat", match:"力・運動"},
+  {key:"teko", name:"てこ・滑車マスター", emoji:"⚖️", type:"badgeCat", match:"てこ・滑車"},
+  {key:"bane", name:"ばねマスター", emoji:"🌀", type:"badgeCat", match:"ばね"},
+  {key:"furiko", name:"振り子マスター", emoji:"🕰️", type:"badgeCat", match:"振り子"},
+  {key:"atsuryoku", name:"圧力・浮力マスター", emoji:"🛟", type:"badgeCat", match:"圧力・浮力"},
+  {key:"hikari", name:"光・音マスター", emoji:"🔦", type:"badgeCat", match:"光・音"},
+  {key:"netsu", name:"熱マスター", emoji:"🌡️", type:"badgeCat", match:"熱"},
+  {key:"denki", name:"電気・磁石マスター", emoji:"🧲", type:"badgeCat", match:"電気・磁石"},
+  {key:"seishitsu", name:"物質の性質マスター", emoji:"⚛️", type:"badgeCat", match:"物質の性質"},
+  {key:"henka", name:"物質の変化マスター", emoji:"⚗️", type:"badgeCat", match:"物質の変化"},
+  {key:"kitai", name:"気体マスター", emoji:"💨", type:"badgeCat", match:"気体"},
+  {key:"suiyou", name:"水溶液マスター", emoji:"💧", type:"badgeCat", match:"水溶液"},
+  {key:"san", name:"酸・アルカリマスター", emoji:"🍋", type:"badgeCat", match:"酸・アルカリ"},
+  {key:"nensho", name:"燃焼・化学変化マスター", emoji:"🔥", type:"badgeCat", match:"燃焼・化学変化"},
+  {key:"jikken", name:"実験操作マスター", emoji:"🔬", type:"badgeCat", match:"実験操作"},
+  {key:"kansatsu", name:"観察マスター", emoji:"🔍", type:"badgeCat", match:"観察"},
+  {key:"plant", name:"植物マスター", emoji:"🌻", type:"badgeCat", match:"植物"},
+  {key:"animal", name:"動物マスター", emoji:"🐟", type:"badgeCat", match:"動物"},
+  {key:"body", name:"人体マスター", emoji:"🏃", type:"badgeCat", match:"人体"},
+  {key:"seitai", name:"生態系マスター", emoji:"🐾", type:"badgeCat", match:"生態系"},
+  {key:"daichi", name:"大地マスター", emoji:"⛰️", type:"badgeCat", match:"大地"},
+  {key:"chisou", name:"地層マスター", emoji:"🪨", type:"badgeCat", match:"地層"},
+  {key:"kazan", name:"火山・地震マスター", emoji:"🗻", type:"badgeCat", match:"火山・地震"},
+  {key:"tenki", name:"天気マスター", emoji:"⛅", type:"badgeCat", match:"天気"},
+  {key:"tentai", name:"天体マスター", emoji:"🌙", type:"badgeCat", match:"天体"},
 ];
+// 2026-07再編で廃止したバッジキー（獲得済み記録が残っていても無害化のため削除）
+const OBSOLETE_BADGE_KEYS=["region_chugokushikoku","land","fishery","forestry","tourism"];
 const FINAL_BADGE = {key:"doctor", name:"理科博士", emoji:"🎓"};
 // 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
-// 解放判定・地理博士の条件・称号数の分母すべてから除外し、カードが入ると自動で有効になる
+// 解放判定・理科博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
 function badgeActive(b){return CARDS.some(c=> b.type==="region" ? c.region===b.match : c.badgeCat===b.match);}
 function activeBadges(){return BADGES.filter(badgeActive);}
 
@@ -676,6 +969,9 @@ function badgeProgress(b){
 // 解放判定し、新規獲得は獲得日を記録。新しく獲得した称号はお祝い演出へ
 function refreshBadges(){
   if(!state.badges)state.badges={};
+  // 2026-07バッジ再編: 旧区分で獲得した称号(理科博士含む)を一度リセットし、正答記録(reviews)から新区分で再判定する
+  if((state.badgeSchemaVersion||1)<2){ state.badges={}; state.badgeSchemaVersion=2; saveState(); }
+  OBSOLETE_BADGE_KEYS.forEach(k=>{delete state.badges[k];});
   const act=activeBadges(), fresh=[];
   act.forEach(b=>{
     if(badgeProgress(b).earned && !state.badges[b.key]){state.badges[b.key]=todayStr();fresh.push(b);}
@@ -684,9 +980,55 @@ function refreshBadges(){
     state.badges[FINAL_BADGE.key]=todayStr(); fresh.push(FINAL_BADGE);
   }
   if(fresh.length){saveState();celebrate(fresh);}
+  checkAssignmentsDone(); // 新しく称号を取ったら、対応する課題を完了にする
   return state.badges;
 }
 function earnedBadgeCount(){return activeBadges().filter(b=>state.badges&&state.badges[b.key]).length;}
+
+/* ===== 4b2. 課題（先生が出す宿題）: 期間中ホームに表示し、対象の称号を獲得したら完了 ===== */
+let ASSIGNMENTS=[];           // 今日有効な未完了課題（サーバから取得。オフライン時は空）
+const REPORTED_IDS=new Set(); // この起動中に報告済みの問題ID（二重報告防止）
+function badgeForDeck(deck){
+  const m=/^([RB]):(.+)$/.exec(deck||"");
+  if(!m)return null;
+  return BADGES.find(b=>(m[1]==="R"?b.type==="region":b.type==="badgeCat")&&b.match===m[2])||null;
+}
+async function fetchAssignments(){
+  ASSIGNMENTS=[];
+  if(!state||!state.online)return;
+  try{
+    const r=await rpc('list_assignments',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT});
+    if(r&&r.ok)ASSIGNMENTS=r.assignments||[];
+  }catch(e){}
+}
+function checkAssignmentsDone(){
+  // 対応する称号を獲得済みの課題を完了にする（サーバへ通知し、ホームの一覧から外す）
+  if(!state||!ASSIGNMENTS.length)return;
+  ASSIGNMENTS.slice().forEach(a=>{
+    const b=badgeForDeck(a.deck);
+    if(b&&state.badges&&state.badges[b.key]){
+      ASSIGNMENTS=ASSIGNMENTS.filter(x=>x.id!==a.id);
+      if(state.online)rpc('complete_assignment',{p_nick:state.nick,p_number:state.pin,p_id:a.id}).catch(()=>{});
+      renderKadai();
+    }
+  });
+}
+function renderKadai(){
+  const box=$('kadaiList'); if(!box)return;
+  box.innerHTML="";
+  const md=s=>{const p=String(s).split("-");return (+p[1])+"/"+(+p[2]);};
+  ASSIGNMENTS.forEach(a=>{
+    const b=badgeForDeck(a.deck);
+    const btn=document.createElement('button'); btn.className="mode-card";
+    const em=document.createElement('span'); em.className="mc-emoji"; em.textContent=b?b.emoji:"📝";
+    const body=document.createElement('span'); body.className="mc-body";
+    const t=document.createElement('span'); t.className="mc-title"; t.textContent=(a.deck_name||(b?b.name:"課題"))+"をとろう！";
+    const d=document.createElement('span'); d.className="mc-desc"; d.textContent="先生からの課題（"+md(a.start_date)+"〜"+md(a.end_date)+"）。この称号を80%マスターで達成！";
+    body.appendChild(t); body.appendChild(d); btn.appendChild(em); btn.appendChild(body);
+    btn.onclick=()=>startQuiz(a.deck);
+    box.appendChild(btn);
+  });
+}
 
 /* ===== 4c. 称号獲得のお祝い演出（音は一切鳴らさない：電車・自習室対応） ===== */
 let celebrateQueue=[], celebrating=false;
@@ -707,10 +1049,10 @@ function nextCelebration(){
   ov.innerHTML=`<div class="conf">${conf}</div>
     <div class="cbody">
       <div class="cemoji">${b.emoji}</div>
-      <div class="ctitle">${isDoctor?"さいごの称号":"あたらしい称号"}</div>
+      <div class="ctitle">${isDoctor?"最後の称号":"新しい称号"}</div>
       <div class="cname">${b.name}</div>
-      <div class="cget">${isDoctor?"ぜんぶの称号を あつめたよ！すごい！！":"ゲット！"}</div>
-      <div class="chint">タップでとじる</div>
+      <div class="cget">${isDoctor?"全部の称号を 集めたよ！すごい！！":"ゲット！"}</div>
+      <div class="chint">タップで閉じる</div>
     </div>`;
   document.body.appendChild(ov);
   const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>{ov.remove();nextCelebration();},260); };
@@ -722,25 +1064,35 @@ function nextCelebration(){
 const $=id=>document.getElementById(id);
 function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
 
+// 共有ログイン情報が「いま認証に失敗した名前・番号」と同じなら削除する
+// （間違った情報のまま各教科で自動ログイン失敗を繰り返すのを防ぐ。別の情報なら消さない）
+function clearSharedIfMatches(n,p){
+  try{
+    const s=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    if(s&&s.nick===n&&s.pin===p)localStorage.removeItem(SHARED_LOGIN_KEY);
+  }catch(e){}
+}
 $('loginBtn').onclick=async()=>{
   const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
   $('loginMsg').textContent="";
   if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
-  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8けた）で入れてね";return;}
+  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
   $('loginBtn').disabled=true;
   try{
     let onlineOk=false, srvCampus="", srvWeek=0;
     if(ONLINE()){
-      $('loginMsg').textContent="つうしん中…";
+      $('loginMsg').textContent="通信中…";
       try{
-        let r=await rpc('login_player',{p_nick:n,p_number:p});
+        let r=await rpc('login_player',{p_nick:n,p_number:p,p_subject:SUBJECT});
         if(!r.ok&&r.reason==='not_found'){
-          if(!campus){$('loginMsg').textContent="はじめての人は校舎をえらんでね";return;}
+          if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
           r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
-          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";return;}
+          if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";clearSharedIfMatches(n,p);return;}
           r.week_score=0;
+        }else if(!r.ok&&r.reason==='suspended'){
+          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";clearSharedIfMatches(n,p);return;
         }else if(!r.ok){
-          $('loginMsg').textContent="番号がちがうみたい。もういちど確かめてね";return;
+          $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
         }
         onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
       }catch(e){ /* サーバに届かない → オフラインで続行 */ }
@@ -753,85 +1105,96 @@ $('loginBtn').onclick=async()=>{
     if(onlineOk){
       state.campus=srvCampus;
       state.weekScore=srvWeek;
-      if(!existing){
-        // この端末に記録がない → サーバのバックアップから復元を試みる
-        try{
-          const pr=await rpc('load_progress',{p_nick:n,p_number:p});
-          if(pr.ok&&pr.data){
-            const d=pr.data;
-            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges"].forEach(k=>{
+      // サーバのバックアップと比較して「新しい側」を採用する（複数端末利用で古い進捗に巻き戻るのを防ぐ）。
+      // savedAt はこの端末で最後に学習記録を保存した時刻。旧データ（savedAtなし）は0＝最古扱いで従来動作と同じ。
+      try{
+        const pr=await rpc('load_progress',{p_nick:n,p_number:p,p_subject:SUBJECT});
+        if(pr.ok&&pr.data){
+          const d=pr.data;
+          const srvAt=+d.savedAt||0, locAt=existing?(+state.savedAt||0):-1;
+          if(srvAt>locAt){
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","daily30Session","weekPending","savedAt"].forEach(k=>{
               if(d[k]!=null)state[k]=d[k];
             });
           }
-        }catch(e){}
-      }
+        }
+      }catch(e){}
     }
     $('loginMsg').textContent="";
+    // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
+    // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
+    try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
     rolloverDay(); refreshBadges(); saveState();
+    await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
     flushScore();
   }finally{ $('loginBtn').disabled=false; }
 };
 $('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
-$('logoutBtn').onclick=()=>{ state=null; $('nick').value="";$('pin').value="";$('campusSel').value=""; show('login'); };
+$('logoutBtn').onclick=()=>{
+  state=null; $('nick').value="";$('pin').value="";$('campusSel').value="";
+  try{localStorage.removeItem(SHARED_LOGIN_KEY);}catch(e){} // 全教科からログアウト
+  location.href="../"; // ポータル（教科えらび）へ戻る
+};
 
 function renderHome(){
   rolloverDay();
   $('hiNick').textContent=state.nick;
   $('streakN').textContent=state.streak;
-  const mset=masteredCount();
-  $('mapHost').innerHTML=buildMap(mset);
-  $('masterN').textContent=mset.size;
-  $('mapTotal').textContent=[...new Set(CARDS.map(c=>c.pref))].length;
-  $('sCards').textContent=masteredCards();
-  $('sXp').textContent=state.xp;
-  $('sAcc').textContent=state.accTotal?Math.round(state.accCorrect/state.accTotal*100)+"%":"–";
-  $('goalNow').textContent=Math.min(state.doneToday,DAILY_GOAL);
-  $('goalMax').textContent=DAILY_GOAL;
-  $('goalBar').style.width=Math.min(100,state.doneToday/DAILY_GOAL*100)+"%";
-  const comps=["物理編","化学編","生物編","地学編"],desc={"物理編":"力・てこ・光・音・電気","化学編":"水溶液・気体・燃焼","生物編":"植物・動物・人体","地学編":"大地・天気・天体"};
-  let html="";
-  comps.forEach(c=>{
-    const due=dueCards(c).length, total=CARDS.filter(x=>x.comp===c).length;
-    if(total===0)return;
-    html+=`<button class="deck" data-comp="${c}"><span class="dot" style="background:${COLOR[c]}"></span>
-      <span><span class="dn">${c}</span><br><span class="dd">${desc[c]}・全${total}枚</span></span>
-      <span class="due ${due?'':'zero'}">${due?('学習 '+due+'枚'):'おわり'}</span></button>`;
-  });
-  html+=`<button class="deck" data-comp="ALL"><span class="dot" style="background:linear-gradient(135deg,var(--green),var(--blue),var(--orange))"></span>
-    <span><span class="dn">きょうのおすすめ</span><br><span class="dd">復習どきのカードをまぜて出題</span></span>
-    <span class="due">スタート</span></button>`;
-  html+=`<button class="deck" data-comp="PICK"><span class="dot" style="background:var(--gold)"></span>
-    <span><span class="dn">🎯 えらんで学習</span><br><span class="dd">分野・テーマごとに出題（称号ねらい）</span></span>
-    <span class="due">えらぶ</span></button>`;
-  const ng=nigateCards().length;
-  if(ng>0){ // まちがえた問題ができたときだけ出現する
-    html+=`<button class="deck" data-comp="NIGATE"><span class="dot" style="background:var(--wrong)"></span>
-      <span><span class="dn">🔥 にがて復習</span><br><span class="dd">まちがえた回数が多い問題から出すよ</span></span>
-      <span class="due">${Math.min(ng,DAILY_GOAL)}枚</span></button>`;
-  }
-  $('deckPick').innerHTML=html;
-  $('deckPick').querySelectorAll('.deck').forEach(b=>b.onclick=()=>{
-    if(b.dataset.comp==="PICK"){renderPick();show('pick');}
-    else startQuiz(b.dataset.comp);
-  });
   refreshBadges();
-  $('badgeCountPill').textContent=earnedBadgeCount()+"/"+activeBadges().length;
-  $('rankBtn').style.display=(ONLINE()&&state.online)?"":"none";
+  renderHomeBadges();
+  renderKadai();
+  // ランキングはオンライン時のみ入口を出す
+  $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
+  // 今日の30問：クリア済みなら見た目を変える
+  const dailyDone = state.daily30Date===todayStr();
+  $('modeDaily').classList.toggle('done',dailyDone);
+  $('modeDailyEmoji').textContent = dailyDone ? "✅" : "📅";
+  $('modeDailyTitle').textContent = dailyDone ? "今日の30問（クリア済み）" : "今日の30問";
+  const ds30=state.daily30Session;
+  if(!dailyDone&&ds30&&ds30.date===todayStr()&&Array.isArray(ds30.ids)&&ds30.idx>0&&ds30.idx<ds30.ids.length){
+    $('modeDailyTitle').textContent="今日の30問（つづき "+(ds30.idx+1)+"問目から）";
+  }
+  $('modeDailyDesc').textContent = dailyDone ? "また明日ちょうせんできるよ。今日は復習や称号モードをどうぞ" : "全範囲からランダム約30問。毎日やって🔥連続をのばそう";
+  // 復習モード：たまっている間だけ入口を出す
+  const nrev = reviewCards().length;
+  $('modeReview').style.display = nrev>0 ? "" : "none";
+  $('reviewCount').textContent = nrev>0 ? nrev+"問" : "";
 }
+
+// ホーム上部の称号コレクション：獲得＝カラーで光る／未獲得＝グレー の2状態だけ
+function renderHomeBadges(){
+  const items=BADGES.concat([FINAL_BADGE]);
+  let html="";
+  items.forEach(b=>{
+    const earned=!!(state.badges&&state.badges[b.key]);
+    const isFinal=b.key===FINAL_BADGE.key;
+    const short=b.name.replace("マスター","");
+    html+=`<button class="hbadge ${isFinal?'final ':''}${earned?'earned':'locked'}" data-key="${b.key}">
+      <span class="hb-emoji">${b.emoji}</span><span class="hb-name">${short}</span></button>`;
+  });
+  $('homeBadgeGrid').innerHTML=html;
+  $('homeBadgeGrid').querySelectorAll('.hbadge').forEach(el=>el.onclick=()=>{renderBadges(el.dataset.key);show('badges');});
+  $('collGot').textContent=earnedBadgeCount()+(state.badges&&state.badges[FINAL_BADGE.key]?1:0);
+  $('collTotal').textContent=BADGES.length+1; // 全称号＋最終称号（博士）
+}
+$('modeBadge').onclick=()=>{renderPick();show('pick');};
+$('modeDaily').onclick=()=>startQuiz('DAILY30');
+$('modeReview').onclick=()=>startQuiz('REVIEW');
+$('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
 
 /* ===== 称号画面 ===== */
 function renderBadges(){
   refreshBadges(); saveState();
   const got=earnedBadgeCount();
-  $('badgeSum').innerHTML=`あつめた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?'<span style="color:var(--gold);font-weight:700">🎓 '+FINAL_BADGE.name+' 達成！</span>':'（ぜんぶ集めると「'+FINAL_BADGE.name+'」）'}`;
+  $('badgeSum').innerHTML=`集めた称号 <b>${got}</b> / ${activeBadges().length}　${state.badges[FINAL_BADGE.key]?`<span style="color:var(--gold);font-weight:700">${FINAL_BADGE.emoji} ${FINAL_BADGE.name} 達成！</span>`:`（全部集めると「${FINAL_BADGE.name}」）`}`;
   let html="";
   BADGES.forEach(b=>{
     if(!badgeActive(b)){ // 対象カードがまだ無い称号（白地図など）は「じゅんびちゅう」の箱として見せる
       html+=`<div class="badge locked" style="filter:grayscale(.6)">
         <div class="bemoji">${b.emoji}</div>
         <div class="bname">${b.name}</div>
-        <div class="bmeta">じゅんびちゅう・おたのしみに！</div>
+        <div class="bmeta">準備中・お楽しみに！</div>
       </div>`;
       return;
     }
@@ -852,14 +1215,13 @@ function renderBadges(){
   html+=`<div class="badge final ${fEarned?'earned':'locked'}">
     <div class="bemoji">${FINAL_BADGE.emoji}</div>
     <div class="bname">${FINAL_BADGE.name}</div>
-    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号すべてでゲット'}</div>
+    <div class="bmeta">${fEarned?('ゲット！ '+state.badges[FINAL_BADGE.key]):activeBadges().length+'称号全てでゲット'}</div>
   </div>`;
   $('badgeGrid').innerHTML=html;
 }
-$('badgesBtn').onclick=()=>{renderBadges();show('badges');};
 $('badgesBack').onclick=()=>{renderHome();show('home');};
 
-/* ===== えらんで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
+/* ===== 選んで学習（称号と同じ 地方×分野 の軸でデッキを選ぶ） ===== */
 function renderPick(){
   const mk=(b,comp)=>{
     const p=badgeProgress(b);
@@ -901,9 +1263,36 @@ function nigateCards(){ // まちがえた回数が多い順。マスター済�
   return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
     .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
 }
+const DAILY30=30; // 今日の30問の枚数
+function reviewCards(){ // 今日の30問で間違えた問題（過去分もたまる）。正解すると外れる
+  return (state.review||[]).map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+}
 function startQuiz(comp){
   let pool;
-  if(comp==="NIGATE"){
+  if(comp==="DAILY30"){
+    if(state.daily30Date===todayStr()){alert("今日の30問は もうクリアしたよ！また明日ね😊");return;}
+    // 途中でやめた分が今日あれば、同じ問題セットの続きから再開する（完走すると消える）
+    const ds=state.daily30Session;
+    if(ds&&ds.date===todayStr()&&Array.isArray(ds.ids)&&ds.idx>0){
+      const q=ds.ids.map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+      if(q.length&&ds.idx<q.length){
+        session={queue:q,idx:ds.idx,correct:ds.correct||0,total:q.length,comp,points:ds.points||0};
+        renderQuestion(); show('quiz'); return;
+      }
+    }
+    // 全範囲からランダム約30問（毎日のルーティン。ストリークはこの完了で伸びる）
+    // 複数称号向けの複製問題（例: forest-isanとheritage-genseirin）が同じ回に2回出ないよう、問題文+正解でユニーク化
+    const seen30=new Set();
+    pool=shuffle(CARDS.slice()).filter(c=>{const k=c.q+"|"+(c.a||[]).join("・");if(seen30.has(k))return false;seen30.add(k);return true;}).slice(0,DAILY30);
+  }else if(comp==="REVIEW"){
+    // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
+    pool=reviewCards();
+    if(pool.length===0){alert("復習する問題はないよ！今日の30問をがんばろう😊");return;}
+  }else if(comp&&(comp.startsWith("R:")||comp.startsWith("B:"))){
+    // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
+    pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
+    if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
+  }else if(comp==="NIGATE"){
     pool=nigateCards().slice(0,DAILY_GOAL);
   }else{
     pool=dueCards(comp);
@@ -914,20 +1303,20 @@ function startQuiz(comp){
   session={queue:pool,idx:0,correct:0,total:pool.length,comp};
   renderQuestion(); show('quiz');
 }
-const STAGE_LABEL=["ステップ1・4たくからえらぶ","ステップ2・文字をならべる","ステップ3・自分で入力"];
+const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を並べる","ステップ3・漢字で入力"];
 
 function renderQuestion(){
   const c=session.queue[session.idx];
   picked=new Set(); answered=false; slotChars=[]; renderSeq++;
-  // multiと画像つきカードは常に4択（画像問題はステージ進行させない）
-  // 並べ替え・入力ステージは答えが短い(6文字以内・記号なし)ときだけ。「重心を低くして底面を広くする」のような文の答えは常に4択
-  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(c.a[0]);
-  stage = (c.type==="multi"||c.image||!tileable) ? 0 : stageOf(state.reviews[c.id]);
+  // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
+  // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
+  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0]));
+  stage = (c.type==="multi"||c.image||session.comp==="DAILY30"||!tileable) ? 0 : stageOf(state.reviews[c.id]);
   $('qProg').style.width=(session.idx/session.total*100)+"%";
   $('qCount').textContent=(session.idx+1)+"/"+session.total;
-  $('stagePill').textContent = c.type==="multi" ? "ふくすう選ぶ問題" : (c.image ? "画像を見てえらぶ問題" : STAGE_LABEL[stage]);
+  $('stagePill').textContent = c.type==="multi" ? "複数選ぶ問題" : (c.image ? "画像を見て選ぶ問題" : STAGE_LABEL[stage]);
   $('qTag').textContent=c.comp; $('qTag').style.background=COLOR[c.comp];
-  $('qPref').textContent=c.pref; $('qText').textContent=c.q;
+  $('qText').textContent=c.q; // 都道府県名(qPref)は表示しない（答えが分かってしまうため）
   const im=$('qImg'); $('qImgMiss').style.display="none";
   if(c.image){
     im.alt="（画像："+c.q+"）";
@@ -936,7 +1325,7 @@ function renderQuestion(){
   }else{ im.style.display="none"; im.removeAttribute('src'); }
   $('qMultiHint').style.display=c.type==="multi"?"block":"none";
   $('feedback').className="feedback";
-  $('checkBtn').textContent="こたえあわせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
+  $('checkBtn').textContent="答え合わせ"; $('checkBtn').disabled=true; $('checkBtn').onclick=checkAnswer;
   $('dontknow').style.display="block";
 
   if(stage===0) renderChoices(c);
@@ -970,13 +1359,16 @@ function onPick(btn,type){
   $('checkBtn').disabled=picked.size===0;
 }
 
+/* 振り仮名「（よみ）」を除いた表記。並べ替えタイルと答え合わせに使う */
+function stripYomi(s){return String(s).replace(/（[^）]*）/g,"");}
+
 /* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
 function renderTiles(c){
-  const ans=c.a[0];
+  const ans=stripYomi(c.a[0]);
   const ansChars=ans.split("");
-  // ダミー文字：他の選択肢から文字を拝借
+  // ダミー文字：他の選択肢から文字を拝借（振り仮名は除く）
   let pool=[];
-  c.choices.forEach(o=>{if(o!==ans)pool.push(...o.split(""));});
+  c.choices.forEach(o=>{const p=stripYomi(o);if(p!==ans)pool.push(...p.split(""));});
   pool=pool.filter(ch=>!ansChars.includes(ch));
   const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
   const tiles=shuffle([...ansChars,...dummies]);
@@ -1013,7 +1405,7 @@ function renderSlots(n){
 
 /* ステージ3：漢字入力 */
 function renderInput(c){
-  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="こたえを入力">
+  $('answerArea').innerHTML=`<input class="text-input" id="txtIn" inputmode="text" autocomplete="off" placeholder="答えを入力">
     <div class="input-help">漢字で入力してね（「市・県・府」は省いてもOK）</div>`;
   const inp=$('txtIn');
   inp.oninput=()=>{$('checkBtn').disabled=inp.value.trim().length===0;};
@@ -1032,13 +1424,13 @@ function checkAnswer(){
   if(!answered){
     let correct=false;
     if(stage===0){
-      // 画面に存在しない選択肢（前問への遅延タップ等）が混入していても判定を壊さない（2026-07-30 誤判定バグ修正の移植）
+      // 画面に存在しない選択肢（前問への遅延タップ等）が混入していても判定を壊さない（2026-07-30 誤判定バグ修正）
       if(!picked.has("__none__")) picked=new Set([...picked].filter(p=>c.choices.includes(p)));
       if(picked.size===0){ $('checkBtn').disabled=true; return; }
       const aset=new Set(c.a);
       correct = picked.size===aset.size && [...picked].every(p=>aset.has(p));
     }else if(stage===1){
-      correct = slotChars.join("")===c.a[0];
+      correct = slotChars.join("")===stripYomi(c.a[0]);
     }else{
       const v=$('txtIn').value;
       correct = norm(v)===norm(c.a[0]);
@@ -1062,37 +1454,96 @@ function judge(correct){
       else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
     });
   }
+  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=1点
+  const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
+  const isDaily = session.comp==="DAILY30";
   schedule(c.id,correct);
-  state.accTotal++; if(correct){session.correct++;state.accCorrect++;state.xp+=10;state.weekPending=(state.weekPending||0)+1;}
+  state.accTotal++;
+  if(correct){
+    session.correct++; state.accCorrect++; state.xp+=10;
+    const pts = isDaily ? 10 : (firstCorrect ? 10 : 1);
+    state.weekPending=(state.weekPending||0)+pts;
+    if(session)session.points=(session.points||0)+pts;
+  }
+  // 復習リスト：今日の30問で間違えた問題をためる／正解したら（どのモードでも）その問題を外す
+  if(!state.review)state.review=[];
+  if(isDaily && !correct){ if(!state.review.includes(c.id))state.review.push(c.id); }
+  if(correct){ const i=state.review.indexOf(c.id); if(i>=0)state.review.splice(i,1); }
+  if(isDaily){ // 今日の30問：途中でやめても続きから再開できるよう進み具合を保存（完走時に消す）
+    state.daily30Session={date:todayStr(),ids:session.queue.map(x=>x.id),idx:session.idx+1,correct:session.correct,points:session.points||0};
+  }
   state.doneToday++;
   refreshBadges(); // 答え合わせ直後に称号判定→新規獲得ならお祝い演出
   saveState();
   const fb=$('feedback');fb.classList.add('show',correct?'good':'bad');
-  $('fTitle').innerHTML=correct?"せいかい！ <span class='xp-pop'>+10 XP</span>":"おしい！もういちど覚えよう";
-  // こたえ・おぼえ方メモはCSV由来テキストなのでDOM APIで挿入（XSS対策・地理と同方式）
+  $('fTitle').innerHTML=correct?"正解！ <span class='xp-pop'>+10 XP</span>":"惜しい！もう一度覚えよう";
+  // 答え・覚え方メモはCSV由来テキストなのでDOM APIで挿入（XSS対策）
   const fn=$('fNote');fn.innerHTML="";
   if(!correct){
-    fn.append("こたえ：");
+    fn.append("答え：");
     const b=document.createElement('b');b.textContent=c.a.join("・");
     fn.append(b,document.createElement('br'));
   }
   fn.append(c.note||"");
-  $('checkBtn').textContent=session.idx+1<session.total?"つぎへ":"けっか をみる";
+  $('checkBtn').textContent=session.idx+1<session.total?"次へ":"結果を見る";
   $('checkBtn').disabled=false;
+  // 報告ボタン：オンライン時のみ。同じ問題の二重報告は不可
+  const rb=$('reportBtn');
+  if(REPORTED_IDS.has(c.id)){rb.style.display="";rb.disabled=true;rb.textContent="✅ 報告したよ（ありがとう）";}
+  else if(state.online){rb.style.display="";rb.disabled=false;rb.textContent="⚠️ この問題を報告";}
+  else rb.style.display="none";
 }
 
 $('quitBtn').onclick=()=>{saveState();renderHome();show('home');};
 
+/* ===== 問題の報告（生徒→講師）。答え合わせ後の⚠️ボタンから ===== */
+let reportCard=null;
+$('reportBtn').onclick=()=>{
+  if(!session)return;
+  reportCard=session.queue[session.idx];
+  $('repQText').textContent="問題："+reportCard.q;
+  document.querySelectorAll('input[name=repReason]').forEach(r=>r.checked=false);
+  $('repComment').value=""; $('repMsg').textContent="";
+  $('reportOverlay').style.display="flex";
+};
+$('repCancel').onclick=()=>{$('reportOverlay').style.display="none";};
+$('repSend').onclick=async()=>{
+  const sel=document.querySelector('input[name=repReason]:checked');
+  if(!sel){$('repMsg').textContent="理由を選んでね";return;}
+  if(!reportCard)return;
+  $('repSend').disabled=true; $('repMsg').textContent="送信中…";
+  try{
+    const r=await rpc('report_question',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT,
+      p_question_id:reportCard.id,p_question_text:reportCard.q,
+      p_reason:sel.value,p_comment:$('repComment').value.trim()});
+    if(r&&r.ok){
+      REPORTED_IDS.add(reportCard.id);
+      $('reportOverlay').style.display="none";
+      const rb=$('reportBtn'); rb.disabled=true; rb.textContent="✅ 報告したよ（ありがとう）";
+    }else{$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  }catch(e){$('repMsg').textContent="送れなかったよ。あとでもう一度ためしてね";}
+  finally{$('repSend').disabled=false;}
+};
+
 function finishSession(){
   let up=false;
-  if(state.doneToday>=DAILY_GOAL&&!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  // 今日の30問を1セット完了：ストリーク+1（1日1回）＋今日はもうできない印
+  if(session.comp==="DAILY30"){
+    state.daily30Date=todayStr();
+    delete state.daily30Session; // 完走したので「続き」データは消す
+    if(!state.streakedToday){state.streak++;state.streakedToday=true;up=true;}
+  }
   refreshBadges();
   saveState();
   flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
   $('dCards').textContent=session.total;
   $('dCorrect').textContent=session.correct;
   $('dXp').textContent="+"+(session.correct*10);
-  $('dStreakMsg').textContent=up?`🔥 れんぞく ${state.streak}日 になったよ！`:`きょうの学習 ${state.doneToday}問 ・ ゴールまであと ${Math.max(0,DAILY_GOAL-state.doneToday)}問`;
+  $('dStreakMsg').textContent=up
+    ? `🔥 連続 ${state.streak}日 になったよ！`
+    : (session.comp==="DAILY30" ? `今日の30問 クリア！` : `おつかれさま！`);
+  // 今日の30問は1日1回なので「もう一セットやる」を隠す（押しても警告が出るだけだった）
+  $('againBtn').style.display = session.comp==="DAILY30" ? "none" : "";
   show('done');
 }
 $('backHome').onclick=()=>{renderHome();show('home');};
@@ -1102,7 +1553,7 @@ $('againBtn').onclick=()=>{startQuiz(session.comp);};
 $('importBtn').onclick=()=>{$('impMsg').innerHTML="";$('csvText').value="";show('import');};
 $('impBack').onclick=()=>{renderHome();show('home');};
 $('csvFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csvText').value=r.result;};r.readAsText(f,'utf-8');};
-$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題にもどしました</span>';};
+$('resetCards').onclick=()=>{localStorage.removeItem(LS_CARDS);CARDS=enrichCards(DEFAULT_CARDS.slice());$('impMsg').innerHTML='<span class="ok-msg">サンプル問題に戻しました</span>';};
 
 $('doImport').onclick=()=>{
   const txt=$('csvText').value.trim();
@@ -1110,9 +1561,26 @@ $('doImport').onclick=()=>{
   try{
     const cards=parseCSV(txt);
     if(cards.length===0){$('impMsg').innerHTML='<span class="err-msg">問題が読み取れませんでした。見出し行と列を確認してください。</span>';return;}
-    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards));
-    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへもどってください。</span>';
-  }catch(err){$('impMsg').innerHTML='<span class="err-msg">読み込みエラー：'+err.message+'</span>';}
+    // 壊れた問題データで進行不能にならないよう取り込み前に検証（ID重複・正解なし・選択肢不足）
+    const errs=[],seen=new Set();
+    cards.forEach(c=>{
+      if(seen.has(c.id))errs.push(c.id+": IDが重複");
+      seen.add(c.id);
+      if(c.a.length<1)errs.push(c.id+": 正解が空");
+      if(c.choices.length<2)errs.push(c.id+": 選択肢が2つ未満");
+    });
+    if(errs.length){
+      const s=document.createElement('span');s.className='err-msg';
+      s.textContent='取り込み中止（CSVを直してください）：'+errs.slice(0,5).join(" ／ ")+(errs.length>5?` …ほか${errs.length-5}件`:"");
+      const m=$('impMsg');m.innerHTML="";m.appendChild(s);return;
+    }
+    CARDS=cards; localStorage.setItem(LS_CARDS,JSON.stringify(cards)); localStorage.setItem(LS_CARDS+"_ver",String(CARD_DATA_VERSION));
+    $('impMsg').innerHTML='<span class="ok-msg">'+cards.length+'問を取り込みました！ホームへ戻ってください。</span>';
+  }catch(err){
+    // 例外メッセージにCSV断片が混ざることがあるためテキストとして表示（XSS対策）
+    const s=document.createElement('span');s.className='err-msg';s.textContent='読み込みエラー：'+err.message;
+    const m=$('impMsg');m.innerHTML="";m.appendChild(s);
+  }
 };
 
 /* シンプルCSVパーサ（カンマ区切り・"で囲まれたフィールド対応） */
@@ -1133,7 +1601,7 @@ function parseCSV(text){
     const row=rows[r]; if(!row||row.join("").trim()==="")continue;
     const get=k=>ci[k]>=0?(row[ci[k]]||"").trim():"";
     const id=get("id"); const qq=get("q"); if(!id||!qq)continue;
-    const type=get("type")==="multi"?"multi":"single";
+    const type=["multi","tile"].includes(get("type"))?get("type"):"single"; // tile=文字ならべ型（語彙編）を保持。未知の値はsingle扱い
     const a=get("a").split("・").map(s=>s.trim()).filter(Boolean);
     let choices=get("choices").split("・").map(s=>s.trim()).filter(Boolean);
     a.forEach(x=>{if(!choices.includes(x))choices.push(x);}); // 正解は必ず選択肢に含める
@@ -1154,11 +1622,36 @@ $('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/
    ・URL / anon key は Supabaseダッシュボード → Settings → API からコピー。
    ・anon key はクライアント露出前提の公開キー。サーバ側で RLS 全拒否＋RPCのみ許可にしてあるので、
      このキーで他人のデータを書き換えることはできない（supabase_setup.sql 参照）。
-   ・番号は平文でDBに保存されない（サーバ側でbcryptハッシュ化）。通信はHTTPS。 */
-const SUPABASE_URL = "";      // れい： "https://abcdefgh.supabase.co"
-const SUPABASE_ANON_KEY = ""; // れい： "eyJhbGciOi..."
+   ・番号：生徒のログイン認証はbcryptハッシュ照合。平文の番号は「発行済み番号表」にだけ残り、
+     講師（管理ページ／管理パスワード）からのみ参照できる（生徒・anon keyからは一切見えない）。
+     講師はニックネーム↔番号を照合し、塾のスプレッドシート（番号↔氏名）で誰かを特定する。
+   ・本名などの個人情報はアプリ／DBに保存しない。通信はHTTPS。 */
+const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
+const SUBJECT = "rika"; // 教科ID（サーバ側でランキング・進捗を教科ごとに分けるためのラベル）
+const SHARED_LOGIN_KEY = "mirubato_login"; // ポータルと共有するログイン情報（同一ドメインの全教科で共有）
 
 function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
+// ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
+(function initLoginUI(){
+  const on=ONLINE();
+  document.querySelectorAll('.online-only').forEach(el=>{
+    el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
+  });
+  // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
+  // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
+  try{
+    const saved=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    const valid=saved&&typeof saved.nick==="string"&&saved.nick.length>=1&&saved.nick.length<=12
+      &&/^\d{4,8}$/.test(saved.pin||"")&&(!saved.sv||saved.sv===1);
+    if(saved&&!valid)localStorage.removeItem(SHARED_LOGIN_KEY);
+    if(valid&&!state){
+      $('nick').value=saved.nick; $('pin').value=saved.pin;
+      if(saved.campus)$('campusSel').value=saved.campus;
+      setTimeout(()=>$('loginBtn').click(),0);
+    }
+  }catch(e){}
+})();
 async function rpc(fn,args){
   const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
     method:"POST",
@@ -1170,20 +1663,29 @@ async function rpc(fn,args){
 }
 const REG_ERR={
   bad_nick:"ニックネームは1〜12文字で入れてね",
-  bad_campus:"校舎をえらんでね",
+  bad_campus:"校舎を選んでね",
   bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
-  nick_taken:"そのニックネームはもう使われているよ。べつの名前にしてね"
+  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"
 };
 
-/* 週間スコア送信：正解のたびに weekPending にためて、まとめて送る（オフラインでも消えない） */
+/* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
+let flushingScore=null; // 多重送信ロック：ログイン直後と学習完了時の呼び出しが重なっても週間ポイントを二重送信しない
 async function flushScore(){
+  if(flushingScore)return flushingScore;
+  flushingScore=(async()=>{ await _flushScoreBody(); })().finally(()=>{flushingScore=null;});
+  return flushingScore;
+}
+async function _flushScoreBody(){
   if(!state||!state.online||!ONLINE())return;
   while(state.weekPending>0){
-    const send=Math.min(state.weekPending,30); // サーバ側の1回上限に合わせる
+    const send=Math.min(state.weekPending,500); // サーバ側の1回上限に合わせる
     try{
-      const r=await rpc('add_correct',{p_nick:state.nick,p_number:state.pin,p_count:send});
+      const r=await rpc('add_points',{p_nick:state.nick,p_number:state.pin,p_points:send,p_subject:SUBJECT});
       if(!r.ok)break;
-      state.weekPending-=send; state.weekScore=r.week_score; saveState();
+      // サーバが実際に加算できた分（granted）だけ減らす。日次上限で一部切り捨てられた分は消さずに翌日送る
+      const granted=(r.granted!=null)?r.granted:send; // granted未対応の旧サーバとの互換
+      state.weekPending-=granted; state.weekScore=r.week_score; saveState();
+      if(granted<send)break; // 日次上限に到達→残りは明日
     }catch(e){break;}
   }
 }
@@ -1191,19 +1693,41 @@ async function flushScore(){
 /* 進捗バックアップ：番号(pin)は送るデータに含めない */
 async function syncProgress(){
   if(!state||!state.online||!ONLINE())return;
-  const d={xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
+  const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
     accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
-    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus};
-  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d});}catch(e){}
+    streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
+    review:state.review,daily30Date:state.daily30Date,daily30Session:state.daily30Session,weekPending:state.weekPending,savedAt:state.savedAt};
+  try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
 
 /* ランキング画面 */
-let rankCampus="";
+let rankCampus="", rankPeriod="week", rankSubject=SUBJECT;
+// 教科タブ：他教科のランキングも見られる（get_rankingはp_subjectで教科別）
+const RANK_SUBJECTS=[["chiri","\u{1F5FE} 地理"],["rekishi","\u{1F4DC} 歴史"],["koumin","\u{1F3DB}\uFE0F 公民"],["kokugo","📖 国語"],["rika","🔬 理科"],["total","🏆 総合"]];
+function renderSubjectTabs(){
+  $('rankSubjectTabs').innerHTML=RANK_SUBJECTS.map(s=>
+    `<button class="rtab${s[0]===rankSubject?' active':''}" data-subject="${s[0]}">${s[1]}</button>`).join("");
+  $('rankSubjectTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.onclick=()=>{rankSubject=b.dataset.subject;renderSubjectTabs();loadRanking();};
+  });
+}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function daysToReset(){const dow=(new Date().getDay()+6)%7;return 7-dow;} // 月曜リセットまでの日数
-$('rankBtn').onclick=()=>{show('ranking');renderRankTabs();loadRanking();};
+// チャンピオンの星：金＝月間優勝の回数、銀＝週間優勝の回数（勝つたびに増える）
+function starHtml(gold,silver){
+  let h="";
+  if(gold>0)  h+=`<span class="star gold" title="月間チャンピオン">★</span>${gold>1?'<span class="stx">×'+gold+'</span>':''}`;
+  if(silver>0)h+=`${h?' ':''}<span class="star silver" title="週間チャンピオン">★</span>${silver>1?'<span class="stx">×'+silver+'</span>':''}`;
+  return h;
+}
 $('rankBack').onclick=()=>{renderHome();show('home');};
 $('rankReload').onclick=()=>loadRanking();
+function renderPeriodTabs(){
+  $('rankPeriodTabs').querySelectorAll('.rtab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.period===rankPeriod);
+    b.onclick=()=>{rankPeriod=b.dataset.period;renderPeriodTabs();loadRanking();};
+  });
+}
 function renderRankTabs(){
   $('rankTabs').querySelectorAll('.rtab').forEach(b=>{
     b.classList.toggle('active',b.dataset.campus===rankCampus);
@@ -1211,26 +1735,33 @@ function renderRankTabs(){
   });
 }
 async function loadRanking(){
-  $('rankReset').textContent=" つぎのリセットまで あと"+daysToReset()+"日";
-  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">よみこみ中…</div>';
+  const isMonth=rankPeriod==='month';
+  $('rankNote').innerHTML=(isMonth?'今月の 点数 で 勝負！':'今週の 点数 で 勝負！')
+    +'<span id="rankReset"></span>';
+  if(!isMonth)$('rankReset').textContent=" 次のリセットまで あと"+daysToReset()+"日";
+  $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">読み込み中…</div>';
   await flushScore();
+  // 他教科のランキングを見ている間は「君の今週の点数」（今の教科の値）を隠す
+  document.querySelector('.rank-me').style.display = rankSubject===SUBJECT ? "" : "none";
   $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
   try{
-    const rows=await rpc('get_ranking',{p_campus:rankCampus||null});
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:rankSubject});
     if(!rows.length){
-      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">今週はまだだれも記録がないよ。<br>1番のりのチャンス！</div>';
+      $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
+        +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
       return;
     }
     const medal=["🥇","🥈","🥉"];
     $('rankList').innerHTML=rows.map(r=>{
       const me=state&&r.nick===state.nick;
+      const st=starHtml(r.monthly_wins||0,r.weekly_wins||0);
       return `<div class="rank-row${me?' me':''}">
         <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
-        <span class="rnick">${esc(r.nick)}${me?' ★':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
-        <span class="rscore">${r.correct_count}問</span></div>`;
+        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rscore">${r.correct_count}点</span></div>`;
     }).join("");
   }catch(e){
-    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">つうしんエラー。<br>しばらくしてから「さいしんにする」を押してね</div>';
+    $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">通信エラー。<br>しばらくしてから「最新にする」を押してね</div>';
   }
 }
 </script>
