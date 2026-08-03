@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  ミルバト国語・語彙編 v2 — 中学受験 国語・語彙 暗記アプリ（旧ことばたん）。ちずたんエンジン2026-07-24版から生成（生成: 語彙アプリ_組替.py＋ことばたん_embed.py）
+  ミルバト国語・語彙編 v2 — 中学受験 国語・語彙 暗記アプリ（旧ことばたん）。build_app.pyが地理エンジン本体から生成
   ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
   ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
   ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
@@ -261,6 +261,12 @@
   .rnick .me-tag{font-size:10px;background:var(--green);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
   .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
 </style>
+
+<!-- ポータルからの自動ログイン中に一瞬ログイン画面が見えるのを隠すスプラッシュ（initLoginUIが表示、ログイン処理のfinallyが消す） -->
+<div id="autoSplash" style="display:none;position:fixed;inset:0;z-index:99;background:var(--paper);align-items:center;justify-content:center;flex-direction:column;gap:10px">
+  <div style="font-size:44px">📚</div>
+  <div style="color:var(--ink-soft);font-size:14px;letter-spacing:.1em">ログインちゅう…</div>
+</div>
 
 <div id="app">
   <!-- ログイン -->
@@ -955,13 +961,13 @@ function masteredCards(){return Object.values(state.reviews).filter(r=>r.mastere
 const BADGE_THRESHOLD = 0.8; // この割合以上 mastered で解放（調整パラメータ）
 const BADGES = [
   // 語彙編: 分野4区分のみ（地方の軸は無し）
-  {key:"kotowaza",  name:"ことわざマスター",       emoji:"💬", type:"badgeCat", match:"ことわざ"},
-  {key:"kanyoku",   name:"慣用句マスター",         emoji:"🙌", type:"badgeCat", match:"慣用句"},
-  {key:"yojijukugo",name:"四字熟語マスター",       emoji:"🀄", type:"badgeCat", match:"四字熟語"},
-  {key:"taigigo",   name:"対義語・類義語マスター", emoji:"🔁", type:"badgeCat", match:"対義語・類義語"},
+  {key:"kotowaza", name:"ことわざマスター", emoji:"💬", type:"badgeCat", match:"ことわざ"},
+  {key:"kanyoku", name:"慣用句マスター", emoji:"🙌", type:"badgeCat", match:"慣用句"},
+  {key:"yojijukugo", name:"四字熟語マスター", emoji:"🀄", type:"badgeCat", match:"四字熟語"},
+  {key:"taigigo", name:"対義語・類義語マスター", emoji:"🔁", type:"badgeCat", match:"対義語・類義語"},
 ];
-// 旧語彙版の称号キーは badgeSchemaVersion=2 のリセットで消えるため個別指定は不要
-const OBSOLETE_BADGE_KEYS=[];
+// 2026-07再編で廃止したバッジキー（獲得済み記録が残っていても無害化のため削除）
+const OBSOLETE_BADGE_KEYS=[];  // 旧語彙版の称号キーは badgeSchemaVersion=2 のリセットで消えるため個別指定は不要
 const FINAL_BADGE = {key:"doctor", name:"語彙博士", emoji:"🎓"};
 // 対象カードが1問もない称号（例：画像を追加する前の白地図）は「じゅんびちゅう」扱い。
 // 解放判定・語彙博士の条件・称号数の分母全てから除外し、カードが入ると自動で有効になる
@@ -1139,7 +1145,7 @@ $('loginBtn').onclick=async()=>{
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
     flushScore();
-  }finally{ $('loginBtn').disabled=false; }
+  }finally{ $('loginBtn').disabled=false; $('autoSplash').style.display='none'; }
 };
 $('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
 $('logoutBtn').onclick=()=>{
@@ -1319,7 +1325,9 @@ function renderQuestion(){
   const c=session.queue[session.idx];
   picked=new Set(); answered=false; slotChars=[]; renderSeq++;
   // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
-  stage = c.type==="tile" ? 1 : ((c.type==="multi"||c.image) ? 0 : stageOf(state.reviews[c.id]));
+  // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
+  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0]));
+  stage = c.type==="tile" ? 1 : ((c.type==="multi"||c.image||session.comp==="DAILY30"||!tileable) ? 0 : stageOf(state.reviews[c.id]));
   $('qProg').style.width=(session.idx/session.total*100)+"%";
   $('qCount').textContent=(session.idx+1)+"/"+session.total;
   $('stagePill').textContent = c.type==="tile" ? "文字をならべて答えよう" : (c.type==="multi" ? "複数選ぶ問題" : (c.image ? "画像を見て選ぶ問題" : STAGE_LABEL[stage]));
@@ -1656,6 +1664,7 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
     if(valid&&!state){
       $('nick').value=saved.nick; $('pin').value=saved.pin;
       if(saved.campus)$('campusSel').value=saved.campus;
+      $('autoSplash').style.display='flex'; // 自動ログインが終わるまでログイン画面を隠す（消すのはログイン処理のfinally）
       setTimeout(()=>$('loginBtn').click(),0);
     }
   }catch(e){}

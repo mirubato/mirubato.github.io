@@ -262,6 +262,12 @@
   .rank-legend{font-size:11px;color:var(--ink-soft);text-align:center;margin:10px 0}
 </style>
 
+<!-- ポータルからの自動ログイン中に一瞬ログイン画面が見えるのを隠すスプラッシュ（initLoginUIが表示、ログイン処理のfinallyが消す） -->
+<div id="autoSplash" style="display:none;position:fixed;inset:0;z-index:99;background:var(--paper);align-items:center;justify-content:center;flex-direction:column;gap:10px">
+  <div style="font-size:44px">📚</div>
+  <div style="color:var(--ink-soft);font-size:14px;letter-spacing:.1em">ログインちゅう…</div>
+</div>
+
 <div id="app">
   <!-- ログイン -->
   <section id="login" class="screen active">
@@ -1128,7 +1134,7 @@ $('loginBtn').onclick=async()=>{
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
     flushScore();
-  }finally{ $('loginBtn').disabled=false; }
+  }finally{ $('loginBtn').disabled=false; $('autoSplash').style.display='none'; }
 };
 $('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
 $('logoutBtn').onclick=()=>{
@@ -1648,6 +1654,7 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
     if(valid&&!state){
       $('nick').value=saved.nick; $('pin').value=saved.pin;
       if(saved.campus)$('campusSel').value=saved.campus;
+      $('autoSplash').style.display='flex'; // 自動ログインが終わるまでログイン画面を隠す（消すのはログイン処理のfinally）
       setTimeout(()=>$('loginBtn').click(),0);
     }
   }catch(e){}
