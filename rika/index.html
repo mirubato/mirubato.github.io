@@ -1316,7 +1316,7 @@ function renderQuestion(){
   picked=new Set(); answered=false; slotChars=[]; renderSeq++;
   // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
   // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
-  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0]));
+  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0])) && !/次のうち|どちら/.test(c.q); // 比較選択型は選択肢が本体なので常に4択
   stage = (c.type==="multi"||c.image||session.comp==="DAILY30"||!tileable) ? 0 : stageOf(state.reviews[c.id]);
   $('qProg').style.width=(session.idx/session.total*100)+"%";
   $('qCount').textContent=(session.idx+1)+"/"+session.total;
