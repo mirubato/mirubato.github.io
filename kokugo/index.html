@@ -413,7 +413,7 @@
     <div class="qtop"><button id="rankBack">✕</button><h2>🏆 ランキング</h2></div>
     <div class="rank-note" id="rankNote">今週の 点数 で 勝負！<span id="rankReset"></span></div>
     <div class="rank-me"><span>君の今週の点数</span><span><b id="myWeekScore">0</b> 点</span></div>
-    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>1点</b></div>
+    <div class="rank-legend" style="margin:0 0 4px">初めて正解＝<b style="color:var(--orange)">10点</b>／もう一度正解＝<b>5点</b></div>
     <div class="rank-tabs" id="rankSubjectTabs"></div>
     <div class="rank-tabs" id="rankPeriodTabs">
       <button class="rtab active" data-period="week">今週</button>
@@ -1470,14 +1470,14 @@ function judge(correct){
       else if(picked.has(o)){b.classList.remove('sel');b.classList.add('wrong');b.querySelector('.mk').textContent="✕";}
     });
   }
-  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=1点
+  // ポイント制：今日の30問で正解=10点／それ以外は 初めての正解=10点・2回目以降=5点（2026-08-06に1点→5点へ変更）
   const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
   const isDaily = session.comp==="DAILY30";
   schedule(c.id,correct);
   state.accTotal++;
   if(correct){
     session.correct++; state.accCorrect++; state.xp+=10;
-    const pts = isDaily ? 10 : (firstCorrect ? 10 : 1);
+    const pts = isDaily ? 10 : (firstCorrect ? 10 : 5);
     state.weekPending=(state.weekPending||0)+pts;
     if(session)session.points=(session.points||0)+pts;
   }
