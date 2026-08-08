@@ -223,6 +223,22 @@
   .celebrate.doctor .cbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
   .celebrate.doctor .cemoji{font-size:76px}
   .celebrate.doctor .cname{color:#a87d16;font-size:26px}
+  /* 週次リザルト（先週のバトル結果モーダル。celebrate と同系の見た目・音なし） */
+  .wkmodal{position:fixed;inset:0;z-index:98;background:rgba(42,39,35,.45);display:flex;align-items:center;justify-content:center;animation:cel-in .25s ease-out;cursor:pointer}
+  .wkmodal.out{opacity:0;transition:opacity .25s}
+  .wkmodal .wkbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:26px 34px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:82%}
+  .wkmodal .wkemoji{font-size:56px;line-height:1.2}
+  .wkmodal .wktitle{font-size:12px;color:var(--ink-soft);letter-spacing:.1em;margin-top:4px}
+  .wkmodal .wkrank{font-size:34px;font-weight:800;margin-top:4px}
+  .wkmodal .wkrank small{font-size:14px;font-weight:700;color:var(--ink-soft)}
+  .wkmodal .wkscore{font-size:14px;font-weight:700;color:var(--ink-soft);margin-top:2px}
+  .wkmodal .wkdelta{font-weight:800;font-size:15px;margin-top:8px}
+  .wkmodal .wkdelta.up{color:var(--green,#4f9d69)}
+  .wkmodal .wkdelta.down{color:#3f7cc4}
+  .wkmodal .wkbest{color:var(--orange);font-weight:800;font-size:14px;margin-top:6px}
+  .wkmodal .wkchamp{color:#a87d16;font-weight:800;font-size:16px;margin-top:6px}
+  .wkmodal .wkhint{font-size:11px;color:var(--ink-soft);margin-top:14px}
+  .wkmodal.champ .wkbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
   /* 選んで学習 */
   .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
   .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -1043,6 +1059,49 @@ function nextCelebration(){
   setTimeout(close, isDoctor?9000:4500);
 }
 
+/* ===== 4d. 週次リザルト（先週の確定結果モーダル・音なし） =====
+   ブラウザアプリでプッシュ通知は期待できないため、ログイン直後に週1回だけ表示する。
+   サーバ側は get_weekly_result（先週の順位・先週比・自己ベストを読み取り時に計算。スナップショット無し）。 */
+async function maybeShowWeeklyResult(){
+  try{
+    if(!state||!state.online)return;
+    const r=await rpc('get_weekly_result',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT});
+    if(!r||!r.ok||!r.played||!r.week_start)return;       // 先週の参加記録なし → 出さない
+    if(state.wkResultSeen===r.week_start)return;         // この週の結果はもう見た（進捗同期で端末をまたいでも1回）
+    state.wkResultSeen=r.week_start; saveState();
+    showWeeklyResult(r);
+  }catch(e){ /* 通信失敗時は何もしない（次回ログインで再挑戦） */ }
+}
+function showWeeklyResult(r){
+  const champ=(+r.rank===1);
+  const ov=document.createElement('div'); ov.className="wkmodal"+(champ?" champ":"");
+  const body=document.createElement('div'); body.className="wkbody";
+  const add=(cls,text)=>{const el=document.createElement('div');el.className=cls;el.textContent=text;body.appendChild(el);return el;};
+  add('wkemoji',champ?"👑":"🏆");
+  add('wktitle',"先週のバトル結果");
+  const rank=document.createElement('div'); rank.className="wkrank";
+  rank.textContent=r.rank+"位";
+  const small=document.createElement('small'); small.textContent="／"+r.participants+"人中";
+  rank.appendChild(small); body.appendChild(rank);
+  add('wkscore',"先週の点数："+r.score+"点");
+  if(r.prev_rank!=null){
+    const d=(+r.prev_rank)-(+r.rank);
+    if(d>0)add('wkdelta up',"前の週から ↑"+d+" アップ！");
+    else if(d<0)add('wkdelta down',"前の週から ↓"+(-d));
+    else add('wkdelta',"前の週と同じ順位をキープ！");
+  }else{
+    add('wkdelta',"はじめての週間ランキング！");
+  }
+  if(champ)add('wkchamp',"週間チャンピオン！🥇");
+  if(r.best)add('wkbest',"🎉 自己ベスト更新！");
+  add('wkhint',"タップで閉じる");
+  ov.appendChild(body);
+  document.body.appendChild(ov);
+  const close=()=>{ if(!ov.parentNode)return; ov.classList.add('out'); setTimeout(()=>ov.remove(),260); };
+  ov.onclick=close;
+  setTimeout(close,10000);
+}
+
 /* ===== 5. 画面 ===== */
 const $=id=>document.getElementById(id);
 function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
@@ -1096,7 +1155,7 @@ $('loginBtn').onclick=async()=>{
           const d=pr.data;
           const srvAt=+d.savedAt||0, locAt=existing?(+state.savedAt||0):-1;
           if(srvAt>locAt){
-            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","daily30Session","weekPending","savedAt"].forEach(k=>{
+            ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","daily30Session","weekPending","savedAt","wkResultSeen"].forEach(k=>{
               if(d[k]!=null)state[k]=d[k];
             });
           }
@@ -1111,6 +1170,7 @@ $('loginBtn').onclick=async()=>{
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
     flushScore();
+    maybeShowWeeklyResult(); // 週次リザルト（先週の確定結果を週1回だけモーダル表示。オフライン時は何もしない）
   }finally{ $('loginBtn').disabled=false; $('autoSplash').style.display='none'; }
 };
 $('subjectBackBtn').onclick=()=>{saveState();location.href="../";}; // ログインしたまま教科えらび（ポータル）へ戻る
@@ -1680,7 +1740,7 @@ async function syncProgress(){
   const d={sv:2,xp:state.xp,streak:state.streak,reviews:state.reviews,doneToday:state.doneToday,
     accCorrect:state.accCorrect,accTotal:state.accTotal,lastDay:state.lastDay,
     streakedToday:state.streakedToday,badges:state.badges,campus:state.campus,
-    review:state.review,daily30Date:state.daily30Date,daily30Session:state.daily30Session,weekPending:state.weekPending,savedAt:state.savedAt};
+    review:state.review,daily30Date:state.daily30Date,daily30Session:state.daily30Session,weekPending:state.weekPending,savedAt:state.savedAt,wkResultSeen:state.wkResultSeen};
   try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
 
