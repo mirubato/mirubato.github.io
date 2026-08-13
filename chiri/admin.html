@@ -42,6 +42,7 @@
   .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#eef2ee;color:var(--ink-soft)}
   .tag.stop{background:#fbe6e5;color:var(--wrong);font-weight:700}
   .tag.ok{background:#eef7f0;color:var(--green);font-weight:700}
+  .tag.free{background:#fdf1e3;color:var(--orange);font-weight:700}
   .actions{display:flex;gap:6px}
   .bango{font-variant-numeric:tabular-nums;letter-spacing:.05em}
   .tablewrap{overflow-x:auto}
@@ -50,7 +51,7 @@
 </style>
 
 <h1>🏫 ミルバト 先生用 管理ページ</h1>
-<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます（地理・歴史・公民・国語 共通）</div>
+<div class="sub">生徒の確認・ニックネーム変更・アカウント停止ができます（地理・歴史・公民・国語・理科 共通）</div>
 
 <!-- ログイン -->
 <div class="card" id="loginCard">
@@ -82,7 +83,7 @@
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週:地理</th><th>今週:歴史</th><th>今週:公民</th><th>今週:国語</th><th>状態</th><th>そうさ</th>
+        <th>ニックネーム</th><th>校舎</th><th>番号</th><th>今週:地理</th><th>今週:歴史</th><th>今週:公民</th><th>今週:国語</th><th>今週:理科</th><th>状態</th><th>⏰時間制限</th><th>そうさ</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -90,7 +91,9 @@
   <div class="foot">
     ・「番号」を塾のスプレッドシート（番号↔氏名）と照らし合わせて、誰のアカウントか確認できます。<br>
     ・ニックネームがふさわしくないときは「名前変更」で直せます。<br>
-    ・「停止」するとその生徒はログイン・スコア送信ができなくなります（「再開」で戻せます）。
+    ・「停止」するとその生徒はログイン・スコア送信ができなくなります（「再開」で戻せます）。<br>
+    ・「⏰時間制限」＝あり：30分つづけて使うと90分の休憩画面が出ます。「制限なし」を押すとその生徒だけ解除できます（「制限あり」で戻せます）。<br>
+    　この列が「−」のときは、サーバのSQLがv6.3未適用です。
   </div>
 </div>
 
@@ -211,9 +214,11 @@ function render(list){
     if(!ws) return subj==='chiri' ? `${p.week_score||0}点` : "−";
     return `${ws[subj]||0}点`;
   };
+  // 時間制限。サーバがv6.3前（no_limitなし）は「−」表示にしてトグルも出さない
+  const hasNL=p=>p.no_limit!==undefined&&p.no_limit!==null;
   $('rows').innerHTML = list.map(p=>{
-    const stop=p.suspended;
-    return `<tr data-id="${p.id}">
+    const stop=p.suspended, nl=!!p.no_limit;
+    return `<tr data-id="${p.id}" data-nolimit="${hasNL(p)?(nl?'1':'0'):''}">
       <td class="nick">${esc(p.nick)}</td>
       <td><span class="tag">${esc(p.campus)}</span></td>
       <td class="bango">${esc(p.bango)}</td>
@@ -221,10 +226,13 @@ function render(list){
       <td>${cell(p,'rekishi')}</td>
       <td>${cell(p,'koumin')}</td>
       <td>${cell(p,'kokugo')}</td>
+      <td>${cell(p,'rika')}</td>
       <td>${stop?'<span class="tag stop">停止中</span>':'<span class="tag ok">通常</span>'}</td>
+      <td>${hasNL(p)?(nl?'<span class="tag free">なし</span>':'<span class="tag ok">あり</span>'):"−"}</td>
       <td><div class="actions">
         <button class="btn sec sm act-rename">名前変更</button>
         <button class="btn sm ${stop?'sec':'warn'} act-toggle">${stop?'再開':'停止'}</button>
+        ${hasNL(p)?`<button class="btn sec sm act-nolimit">${nl?'制限あり':'制限なし'}</button>`:''}
       </div></td>
     </tr>`;
   }).join("");
@@ -232,6 +240,8 @@ function render(list){
     const id=tr.dataset.id, nick=tr.querySelector('.nick').textContent;
     tr.querySelector('.act-rename').onclick=()=>doRename(id,nick);
     tr.querySelector('.act-toggle').onclick=()=>doToggle(id,nick,tr.querySelector('.tag.stop')!=null);
+    const nlBtn=tr.querySelector('.act-nolimit');
+    if(nlBtn)nlBtn.onclick=()=>doToggleNoLimit(id,nick,tr.dataset.nolimit==='1');
   });
 }
 
@@ -252,6 +262,16 @@ async function doToggle(id,nick,isStopped){
   try{
     const r=await rpc('admin_set_suspended',{p_pw:ADMIN_PW,p_player:id,p_val:willStop});
     if(!r.ok){alert("変更できませんでした");return;}
+    load();
+  }catch(e){alert("通信エラー："+e.message);}
+}
+// 時間制限なしモードの切り替え（連続30分使用→90分休憩 の制限を、この生徒だけ外す／戻す）
+async function doToggleNoLimit(id,nick,isNoLimit){
+  const willFree=!isNoLimit;
+  if(!confirm(`「${nick}」の時間制限を${willFree?'解除':'元に戻'}しますか？${willFree?'\n（30分つづけて使っても休憩画面が出なくなります）':'\n（30分つづけて使うと90分の休憩に入ります）'}`))return;
+  try{
+    const r=await rpc('admin_set_no_limit',{p_pw:ADMIN_PW,p_player:id,p_val:willFree});
+    if(!r.ok){alert("変更できませんでした（サーバのSQLがv6.3未適用かもしれません）");return;}
     load();
   }catch(e){alert("通信エラー："+e.message);}
 }

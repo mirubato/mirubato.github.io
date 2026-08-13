@@ -239,6 +239,16 @@
   .wkmodal .wkchamp{color:#a87d16;font-weight:800;font-size:16px;margin-top:6px}
   .wkmodal .wkhint{font-size:11px;color:var(--ink-soft);margin-top:14px}
   .wkmodal.champ .wkbody{background:linear-gradient(135deg,#fff8e8,#fef0d8);border:2px solid var(--gold)}
+  /* 休憩オーバーレイ（連続使用時間制限。celebrate(99)・wkmodal(98)より必ず上・タップでは閉じない・音なし） */
+  .brkmodal{position:fixed;inset:0;z-index:200;background:rgba(42,39,35,.78);display:flex;align-items:center;
+    justify-content:center;animation:cel-in .25s ease-out;cursor:default;padding:16px}
+  .brkmodal .brkbody{position:relative;background:var(--card);border-radius:22px;box-shadow:var(--shadow);
+    padding:30px 30px 26px;text-align:center;animation:cel-pop .5s cubic-bezier(.2,1.6,.4,1);max-width:88%}
+  .brkmodal .brkemoji{font-size:58px;line-height:1.2}
+  .brkmodal .brktitle{font-size:19px;font-weight:800;margin-top:8px}
+  .brkmodal .brklead{font-size:14px;color:var(--ink-soft);margin-top:4px}
+  .brkmodal .brkcount{font-size:32px;font-weight:800;color:var(--green);margin-top:18px;font-variant-numeric:tabular-nums}
+  .brkmodal .brkhint{font-size:12px;color:var(--ink-soft);margin-top:16px}
   /* 選んで学習 */
   .pick-h{font-size:13px;color:var(--ink-soft);margin:14px 0 8px;letter-spacing:.05em}
   .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -1136,6 +1146,95 @@ function showWeeklyResult(r){
   setTimeout(close,10000);
 }
 
+/* ===== 4e. 連続使用時間制限（休憩・音なし） =====
+   30分（USE_LIMIT）連続で使ったら90分（BREAK）の休憩に入る。休憩中は全画面オーバーレイで完全ブロック。
+   ・保存先は localStorage の "mirubato_usage_"+ニックネーム。同一オリジンなので5教科で合算される
+     （教科を切り替えても逃げられない）。ユーザー単位なので兄弟が同じ端末を使っても巻き込まれない。
+   ・数えるのは「操作していた時間」だけ（pointerdown / keydown ではさまれた区間）。開いたまま放置は数えない。
+   ・講師が管理ページで「時間制限なし」にした生徒（no_limit）は加算もロックも一切しない。
+   ・端末の時計を変えれば回避できるが、これはストリーク（連続日数）と同じ既知の許容事項。 */
+const USAGE_PREFIX="mirubato_usage_"; // 5教科共有（教科ごとの ls_prefix は付けない）
+const USE_LIMIT=1800, BREAK=5400, IDLE_GAP=180; // 使用上限30分／休憩90分／これ以上あいたら操作が途切れたとみなす3分
+let usageNick="", usageTickAt=0, breakOv=null, breakTimer=null;
+function loadUsage(n){
+  const d={sv:1,used:0,last:0,lockUntil:0,noLimit:false};
+  if(!n)return d;
+  try{
+    const u=JSON.parse(localStorage.getItem(USAGE_PREFIX+n)||"null");
+    if(u&&typeof u==="object")return {sv:1,used:+u.used||0,last:+u.last||0,lockUntil:+u.lockUntil||0,noLimit:!!u.noLimit};
+  }catch(e){}
+  return d;
+}
+function saveUsage(n,u){ if(!n)return; try{localStorage.setItem(USAGE_PREFIX+n,JSON.stringify(u));}catch(e){} }
+// 操作のたびに呼ばれる。加算とロック判定だけを行う（描画は showBreakOverlay 側）
+function usageTick(){
+  if(!usageNick)return;
+  const now=Date.now();
+  if(now-usageTickAt<1000)return; // 連打は1秒に1回だけ処理する
+  usageTickAt=now;
+  const u=loadUsage(usageNick);
+  if(u.noLimit){ if(u.lockUntil){u.lockUntil=0;u.used=0;saveUsage(usageNick,u);} hideBreakOverlay(); return; }
+  if(u.lockUntil>now){ showBreakOverlay(); return; } // 休憩中は加算しない
+  const gap=u.last?Math.max(0,Math.floor((now-u.last)/1000)):0; // 時計を戻された場合は0扱い
+  if(gap>=BREAK)u.used=0;             // 自主的に90分以上休んだら連続カウントをリセット
+  else if(gap<=IDLE_GAP)u.used+=gap;  // 操作が続いている間だけ加算
+  // IDLE_GAP < gap < BREAK は加算しない（放置時間は数えないが「連続」は切れない）
+  u.last=now; u.lockUntil=0;
+  if(u.used>=USE_LIMIT){ u.lockUntil=now+BREAK*1000; u.used=0; saveUsage(usageNick,u); showBreakOverlay(); return; }
+  saveUsage(usageNick,u);
+}
+function showBreakOverlay(){
+  if(breakOv)return;
+  try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); }catch(e){} // 裏の入力欄に打ち込めないように
+  breakOv=document.createElement('div'); breakOv.className="brkmodal";
+  const body=document.createElement('div'); body.className="brkbody";
+  const add=(cls,text)=>{const el=document.createElement('div');el.className=cls;el.textContent=text;body.appendChild(el);return el;};
+  add('brkemoji',"☕");
+  add('brktitle',"30分がんばったね！");
+  add('brklead',"すこし休憩しよう");
+  const cd=add('brkcount',"");
+  add('brkhint',"時間になったら自動で戻るよ");
+  breakOv.appendChild(body);
+  document.body.appendChild(breakOv);
+  const tick=()=>{
+    const u=loadUsage(usageNick);
+    const left=Math.max(0,Math.ceil((u.lockUntil-Date.now())/1000));
+    if(u.noLimit||left<=0){hideBreakOverlay();return;} // 時間が来た／講師が解除した → 自分で消えて通常に戻る
+    cd.textContent="あと "+Math.floor(left/60)+"分"+(left%60)+"秒";
+  };
+  tick();
+  breakTimer=setInterval(tick,1000); // setInterval はオーバーレイ表示中だけ動かす
+}
+function hideBreakOverlay(){
+  if(breakTimer){clearInterval(breakTimer);breakTimer=null;}
+  if(breakOv){breakOv.remove();breakOv=null;}
+  if(!usageNick)return;
+  const u=loadUsage(usageNick);
+  if(u.lockUntil&&u.lockUntil<=Date.now()){ u.lockUntil=0; u.used=0; u.last=Date.now(); saveUsage(usageNick,u); } // used は0から再開
+}
+// ログイン成功時に呼ぶ。srvNoLimit が null（オフライン／旧サーバ）なら前回キャッシュした値をそのまま使う
+function applyUsageLogin(nick,srvNoLimit){
+  usageNick=nick;
+  const u=loadUsage(nick);
+  if(srvNoLimit!=null)u.noLimit=srvNoLimit;
+  if(u.noLimit){u.lockUntil=0;u.used=0;} // 講師が解除したらロック中でもその場で解ける
+  saveUsage(nick,u);
+  if(!u.noLimit&&u.lockUntil>Date.now())showBreakOverlay(); else hideBreakOverlay();
+}
+// 読み込み時：直近ログインのニックネームが分かればログイン画面より先にロックを適用する
+function initUsage(){
+  try{
+    const s=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
+    if(s&&typeof s.nick==="string"&&s.nick)usageNick=s.nick;
+  }catch(e){}
+  document.addEventListener('pointerdown',usageTick,true);
+  document.addEventListener('keydown',usageTick,true);
+  if(usageNick){
+    const u=loadUsage(usageNick);
+    if(!u.noLimit&&u.lockUntil>Date.now())showBreakOverlay();
+  }
+}
+
 /* ===== 5. 画面 ===== */
 const $=id=>document.getElementById(id);
 function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
@@ -1155,7 +1254,7 @@ $('loginBtn').onclick=async()=>{
   if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
   $('loginBtn').disabled=true;
   try{
-    let onlineOk=false, srvCampus="", srvWeek=0;
+    let onlineOk=false, srvCampus="", srvWeek=0, srvNoLimit=null; // srvNoLimit: 時間制限なしモード（null=サーバから取れなかった）
     if(ONLINE()){
       $('loginMsg').textContent="通信中…";
       try{
@@ -1171,6 +1270,7 @@ $('loginBtn').onclick=async()=>{
           $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
         }
         onlineOk=true; srvCampus=r.campus||campus; srvWeek=r.week_score||0;
+        if(r.no_limit!=null)srvNoLimit=!!r.no_limit; // v6.3未適用サーバでは来ない → 前回キャッシュを使う
       }catch(e){ /* サーバに届かない → オフラインで続行 */ }
     }
     const existing=loadState(n,p);
@@ -1200,6 +1300,7 @@ $('loginBtn').onclick=async()=>{
     // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
     // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
     try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
+    applyUsageLogin(n,srvNoLimit); // 連続使用時間の記録をこの生徒に切り替える（ロック中ならここで休憩画面）
     rolloverDay(); refreshBadges(); saveState();
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     renderHome(); show('home');
@@ -1711,6 +1812,7 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
 // ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
 (function initLoginUI(){
   const on=ONLINE();
+  initUsage(); // 連続使用時間の記録開始＋休憩中ならログイン画面より先にロック
   document.querySelectorAll('.online-only').forEach(el=>{
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
