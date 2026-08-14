@@ -1297,25 +1297,31 @@ function onPick(btn,type){
 function stripYomi(s){return String(s).replace(/（[^）]*）/g,"");}
 
 /* ステージ2：文字を選ぶ（正解の文字＋ダミー文字をタイル化、順に並べる） */
+/* 見た目がほぼ同じで判別できない文字の組。ダミーに混ざると「正しく見えるのに不正解」が起きるため除外する
+   （例: 漢数字の「二」とカタカナの「ニ」。実際に理科の二酸化炭素で発生） */
+const LOOKALIKE=["一ー−―‐-ｰ","二ニ","力カ","工エ","口ロ","夕タ","卜ト","八ハ","大太犬","日曰","未末","土士","己已巳","干千","人入","天夭","王玉","へヘ","べベ","ぺペ","りリ","つっ","ツッ","やゃ","ヤャ","ゆゅ","ユュ","よょ","ヨョ","あぁ","アァ","いぃ","イィ","うぅ","ウゥ","えぇ","エェ","おぉ","オォ","わゎ"];
+function lookalike(a,b){return a!==b&&LOOKALIKE.some(g=>g.includes(a)&&g.includes(b));}
 function renderTiles(c){
   const ans=stripYomi(c.a[0]);
   const ansChars=ans.split("");
   // ダミー文字：他の選択肢から文字を拝借（振り仮名は除く）
   let pool=[];
   c.choices.forEach(o=>{const p=stripYomi(o);if(p!==ans)pool.push(...p.split(""));});
-  pool=pool.filter(ch=>!ansChars.includes(ch));
+  pool=pool.filter(ch=>!ansChars.includes(ch)&&!ansChars.some(a2=>lookalike(a2,ch)));
   const dummies=shuffle([...new Set(pool)]).slice(0,Math.max(2,Math.min(4,ansChars.length)));
   const tiles=shuffle([...ansChars,...dummies]);
   let html=`<div class="answer-slots" id="slots"></div><div class="tiles" id="tiles"></div>`;
   $('answerArea').innerHTML=html;
+  slotChars=Array(ansChars.length).fill(null); // 固定枠方式：空きはnull。戻しても他の文字の位置が動かない
   renderSlots(ansChars.length);
   const tw=$('tiles');
   const seq=renderSeq;
   tiles.forEach((ch,i)=>{
     const b=document.createElement('button');b.className="tile";b.textContent=ch;b.dataset.i=i;
-    b.onclick=()=>{if(seq!==renderSeq)return;if(answered)return;if(slotChars.length>=ansChars.length)return;
-      slotChars.push(ch);b.classList.add('used');renderSlots(ansChars.length);
-      $('checkBtn').disabled=slotChars.length!==ansChars.length;};
+    b.onclick=()=>{if(seq!==renderSeq)return;if(answered)return;
+      const j=slotChars.indexOf(null);if(j<0)return; // 先頭の空き枠に入れる
+      slotChars[j]=ch;b.classList.add('used');renderSlots(ansChars.length);
+      $('checkBtn').disabled=slotChars.includes(null);};
     tw.appendChild(b);
   });
 }
@@ -1324,14 +1330,14 @@ function renderSlots(n){
   const seq=renderSeq;
   for(let i=0;i<n;i++){
     const d=document.createElement('div');
-    if(i<slotChars.length){d.className="slot";d.textContent=slotChars[i];
+    if(slotChars[i]!=null){d.className="slot";d.textContent=slotChars[i];
       d.onclick=()=>{if(seq!==renderSeq)return;if(answered)return;
-        // タップで戻す（最後の1つ）
-        const removed=slotChars.splice(i,1)[0];
+        // タップで戻す：その枠だけ空にする（旧実装はspliceで後ろが左に詰まり、置き直すと並びが静かに崩れた）
+        const removed=slotChars[i];slotChars[i]=null;
         // 対応するタイルのusedを1つ解除
         const t=[...$('tiles').children].find(x=>x.classList.contains('used')&&x.textContent===removed);
         if(t)t.classList.remove('used');
-        renderSlots(n);$('checkBtn').disabled=slotChars.length!==n;};
+        renderSlots(n);$('checkBtn').disabled=true;};
     }else{d.className="slot empty";d.textContent="";}
     host.appendChild(d);
   }
