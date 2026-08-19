@@ -48,6 +48,26 @@
   .tablewrap{overflow-x:auto}
   .hide{display:none}
   .foot{font-size:11px;color:var(--ink-soft);margin-top:10px;line-height:1.6}
+  /* 弱点をみる */
+  .weak-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .weak-sync{font-size:11px;color:var(--ink-soft);margin-left:4px}
+  .weak-summary{font-size:13px;color:var(--ink-soft);margin-bottom:10px;line-height:1.7}
+  /* 一問一答プリント（画面では隠し、印刷時だけ出す） */
+  #printArea{display:none;color:#000;background:#fff}
+  .p-head{border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8mm}
+  .p-title{font-size:15pt;font-weight:700}
+  .p-meta{display:flex;gap:16px;flex-wrap:wrap;font-size:11pt;margin-top:4px}
+  .p-sub{font-size:12pt;font-weight:700;margin-bottom:6mm}
+  .p-item{font-size:13.5pt;line-height:1.8;margin:0 0 5.5mm;page-break-inside:avoid}
+  .p-n{font-weight:700;margin-right:4px}
+  .p-blank{letter-spacing:.08em}
+  .p-break{page-break-before:always}
+  @media print{
+    @page{size:A4 portrait;margin:15mm}
+    body>*:not(#printArea){display:none!important}
+    #printArea{display:block!important}
+    body{background:#fff;color:#000;padding:0;max-width:none}
+  }
 </style>
 
 <h1>🏫 ミルバト 先生用 管理ページ</h1>
@@ -94,6 +114,48 @@
     ・「停止」するとその生徒はログイン・スコア送信ができなくなります（「再開」で戻せます）。<br>
     ・「⏰時間制限」＝あり：30分つづけて使うと90分の休憩画面が出ます。「制限なし」を押すとその生徒だけ解除できます（「制限あり」で戻せます）。<br>
     　この列が「−」のときは、サーバのSQLがv6.3未適用です。
+  </div>
+</div>
+
+<!-- 弱点をみる（生徒ごと・教科ごと） -->
+<div class="card hide" id="weakCard">
+  <h1 style="font-size:17px" id="weakTitle">🎯 弱点をみる</h1>
+  <div class="sub" id="weakHint">上の一覧で🎯弱点を押すと、その生徒のまちがえた問題が出ます</div>
+  <div class="weak-tabs" id="weakTabs"></div>
+  <div class="msg" id="weakMsg"></div>
+  <div id="weakBody" class="hide">
+    <div class="weak-summary" id="weakSummary"></div>
+    <div class="row-controls">
+      <div class="f">
+        <label>しぼり込み</label>
+        <select id="weakFilter">
+          <option value="w2">まちがえ2回以上</option>
+          <option value="w1">まちがえ1回以上</option>
+          <option value="all">全部（学習済み）</option>
+        </select>
+      </div>
+      <button class="btn sec" id="weakToggleAll">全部チェック／はずす</button>
+      <button class="btn" id="weakAssign">📝 チェックした問題で課題を出す</button>
+      <button class="btn sec" id="weakPrint">🖨️ チェックした問題をプリント</button>
+    </div>
+    <div class="row-controls hide" id="weakAssignForm">
+      <div class="f"><label>開始日</label><input type="date" id="weakStart"></div>
+      <div class="f"><label>終了日</label><input type="date" id="weakEnd"></div>
+      <div class="f"><label>課題名（30文字まで）</label><input id="weakName" maxlength="30" placeholder="苦手復習"></div>
+      <button class="btn" id="weakAssignSend">この内容で出す</button>
+      <button class="btn sec" id="weakAssignCancel">やめる</button>
+    </div>
+    <div class="msg" id="weakAssignMsg"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>選ぶ</th><th>問題</th><th>答え</th><th>まちがえ</th><th>状態</th><th>分野</th></tr></thead>
+        <tbody id="weakRows"></tbody>
+      </table>
+    </div>
+    <div class="foot">
+      ・チェックした問題だけを集めた課題（最大30問）を、その生徒に出せます。<br>
+      ・プリントは一問一答形式です。4択でしか答えられない問題・答えが長い問題は自動で外れます。
+    </div>
   </div>
 </div>
 
@@ -153,6 +215,9 @@
   </div>
 </div>
 
+<!-- 一問一答プリントの中身（印刷時だけ表示。body直下に置くこと） -->
+<div id="printArea"></div>
+
 <script>
 /* chiri_app.html と同じ値を入れる */
 const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
@@ -186,13 +251,14 @@ $('loginBtn').onclick=async()=>{
     ADMIN_PW=pw;
     $('loginCard').classList.add('hide'); $('adminCard').classList.remove('hide');
     $('kadaiCard').classList.remove('hide'); $('repCard').classList.remove('hide');
+    $('weakCard').classList.remove('hide'); resetWeak();
     const t=new Date(), z=n=>String(n).padStart(2,'0'), ymd=`${t.getFullYear()}-${z(t.getMonth()+1)}-${z(t.getDate())}`;
     if(!$('kadaiStart').value)$('kadaiStart').value=ymd;
     if(!$('kadaiEnd').value)$('kadaiEnd').value=ymd;
     load(); loadKadai(); loadReports();
   }catch(e){$('loginMsg').className="msg err";$('loginMsg').textContent="通信エラー："+e.message;}
 };
-$('logoutBtn').onclick=()=>{ADMIN_PW="";$('pw').value="";$('adminCard').classList.add('hide');$('kadaiCard').classList.add('hide');$('repCard').classList.add('hide');$('loginCard').classList.remove('hide');$('loginMsg').textContent="";};
+$('logoutBtn').onclick=()=>{ADMIN_PW="";$('pw').value="";$('adminCard').classList.add('hide');$('kadaiCard').classList.add('hide');$('repCard').classList.add('hide');$('weakCard').classList.add('hide');resetWeak();$('loginCard').classList.remove('hide');$('loginMsg').textContent="";};
 $('reloadBtn').onclick=()=>load();
 $('campusFilter').onchange=()=>load();
 
@@ -218,7 +284,7 @@ function render(list){
   const hasNL=p=>p.no_limit!==undefined&&p.no_limit!==null;
   $('rows').innerHTML = list.map(p=>{
     const stop=p.suspended, nl=!!p.no_limit;
-    return `<tr data-id="${p.id}" data-nolimit="${hasNL(p)?(nl?'1':'0'):''}">
+    return `<tr data-id="${p.id}" data-campus="${esc(p.campus)}" data-nolimit="${hasNL(p)?(nl?'1':'0'):''}">
       <td class="nick">${esc(p.nick)}</td>
       <td><span class="tag">${esc(p.campus)}</span></td>
       <td class="bango">${esc(p.bango)}</td>
@@ -230,6 +296,7 @@ function render(list){
       <td>${stop?'<span class="tag stop">停止中</span>':'<span class="tag ok">通常</span>'}</td>
       <td>${hasNL(p)?(nl?'<span class="tag free">なし</span>':'<span class="tag ok">あり</span>'):"−"}</td>
       <td><div class="actions">
+        <button class="btn sec sm act-weak">🎯弱点</button>
         <button class="btn sec sm act-rename">名前変更</button>
         <button class="btn sm ${stop?'sec':'warn'} act-toggle">${stop?'再開':'停止'}</button>
         ${hasNL(p)?`<button class="btn sec sm act-nolimit">${nl?'制限あり':'制限なし'}</button>`:''}
@@ -238,6 +305,7 @@ function render(list){
   }).join("");
   $('rows').querySelectorAll('tr').forEach(tr=>{
     const id=tr.dataset.id, nick=tr.querySelector('.nick').textContent;
+    tr.querySelector('.act-weak').onclick=()=>openWeak(id,nick,tr.dataset.campus||"");
     tr.querySelector('.act-rename').onclick=()=>doRename(id,nick);
     tr.querySelector('.act-toggle').onclick=()=>doToggle(id,nick,tr.querySelector('.tag.stop')!=null);
     const nlBtn=tr.querySelector('.act-nolimit');
@@ -357,6 +425,220 @@ async function loadKadai(){
     });
   }catch(e){}
 }
+
+/* ===== 弱点をみる（契約2で取得 → 契約1で課題化 → 契約5でプリント） ===== */
+// タブの並び順。SUBJ_LABEL は下の「問題の報告」節で定義（実行時にはもう存在する）
+const WEAK_SUBJ_ORDER=['chiri','rekishi','koumin','kokugo','rika'];
+// 管理ページには問題文が無いので、同一オリジンの各教科アプリ（../{subject}/index.html）から
+// DEFAULT_CARDS を切り出して読む（verify.sh と同じ流儀＝1行1問）。ローカルで開くと取れないので null を返す。
+const WEAK_CARDS_CACHE={};
+async function loadCards(subject){
+  if(Object.prototype.hasOwnProperty.call(WEAK_CARDS_CACHE,subject))return WEAK_CARDS_CACHE[subject];
+  let map=null;
+  try{
+    const res=await fetch("../"+subject+"/index.html");
+    if(res.ok){
+      const src=await res.text();
+      const i=src.indexOf("const DEFAULT_CARDS = [");
+      const j=i>=0?src.indexOf("];",i):-1;
+      if(i>=0&&j>i){
+        const m=new Map();
+        src.slice(i,j).split("\n").forEach(raw=>{
+          const line=raw.trim().replace(/,$/,"");
+          if(!line.startsWith("{"))return;
+          try{const c=JSON.parse(line); if(c&&c.id)m.set(c.id,c);}catch(_){}
+        });
+        if(m.size)map=m;
+      }
+    }
+  }catch(_){map=null;}
+  WEAK_CARDS_CACHE[subject]=map;
+  return map;
+}
+
+let WEAK={player:null,nick:"",campus:"",progress:[],subject:null,cards:null,rows:[]};
+function weakYmd(d){const z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;}
+function weakWhen(t){const d=new Date(t);if(!t||isNaN(d.getTime()))return String(t||"");const z=n=>String(n).padStart(2,'0');
+  return `${d.getMonth()+1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}`;}
+function resetWeak(){
+  WEAK={player:null,nick:"",campus:"",progress:[],subject:null,cards:null,rows:[]};
+  $('weakTitle').textContent="🎯 弱点をみる";
+  $('weakHint').classList.remove('hide');
+  $('weakTabs').innerHTML="";
+  $('weakMsg').className="msg";$('weakMsg').textContent="";
+  $('weakAssignMsg').className="msg";$('weakAssignMsg').textContent="";
+  $('weakAssignForm').classList.add('hide');
+  $('weakBody').classList.add('hide');
+  $('weakRows').innerHTML="";
+}
+
+async function openWeak(id,nick,campus){
+  resetWeak();
+  WEAK.player=id;WEAK.nick=nick;WEAK.campus=campus;
+  $('weakTitle').textContent=`🎯 弱点をみる：${nick}（${campus}）`;
+  $('weakHint').classList.add('hide');
+  $('weakMsg').className="msg";$('weakMsg').textContent="読み込み中…";
+  $('weakCard').scrollIntoView({behavior:'smooth',block:'start'});
+  try{
+    const r=await rpc('admin_get_progress',{p_pw:ADMIN_PW,p_player:id});
+    if(!r.ok){$('weakMsg').className="msg err";
+      $('weakMsg').textContent="読み込めませんでした（サーバのSQLがv6.4未適用かもしれません）";return;}
+    if(r.nick)WEAK.nick=r.nick;
+    if(r.campus)WEAK.campus=r.campus;
+    $('weakTitle').textContent=`🎯 弱点をみる：${WEAK.nick}（${WEAK.campus}）`;
+    WEAK.progress=r.progress||[];
+    if(!WEAK.progress.length){
+      $('weakMsg').textContent="まだ学習データがありません（アプリで1セット完了すると同期されます）";return;}
+    const first=WEAK_SUBJ_ORDER.filter(s=>WEAK.progress.some(p=>p.subject===s))[0]||WEAK.progress[0].subject;
+    await selectWeakSubject(first);
+  }catch(e){$('weakMsg').className="msg err";$('weakMsg').textContent="通信エラー："+e.message;}
+}
+
+function weakSubjects(){
+  const have=WEAK_SUBJ_ORDER.filter(s=>WEAK.progress.some(p=>p.subject===s));
+  WEAK.progress.forEach(p=>{if(have.indexOf(p.subject)<0)have.push(p.subject);});
+  return have;
+}
+function renderWeakTabs(){
+  const cur=WEAK.subject, ent=WEAK.progress.find(p=>p.subject===cur);
+  $('weakTabs').innerHTML=weakSubjects().map(s=>
+    `<button class="btn sm ${s===cur?'':'sec'} weak-tab" data-s="${esc(s)}">${esc(SUBJ_LABEL[s]||s)}</button>`).join("")
+    +(ent&&ent.updated_at?`<span class="weak-sync">最終同期: ${esc(weakWhen(ent.updated_at))}</span>`:"");
+  $('weakTabs').querySelectorAll('.weak-tab').forEach(b=>b.onclick=()=>selectWeakSubject(b.dataset.s));
+}
+async function selectWeakSubject(s){
+  WEAK.subject=s;
+  $('weakAssignForm').classList.add('hide');
+  $('weakAssignMsg').className="msg";$('weakAssignMsg').textContent="";
+  renderWeakTabs();
+  $('weakMsg').className="msg";$('weakMsg').textContent="問題データを読み込み中…";
+  const map=await loadCards(s);
+  if(WEAK.subject!==s)return; // タブを続けて押したときの取り違え防止
+  WEAK.cards=map;
+  if(map){$('weakMsg').className="msg";$('weakMsg').textContent="";}
+  else{$('weakMsg').className="msg err";$('weakMsg').textContent="問題データが読めません（公開版でのみ動きます）";}
+  $('weakBody').classList.remove('hide');
+  renderWeak();
+}
+
+function renderWeak(){
+  const ent=WEAK.progress.find(p=>p.subject===WEAK.subject)||{};
+  const data=ent.data||{}, reviews=data.reviews||{}, cards=WEAK.cards;
+  const ids=Object.keys(reviews);
+  const wrongOf=id=>(reviews[id]&&reviews[id].wrong)||0;
+  const mastered=ids.filter(id=>reviews[id]&&reviews[id].mastered).length;
+  const w2=ids.filter(id=>wrongOf(id)>=2).length;
+  $('weakSummary').textContent=
+    `累計 ${data.accTotal||0}問 / 正解 ${data.accCorrect||0} / マスター済み ${mastered} / まちがえ2回以上 ${w2}`;
+  const mode=$('weakFilter').value;
+  const min=mode==='all'?0:(mode==='w1'?1:2);
+  const rows=ids.filter(id=>wrongOf(id)>=min).map(id=>{
+    const c=cards?cards.get(id):null, r=reviews[id]||{};
+    return {id:id,card:c,q:c?String(c.q||""):`（不明: ${id}）`,
+      a:c?(c.a||[]).join("・"):"",wrong:r.wrong||0,mastered:!!r.mastered,cat:c?String(c.cat||""):""};
+  });
+  rows.sort((x,y)=>(y.wrong-x.wrong)||x.q.localeCompare(y.q,'ja'));
+  WEAK.rows=rows;
+  $('weakRows').innerHTML=rows.map(r=>
+    `<tr><td><input type="checkbox" class="weak-ck" value="${esc(r.id)}" style="width:auto"></td>
+     <td style="white-space:normal;min-width:220px">${esc(r.q)}</td>
+     <td style="white-space:normal">${esc(r.a)}</td>
+     <td>${r.wrong}回</td>
+     <td>${r.mastered?'<span class="tag ok">マスター</span>':'<span class="tag stop">未</span>'}</td>
+     <td>${esc(r.cat)}</td></tr>`).join("")
+    || '<tr><td colspan="6" style="color:var(--ink-soft)">あてはまる問題はありません</td></tr>';
+}
+$('weakFilter').onchange=()=>renderWeak();
+$('weakToggleAll').onclick=()=>{
+  const cks=[...$('weakRows').querySelectorAll('.weak-ck')];
+  const turnOn=cks.some(c=>!c.checked);
+  cks.forEach(c=>c.checked=turnOn);
+};
+function weakCheckedIds(){return [...$('weakRows').querySelectorAll('.weak-ck:checked')].map(c=>c.value);}
+// チェック数の共通チェック（0件・31件以上は送らない）。OKなら id配列、NGなら null
+function weakPickIds(){
+  const m=$('weakAssignMsg'); m.className="msg";
+  const ids=weakCheckedIds();
+  if(!ids.length){m.className="msg err";m.textContent="問題をチェックしてください";return null;}
+  if(ids.length>30){m.className="msg err";m.textContent=`30問までにしてください（今${ids.length}問）`;return null;}
+  return ids;
+}
+
+/* --- 契約1: チェックした問題で課題（Q:デッキ）を出す --- */
+$('weakAssign').onclick=()=>{
+  const ids=weakPickIds(); if(!ids)return;
+  const t=new Date(), t7=new Date(t.getTime()+7*86400000);
+  $('weakStart').value=weakYmd(t);
+  $('weakEnd').value=weakYmd(t7);
+  $('weakName').value=`苦手復習 ${t.getMonth()+1}/${t.getDate()}`;
+  $('weakAssignForm').classList.remove('hide');
+  $('weakAssignMsg').className="msg";$('weakAssignMsg').textContent=`${ids.length}問を選んでいます。期間と課題名を決めて「この内容で出す」を押してください`;
+};
+$('weakAssignCancel').onclick=()=>{
+  $('weakAssignForm').classList.add('hide');
+  $('weakAssignMsg').className="msg";$('weakAssignMsg').textContent="";
+};
+$('weakAssignSend').onclick=async()=>{
+  const ids=weakPickIds(); if(!ids)return;
+  const m=$('weakAssignMsg');
+  const s=$('weakStart').value, e=$('weakEnd').value, name=$('weakName').value.trim();
+  if(!WEAK.player||!WEAK.subject){m.className="msg err";m.textContent="生徒と教科を選んでください";return;}
+  if(!s||!e){m.className="msg err";m.textContent="開始日と終了日を入れてください";return;}
+  if(e<s){m.className="msg err";m.textContent="終了日が開始日より前です";return;}
+  if(!name||name.length>30){m.className="msg err";m.textContent="課題名は1〜30文字で入れてください";return;}
+  m.textContent="送信中…";
+  try{
+    const r=await rpc('admin_create_assignment',{p_pw:ADMIN_PW,p_players:[WEAK.player],
+      p_deck:"Q:"+ids.join(","),p_deck_name:name,p_start:s,p_end:e,p_subject:WEAK.subject});
+    if(!r.ok){m.className="msg err";m.textContent="出せませんでした（"+(r.reason||"")+"）";return;}
+    m.className="msg ok";m.textContent=`${ids.length}問の課題「${name}」を出しました`;
+    $('weakAssignForm').classList.add('hide');
+    loadKadai();
+  }catch(err){m.className="msg err";m.textContent="通信エラー："+err.message;}
+};
+
+/* --- 契約5: 一問一答プリント --- */
+// 4択でしか答えられない問題・画像つき・答えが長い問題は一問一答にできないので外す
+const PRINT_NG_Q=/次のうち|どちら|正しいもの|あてはまらない|まちがって|誤って|ふさわしい/;
+function printAnswerBase(s){return String(s||"").replace(/（[^）]*）/g,"").trim();}
+function printable(c){
+  if(!c||c.type==="multi"||c.image)return false; // multi（複数選択）は一問一答にならない。tile（国語の文字ならべ）は答えがかな1語なので対象
+  if(PRINT_NG_Q.test(String(c.q||"")))return false;
+  const base=printAnswerBase((c.a||[])[0]);
+  if(!base||base.length>10)return false;
+  if(/[、。]/.test(base))return false;
+  return true;
+}
+$('weakPrint').onclick=()=>{
+  const m=$('weakAssignMsg'); m.className="msg";
+  const ids=weakCheckedIds();
+  if(!ids.length){m.className="msg err";m.textContent="問題をチェックしてください";return;}
+  const picked=[]; let skipped=0;
+  ids.forEach(id=>{
+    const c=WEAK.cards?WEAK.cards.get(id):null;
+    if(printable(c))picked.push(c); else skipped++;
+  });
+  if(!picked.length){m.className="msg err";
+    m.textContent="プリントできる問題がありません（4択専用・答えが長い など）";return;}
+  const subj=WEAK.subject;
+  const appName=subj==='kokugo'?'ミルバト国語':subj==='rika'?'ミルバト理科':'ミルバト社会';
+  const head=()=>`<div class="p-head"><div class="p-title">${esc(appName)} 一問一答プリント</div>
+    <div class="p-meta"><span>${esc(SUBJ_LABEL[subj]||subj)}</span><span>なまえ: ________</span><span>日付: ____/____</span></div></div>`;
+  // 答えは a[0] を読み（…）ごと出す（生徒が読みを確認できるように）
+  $('printArea').innerHTML=
+    `<section class="p-page">${head()}`+
+      picked.map((c,i)=>`<div class="p-item"><span class="p-n">Q${i+1}.</span>${esc(c.q)} <span class="p-blank">______________</span></div>`).join("")+
+    `</section>`+
+    `<section class="p-page p-break">${head()}<div class="p-sub">こたえ</div>`+
+      picked.map((c,i)=>`<div class="p-item"><span class="p-n">A${i+1}.</span>${esc((c.a||[])[0]||"")}</div>`).join("")+
+    `</section>`;
+  m.className="msg";
+  m.textContent=skipped?`${picked.length}問をプリントします。${skipped}問は一問一答に向かないので外しました（4択専用・答えが長い など）`
+                       :`${picked.length}問をプリントします`;
+  $('printArea').style.display='block';
+  window.print();
+};
+window.addEventListener('afterprint',()=>{$('printArea').style.display='none';});
 
 /* ===== 問題の報告 ===== */
 const REP_REASON={wrong:'答えが間違い',unclear:'わかりにくい',other:'その他'};

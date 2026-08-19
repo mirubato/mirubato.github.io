@@ -202,6 +202,7 @@
   #kadaiList .mc-title::before{content:"課題";display:inline-block;font-size:10px;font-weight:800;color:#fff;
     background:var(--gold);border-radius:6px;padding:2px 6px;margin-right:6px;vertical-align:2px}
   #modeReview{border-color:var(--orange)}
+  #modeNigate{border-color:var(--orange)} /* 苦手モードは復習モードと同じ見た目（並んで出るので揃える） */
   .rev-badge{display:inline-block;font-size:11px;background:var(--orange);color:#fff;border-radius:99px;padding:1px 8px;font-weight:800;vertical-align:middle;margin-left:4px}
   /* 画像つきカード */
   .qimg{display:block;max-width:100%;max-height:42vh;margin:4px auto 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff}
@@ -342,6 +343,10 @@
       <button class="mode-card" id="modeReview" style="display:none">
         <span class="mc-emoji">🔁</span>
         <span class="mc-body"><span class="mc-title">復習モード <span id="reviewCount" class="rev-badge"></span></span><span class="mc-desc">今日の30問でまちがえた問題。正解すると消えるよ</span></span>
+      </button>
+      <button class="mode-card" id="modeNigate" style="display:none">
+        <span class="mc-emoji">💪</span>
+        <span class="mc-body"><span class="mc-title">苦手モード <span id="nigateCount" class="rev-badge"></span></span><span class="mc-desc">2回以上まちがえた問題だけ。マスターすると消えるよ</span></span>
       </button>
       <button class="mode-card" id="modeRank">
         <span class="mc-emoji">🏆</span>
@@ -801,12 +806,26 @@ async function fetchAssignments(){
     if(r&&r.ok)ASSIGNMENTS=r.assignments||[];
   }catch(e){}
 }
+// "Q:id1,id2,..." の課題が指す問題のうち、いま実在するものだけを返す（データ更新で消えたIDは無視する）
+function assignCards(deck){
+  if(!String(deck||"").startsWith("Q:"))return null;
+  return deck.slice(2).split(",").map(id=>CARDS.find(c=>c.id===id)).filter(Boolean);
+}
 function checkAssignmentsDone(){
-  // 対応する称号を獲得済みの課題を完了にする（サーバへ通知し、ホームの一覧から外す）
+  // 達成した課題を完了にする（サーバへ通知し、ホームの一覧から外す）
+  // R:/B: は対応する称号を獲得したら、Q: は指定された問題を全部マスターしたら達成
   if(!state||!ASSIGNMENTS.length)return;
   ASSIGNMENTS.slice().forEach(a=>{
-    const b=badgeForDeck(a.deck);
-    if(b&&state.badges&&state.badges[b.key]){
+    const qc=assignCards(a.deck);
+    let done;
+    if(qc){
+      // 実在する問題が0件（列挙IDが全部消えた）のときは達成にしない。何もやらずに完了になってしまうため
+      done = qc.length>0 && qc.every(c=>state.reviews[c.id]&&state.reviews[c.id].mastered);
+    }else{
+      const b=badgeForDeck(a.deck);
+      done = !!(b&&state.badges&&state.badges[b.key]);
+    }
+    if(done){
       ASSIGNMENTS=ASSIGNMENTS.filter(x=>x.id!==a.id);
       if(state.online)rpc('complete_assignment',{p_nick:state.nick,p_number:state.pin,p_id:a.id}).catch(()=>{});
       renderKadai();
@@ -819,11 +838,15 @@ function renderKadai(){
   const md=s=>{const p=String(s).split("-");return (+p[1])+"/"+(+p[2]);};
   ASSIGNMENTS.forEach(a=>{
     const b=badgeForDeck(a.deck);
+    const isQ=String(a.deck||"").startsWith("Q:");
+    const qn=isQ?a.deck.slice(2).split(",").length:0; // 先生が並べた問題数。実在しないIDも数に入れる（先生が指定した数とズレると混乱するため）
     const btn=document.createElement('button'); btn.className="mode-card";
-    const em=document.createElement('span'); em.className="mc-emoji"; em.textContent=b?b.emoji:"📝";
+    const em=document.createElement('span'); em.className="mc-emoji"; em.textContent=isQ?"📝":(b?b.emoji:"📝");
     const body=document.createElement('span'); body.className="mc-body";
-    const t=document.createElement('span'); t.className="mc-title"; t.textContent=(a.deck_name||(b?b.name:"課題"))+"をとろう！";
-    const d=document.createElement('span'); d.className="mc-desc"; d.textContent="先生からの課題（"+md(a.start_date)+"〜"+md(a.end_date)+"）。この称号を80%マスターで達成！";
+    const t=document.createElement('span'); t.className="mc-title"; t.textContent=isQ?(a.deck_name||"課題"):((a.deck_name||(b?b.name:"課題"))+"をとろう！"); // Q:は称号名ではないので「をとろう！」を付けない
+    const d=document.createElement('span'); d.className="mc-desc"; d.textContent=isQ
+      ? "先生からの復習課題（"+md(a.start_date)+"〜"+md(a.end_date)+"）。"+qn+"問をぜんぶマスターで達成！"
+      : "先生からの課題（"+md(a.start_date)+"〜"+md(a.end_date)+"）。この称号を80%マスターで達成！";
     body.appendChild(t); body.appendChild(d); btn.appendChild(em); btn.appendChild(body);
     btn.onclick=()=>startQuiz(a.deck);
     box.appendChild(btn);
@@ -1095,6 +1118,10 @@ function renderHome(){
   const nrev = reviewCards().length;
   $('modeReview').style.display = nrev>0 ? "" : "none";
   $('reviewCount').textContent = nrev>0 ? nrev+"問" : "";
+  // 苦手モード：2回以上まちがえた未マスターの問題があるときだけ入口を出す（復習モードと同じやり方）
+  const nnig = nigateCards().length;
+  $('modeNigate').style.display = nnig>0 ? "" : "none";
+  $('nigateCount').textContent = nnig>0 ? nnig+"問" : "";
 }
 
 // ホーム上部の称号コレクション：獲得＝カラーで光る／未獲得＝グレー の2状態だけ
@@ -1116,6 +1143,7 @@ function renderHomeBadges(){
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
 $('modeReview').onclick=()=>startQuiz('REVIEW');
+$('modeNigate').onclick=()=>startQuiz('NIGATE');
 $('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
 
 /* ===== 称号画面 ===== */
@@ -1171,11 +1199,12 @@ function renderPick(){
   document.querySelectorAll('#pick .pick-btn').forEach(el=>el.onclick=()=>startQuiz(el.dataset.comp));
 }
 $('pickBack').onclick=()=>{renderHome();show('home');};
-// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名"
+// デッキ指定: 編名 / "ALL" / "R:地方名" / "B:称号カテゴリ名" / "Q:問題ID,問題ID,…"（先生が問題を直接えらぶ復習課題）
 function cardInGroup(c,comp){
   if(comp==="ALL")return true;
   if(comp.startsWith("R:"))return c.region===comp.slice(2);
   if(comp.startsWith("B:"))return c.badgeCat===comp.slice(2);
+  if(comp.startsWith("Q:"))return comp.slice(2).split(",").indexOf(c.id)>=0;
   return c.comp===comp;
 }
 function dueCards(comp){
@@ -1194,8 +1223,9 @@ let session=null, picked=new Set(), answered=false, slotChars=[], stage=0;
 let renderSeq=0; // 描画世代。前問のボタンへの遅延タップ（指の離し遅れ等）が今問のpicked/slotCharsを汚染するのを防ぐ
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
 
+const NIGATE_MIN_WRONG=2; // 1回のうっかりミスまで苦手扱いすると対象が膨らみすぎるので、2回以上まちがえた問題だけを苦手とする
 function nigateCards(){ // まちがえた回数が多い順。マスター済みは卒業として除外
-  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>0&&!r.mastered;})
+  return CARDS.filter(c=>{const r=state.reviews[c.id];return r&&(r.wrong||0)>=NIGATE_MIN_WRONG&&!r.mastered;})
     .sort((a,b)=>(state.reviews[b.id].wrong||0)-(state.reviews[a.id].wrong||0));
 }
 const DAILY30=30; // 今日の30問の枚数
@@ -1223,6 +1253,11 @@ function startQuiz(comp){
     // 復習モード：今日の30問で間違えた問題（過去分も）。正解したら外れる
     pool=reviewCards();
     if(pool.length===0){alert("復習する問題はないよ！今日の30問をがんばろう😊");return;}
+  }else if(comp&&comp.startsWith("Q:")){
+    // 復習課題：先生が並べた順のまま、まだマスターしていない問題だけを出す。
+    // 「ぜんぶマスターで達成」なので DAILY_GOAL(10問)では切らず全部出す（サーバ側で最大30問に制限済み）
+    pool=assignCards(comp).filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].mastered));
+    if(pool.length===0){alert("この課題の問題はぜんぶマスター済み！すごい！🎉");return;}
   }else if(comp&&(comp.startsWith("R:")||comp.startsWith("B:"))){
     // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
     pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
