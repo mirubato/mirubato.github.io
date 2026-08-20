@@ -1083,6 +1083,7 @@ $('loginBtn').onclick=async()=>{
     applyUsageLogin(n,srvNoLimit); // 連続使用時間の記録をこの生徒に切り替える（ロック中ならここで休憩画面）
     rolloverDay(); refreshBadges(); saveState();
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
+    alogFlush(); // 前回アプリを閉じたまま残っていた解答ログを回収する（途中離脱を救う本体。await しない）
     renderHome(); show('home');
     flushScore();
     maybeShowWeeklyResult(); // 週次リザルト（先週の確定結果を週1回だけモーダル表示。オフライン時は何もしない）
@@ -1278,6 +1279,7 @@ const STAGE_LABEL=["ステップ1・4択から選ぶ","ステップ2・文字を
 function renderQuestion(){
   const c=session.queue[session.idx];
   picked=new Set(); answered=false; slotChars=[]; renderSeq++;
+  alogShownAt=Date.now(); // 解答ログ用：この問題を見せた時刻（答え合わせとの差が解答時間）
   // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
   // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
   const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0])) && !/次のうち|どちら/.test(c.q); // 比較選択型は選択肢が本体なので常に4択
@@ -1434,6 +1436,10 @@ function judge(correct){
   const firstCorrect = correct && !(state.reviews[c.id] && state.reviews[c.id].everCorrect);
   const isDaily = session.comp==="DAILY30";
   schedule(c.id,correct);
+  // 解答ログ（分析用）。schedule＝復習判定には触れず、別キューに1件積むだけ。
+  // 送信は await しない：ログの成否で答え合わせの表示を待たせない
+  alogPush(c.id,correct,stage,alogElapsed(),alogMode());
+  if(ALOG_ON&&alogLoad().length>=5)alogFlush();
   state.accTotal++;
   if(correct){
     session.correct++; state.accCorrect++; state.xp+=10;
@@ -1512,6 +1518,7 @@ function finishSession(){
   refreshBadges();
   saveState();
   flushScore().then(syncProgress); // オンラインなら週間スコア送信＋進捗バックアップ（失敗しても学習は続けられる）
+  alogFlush(); // このセッション分の解答ログを送る（await しない。失敗してもキューに残るだけ）
   $('dCards').textContent=session.total;
   $('dCorrect').textContent=session.correct;
   $('dXp').textContent="+"+(session.correct*10);
@@ -1677,6 +1684,80 @@ async function syncProgress(){
     review:state.review,daily30Date:state.daily30Date,daily30Session:state.daily30Session,weekPending:state.weekPending,savedAt:state.savedAt,wkResultSeen:state.wkResultSeen};
   try{await rpc('save_progress',{p_nick:state.nick,p_number:state.pin,p_data:d,p_subject:SUBJECT});}catch(e){}
 }
+
+/* ===== 解答ログ（v7.0・分析用の観測データ） =====
+   復習判定には一切使わない。reviews は「状態」、こちらは「答えた瞬間のイベント」。
+   進捗(state)には混ぜない：save_progress の 300KB 上限に当たると進捗バックアップごと壊れるため、
+   別の localStorage キーにためて log_answers へまとめて送る。
+   送れなくても学習は止めない（既存 flushScore と同じ流儀で失敗は握りつぶす）。 */
+const ALOG_ON  = (SUBJECT === "chiri");                 // 段階展開用。build_app.pyがSUBJECTを置換するので他教科は自動でOFF
+const LS_ALOG  = LS_CARDS.replace(/_cards$/, "_alog");  // stateとは別キー（例: chizutan_alog）
+const ALOG_MAX = 1000;                                  // キュー上限。あふれたら古い順に捨てる（ログを守って端末を壊さない）
+const ALOG_BATCH = 50;                                  // 1回の送信件数（サーバ側 log_answers の上限に合わせる）
+let alogShownAt = 0;     // 出題を描画した時刻。答え合わせとの差が解答時間(ms)
+let alogFlushing = null; // 多重送信ロック：ログイン直後・セッション完了・離脱の呼び出しが重なっても二重送信しない
+
+// 1解答につき1つの一意ID（サーバ側の主キー＝再送しても行が増えない）。
+// 古いiOS Safari や file:// / http:// では crypto.randomUUID が無いのでv4形式を自前で作る
+function alogUid(){
+  try{ if(typeof crypto!=="undefined"&&crypto.randomUUID)return crypto.randomUUID(); }catch(e){}
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,ch=>{
+    const r=Math.random()*16|0, v=(ch==="x")?r:((r&0x3)|0x8);
+    return v.toString(16);
+  });
+}
+function alogLoad(){
+  try{const j=localStorage.getItem(LS_ALOG); if(j){const a=JSON.parse(j); if(Array.isArray(a))return a;}}catch(e){}
+  return []; // 壊れたJSON・localStorage不可は空扱い（ログのために学習を止めない）
+}
+function alogSave(arr){ try{localStorage.setItem(LS_ALOG,JSON.stringify(arr));}catch(e){} }
+// mode はサーバ側の check 制約と同じ語彙にそろえる
+function alogMode(){
+  const comp=session&&session.comp;
+  if(comp==="DAILY30")return "daily30";
+  if(comp==="REVIEW")return "review";
+  if(comp==="NIGATE")return "nigate";
+  if(typeof comp==="string"&&comp.indexOf("Q:")===0)return "assignment"; // 先生からの課題
+  if(typeof comp==="string"&&comp)return "deck";                          // R:地方 / B:分野 / 編名（地形編など）
+  return "other";
+}
+// 解答にかかった時間。サーバ側の check（0〜600000）に合わせてクランプし、計測できていなければ null
+function alogElapsed(){
+  if(!alogShownAt)return null;
+  return Math.min(600000,Math.max(0,Date.now()-alogShownAt));
+}
+function alogPush(cardId,correct,stage,ms,mode){
+  if(!ALOG_ON)return;
+  const q=alogLoad();
+  q.push({attempt_uid:alogUid(),question_id:cardId,correct:!!correct,mode:mode,
+    stage:stage,ms:ms,card_ver:CARD_DATA_VERSION,client_at:new Date().toISOString()});
+  if(q.length>ALOG_MAX)q.splice(0,q.length-ALOG_MAX); // 古い順に捨てる（直近のログの方が分析価値が高い）
+  alogSave(q);
+}
+async function alogFlush(){
+  if(alogFlushing)return alogFlushing;
+  alogFlushing=(async()=>{ await _alogFlushBody(); })().finally(()=>{alogFlushing=null;});
+  return alogFlushing;
+}
+async function _alogFlushBody(){
+  if(!ALOG_ON||!state||!state.online)return;
+  for(let round=0;round<3;round++){ // 1回の呼び出しで最大3バッチまで（積み残しが多くても暴走させない）
+    const q=alogLoad();
+    if(!q.length)return;
+    const batch=q.slice(0,ALOG_BATCH);
+    let r;
+    try{ r=await rpc('log_answers',{p_nick:state.nick,p_number:state.pin,p_subject:SUBJECT,p_rows:batch}); }
+    catch(e){ return; }      // 通信失敗：キューは残したまま静かに終了。次の機会に送る
+    if(!r||!r.ok)return;     // 認証エラー等：同じくキューを残して終了
+    // 送信を待つ間に新しい解答が積まれている可能性があるので、添字ではなく attempt_uid で消す
+    const sent=new Set(batch.map(x=>x.attempt_uid));
+    alogSave(alogLoad().filter(x=>!sent.has(x.attempt_uid)));
+    if(r.capped)return;      // 日次上限に到達：送った分は捨てて今日はもう送らない
+  }
+}
+// 離脱時のベストエフォート送信（途中でやめた分をなるべくその場で回収する）
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden')alogFlush(); });
+window.addEventListener('pagehide',()=>{ alogFlush(); });
 
 /* ランキング画面 */
 let rankCampus="", rankPeriod="week", rankSubject=SUBJECT;
