@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  ミルバト社会・地理編 v3 — 中学受験 社会・地理 暗記アプリ（旧ちずたん）
+  学習アプリ本体・地理編 v3 — 中学受験 社会・地理 暗記アプリ（ブランド名は BRAND / APP_TEXT から描画する）
   ・3段階出題：1回目=4択 → 2回目=文字を選ぶ → 3回目以降=漢字で入力（SRS習熟度で自動的に上がる）
   ・ニックネーム+番号（塾発行）でログイン。進捗は端末内(localStorage)＋オンライン時はSupabaseにバックアップ。
   ・週間ランキングバトル（Supabase接続時のみ）。書き込みは全てRPC経由・番号はサーバ側でbcryptハッシュ化。
@@ -9,7 +9,7 @@
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ミルバト社会｜地理編</title>
+<title></title><!-- applyBrand() が APP_TEXT.title（{B}=BRAND.name）から設定する -->
 <style>
   :root{
     --paper:#f7f4ec; --ink:#2a2723; --ink-soft:#6b6457; --line:#e2dccc;
@@ -300,13 +300,13 @@
   <!-- ログイン -->
   <section id="login" class="screen active">
     <div class="logo">🗾</div>
-    <div><h1>ミルバト社会</h1><div class="brandsub">地理編（中学受験）</div></div>
+    <div><h1 id="brandName"></h1><div class="brandsub" id="brandSub"></div></div>
     <div class="field"><label>ニックネーム</label>
       <input id="nick" maxlength="12" placeholder="れい：みかん" autocomplete="off">
-      <div class="hint">本名は使わず、好きな名前にしてね。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
-    <div class="field"><label>番号（塾からもらった数字）</label>
+      <div class="hint">本名は使わず、好きな名前にしてね。ランキングで他の人に見えるよ。<span id="nickTeacherNote" class="online-only" style="color:var(--orange);font-weight:700">先生もこの名前を見るよ。ふざけた名前や悪い言葉はやめてね</span></div></div>
+    <div class="field" id="pinField"><label id="pinLabel">番号（塾からもらった数字）</label>
       <input id="pin" inputmode="numeric" maxlength="8" placeholder="れい：308417" autocomplete="off">
-      <div class="hint">先生からもらった数字だよ。他の人には教えないでね</div></div>
+      <div class="hint" id="pinHint">先生からもらった数字だよ。他の人には教えないでね</div></div>
     <div class="field online-only" id="campusField"><label>校舎（初めての人だけ選んでね）</label>
       <select id="campusSel">
         <option value="">選んでね</option>
@@ -473,7 +473,7 @@
     <div class="badge-grid" id="badgeGrid"></div>
   </section>
 
-  <footer>ミルバト社会・地理編 v3 ・ 進捗はこの端末に保存されます</footer>
+  <footer id="appFooter"></footer><!-- applyBrand() が APP_TEXT.footer と BRAND.operator / contact から描画する -->
 </div>
 
 <script>
@@ -594,7 +594,7 @@ const DEFAULT_CARDS = [
   {"id": "live-beef", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "肉牛の飼育頭数が北海道に次いで2位の、九州の県は？", "a": ["鹿児島県"], "choices": ["鹿児島県", "宮崎県", "沖縄県", "福岡県"], "note": "1位は北海道、2位は鹿児島。畜産がさかん。", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
   {"id": "live-milk", "comp": "産業編", "pref": "栃木県", "cat": "畜産", "type": "single", "q": "乳牛（乳用牛）の飼育頭数が北海道に次いで2位の、関東の県は？", "a": ["栃木県"], "choices": ["栃木県", "群馬県", "茨城県", "岩手県"], "note": "1位は北海道、2位は栃木。", "region": "関東", "badgeCat": "畜産・林業・漁業"},
   {"id": "live-pig", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "豚の飼育頭数が全国一の都道府県は？", "a": ["鹿児島県"], "choices": ["北海道", "宮崎県", "千葉県", "鹿児島県"], "note": "2位北海道。「肉は鹿児島」。", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
-  {"id": "live-broiler", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "にわとり(ブロイラー)の飼育数で宮崎と1位を争う県は？", "a": ["鹿児島県"], "choices": ["宮崎県", "岩手県", "青森県", "鹿児島県"], "note": "宮崎とは僅差。", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
+  {"id": "live-broiler-miyazaki", "comp": "産業編", "pref": "鹿児島県", "cat": "畜産", "type": "single", "q": "にわとり(ブロイラー)の飼育数で鹿児島と1位を争う県は？", "a": ["宮崎県"], "choices": ["鹿児島県", "岩手県", "青森県", "宮崎県"], "note": "鹿児島とは僅差で、年ごとに1位が入れかわる。九州南部は畜産の中心。", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
   {"id": "live-egg", "comp": "産業編", "pref": "茨城県", "cat": "畜産", "type": "single", "q": "にわとり(卵)の飼育数が全国一の都道府県は？", "a": ["茨城県"], "choices": ["鹿児島県", "千葉県", "岡山県", "茨城県"], "note": "卵は消費期限が短く大都市の近くで生産。", "region": "関東", "badgeCat": "畜産・林業・漁業"},
   {"id": "craft-nanbu", "comp": "産業編", "pref": "岩手県", "cat": "伝統的工芸品", "type": "single", "q": "岩手県の伝統的工芸品は次のうちどれ？", "a": ["南部鉄器（なんぶてっき）"], "choices": ["輪島塗（わじまぬり）", "西陣織（にしじんおり）", "備前焼（びぜんやき）", "南部鉄器（なんぶてっき）"], "note": "盛岡市（もりおかし）。", "region": "東北", "badgeCat": "伝統工芸品"},
   {"id": "craft-oodate", "comp": "産業編", "pref": "秋田県", "cat": "伝統的工芸品", "type": "single", "q": "秋田県の伝統的工芸品は次のうちどれ？", "a": ["大館（おおだて）曲げわっぱ（まげわっぱ）"], "choices": ["南部鉄器（なんぶてっき）", "天童将棋駒（てんどうしょうぎこま）", "会津塗（あいづぬり）", "大館（おおだて）曲げわっぱ（まげわっぱ）"], "note": "秋田すぎを使う。", "region": "全国", "badgeCat": "伝統工芸品"},
@@ -609,7 +609,7 @@ const DEFAULT_CARDS = [
   {"id": "craft-bizen", "comp": "産業編", "pref": "岡山県", "cat": "伝統的工芸品", "type": "single", "q": "岡山県の伝統的工芸品は次のうちどれ？", "a": ["備前焼（びぜんやき）"], "choices": ["有田焼（ありたやき）", "益子焼（ましこやき）", "瀬戸焼（せとやき）", "備前焼（びぜんやき）"], "note": "岡山県。", "region": "中国", "badgeCat": "伝統工芸品"},
   {"id": "craft-kumano", "comp": "産業編", "pref": "広島県", "cat": "伝統的工芸品", "type": "single", "q": "広島県の伝統的工芸品は次のうちどれ？", "a": ["熊野筆（くまのふで）"], "choices": ["輪島塗（わじまぬり）", "南部鉄器（なんぶてっき）", "西陣織（にしじんおり）", "熊野筆（くまのふで）"], "note": "広島県。筆。", "region": "中国", "badgeCat": "伝統工芸品"},
   {"id": "craft-tosawashi", "comp": "産業編", "pref": "高知県", "cat": "伝統的工芸品", "type": "single", "q": "高知県の伝統的工芸品は次のうちどれ？", "a": ["土佐和紙（とさわし）"], "choices": ["美濃和紙（みのわし）", "越前和紙（えちぜんわし）", "西陣織（にしじんおり）", "土佐和紙（とさわし）"], "note": "原料はこうぞ・みつまた。", "region": "四国", "badgeCat": "伝統工芸品"},
-  {"id": "craft-hakata", "comp": "産業編", "pref": "福岡県", "cat": "伝統的工芸品", "type": "single", "q": "福岡県の伝統的工芸品は次のうちどれ？", "a": ["博多織（はかたおり）"], "choices": ["久留米がすり（くるめがすり）", "西陣織（にしじんおり）", "桐生織（きりゅうおり）", "博多織（はかたおり）"], "note": "福岡市。博多人形も。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
+  {"id": "craft-hakata", "comp": "産業編", "pref": "福岡県", "cat": "伝統的工芸品", "type": "single", "q": "福岡県の伝統的工芸品は次のうちどれ？", "a": ["博多織（はかたおり）"], "choices": ["西陣織（にしじんおり）", "桐生織（きりゅうおり）", "加賀友禅（かがゆうぜん）", "博多織（はかたおり）"], "note": "福岡市。博多人形も。久留米がすりも福岡県。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
   {"id": "craft-kurume", "comp": "産業編", "pref": "福岡県", "cat": "伝統的工芸品", "type": "single", "q": "福岡県の伝統的工芸品は次のうちどれ？", "a": ["久留米がすり（くるめがすり）"], "choices": ["大島つむぎ（おおしまつむぎ）", "西陣織（にしじんおり）", "小千谷ちぢみ（おぢやちぢみ）", "久留米がすり（くるめがすり）"], "note": "久留米市。博多織（はかたおり）も福岡県の伝統的工芸品。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
   {"id": "craft-arita", "comp": "産業編", "pref": "佐賀県", "cat": "伝統的工芸品", "type": "single", "q": "佐賀県の伝統的工芸品は次のうちどれ？", "a": ["有田焼（ありたやき）"], "choices": ["備前焼（びぜんやき）", "益子焼（ましこやき）", "瀬戸焼（せとやき）", "有田焼（ありたやき）"], "note": "伊万里焼（いまりやき）も。朝鮮出兵が関係。", "region": "九州沖縄", "badgeCat": "伝統工芸品"},
   {"id": "craft-kaga", "comp": "産業編", "pref": "石川県", "cat": "伝統的工芸品", "type": "single", "q": "石川県の伝統的工芸品は次のうちどれ？", "a": ["加賀友禅（かがゆうぜん）"], "choices": ["京友禅（きょうゆうぜん）", "西陣織（にしじんおり）", "桐生織（きりゅうおり）", "加賀友禅（かがゆうぜん）"], "note": "金沢市（かなざわし）。九谷焼（くたにやき）も。", "region": "中部", "badgeCat": "伝統工芸品"},
@@ -632,7 +632,7 @@ const DEFAULT_CARDS = [
   {"id": "fish-yaizu", "comp": "産業編", "pref": "静岡県", "cat": "漁港", "type": "single", "q": "静岡県にある、まぐろ・かつおの遠洋漁業の基地となっている港は？", "a": ["焼津港（やいづこう）"], "choices": ["銚子港（ちょうしこう）", "境港（さかいみなと）", "釧路港（くしろこう）", "焼津港（やいづこう）"], "note": "", "region": "中部", "badgeCat": "畜産・林業・漁業"},
   {"id": "fish-sakai", "comp": "産業編", "pref": "鳥取県", "cat": "漁港", "type": "single", "q": "鳥取県にある、日本海側で最も水揚げ量が多い港は？", "a": ["境港（さかいみなと）"], "choices": ["銚子港（ちょうしこう）", "焼津港（やいづこう）", "八戸港（はちのへこう）", "境港（さかいみなと）"], "note": "", "region": "中国", "badgeCat": "畜産・林業・漁業"},
   {"id": "aqua-oyster", "comp": "産業編", "pref": "広島県", "cat": "養殖", "type": "single", "q": "牡蠣（かき）の養殖量が全国一の都道府県は？", "a": ["広島県"], "choices": ["宮城県", "岡山県", "三重県", "広島県"], "note": "広島湾。2位宮城県。", "region": "中国", "badgeCat": "畜産・林業・漁業"},
-  {"id": "aqua-nori", "comp": "産業編", "pref": "佐賀県", "cat": "養殖", "type": "single", "q": "のりの養殖量が全国一で、有明海（ありあけかい）でさかんな県は？", "a": ["佐賀県"], "choices": ["兵庫県", "福岡県", "宮城県", "佐賀県"], "note": "", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
+  {"id": "aqua-nori", "comp": "産業編", "pref": "佐賀県", "cat": "養殖", "type": "single", "q": "有明海（ありあけかい）でのりの養殖がさかんで、九州で一番の生産量の県は？", "a": ["佐賀県"], "choices": ["兵庫県", "福岡県", "宮城県", "佐賀県"], "note": "かつては長く全国1位だったが、近年は不作が続き兵庫県が全国1位（2022〜24年漁期）。「有明海＝佐賀」で覚える。", "region": "九州沖縄", "badgeCat": "畜産・林業・漁業"},
   {"id": "aqua-pearl", "comp": "産業編", "pref": "三重県", "cat": "養殖", "type": "single", "q": "英虞湾（あごわん）で真珠の養殖がさかんな県は？", "a": ["三重県"], "choices": ["長崎県", "愛媛県", "広島県", "三重県"], "note": "アコヤ貝。あたたかい地方。", "region": "近畿", "badgeCat": "畜産・林業・漁業"},
   {"id": "aqua-scallop", "comp": "産業編", "pref": "北海道", "cat": "養殖", "type": "single", "q": "サロマ湖などで養殖がさかんな、貝ばしらを食べる貝は？", "a": ["ほたて"], "choices": ["ほたて", "かき", "あさり", "しじみ"], "note": "北海道・青森でさかん。", "region": "北海道", "badgeCat": "畜産・林業・漁業"},
   {"id": "forest-natural", "comp": "産業編", "pref": "全国", "cat": "林業", "type": "multi", "q": "天然の三大美林を 全部 選んでね", "a": ["青森ひば", "秋田すぎ", "木曽（きそ）ひのき"], "choices": ["青森ひば", "秋田すぎ", "木曽（きそ）ひのき", "吉野（よしの）すぎ"], "note": "吉野（よしの）すぎは人工の三大美林。", "region": "全国", "badgeCat": "畜産・林業・漁業"},
@@ -1241,7 +1241,7 @@ $('loginBtn').onclick=async()=>{
   const n=$('nick').value.trim(), p=$('pin').value.trim(), campus=$('campusSel').value;
   $('loginMsg').textContent="";
   if(n.length<1){$('loginMsg').textContent="ニックネームを入れてね";return;}
-  if(!/^\d{4,8}$/.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;}
+  if(!LOGIN_PIN_RE.test(p)){$('loginMsg').textContent="番号は数字（4〜8桁）で入れてね";return;} // v8.1: ログインは両テナントとも4〜8桁
   $('loginBtn').disabled=true;
   try{
     let onlineOk=false, srvCampus="", srvWeek=0, srvNoLimit=null; // srvNoLimit: 時間制限なしモード（null=サーバから取れなかった）
@@ -1250,12 +1250,27 @@ $('loginBtn').onclick=async()=>{
       try{
         let r=await rpc('login_player',{p_nick:n,p_number:p,p_subject:SUBJECT});
         if(!r.ok&&r.reason==='not_found'){
-          if(!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
-          r=await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
+          if(TENANT!=="public"&&!campus){$('loginMsg').textContent="初めての人は校舎を選んでね";return;}
+          // v8.1: ここから先は「新規登録」。外部版だけ6〜8けたを必須にする
+          // （既存の4〜5けたの人は上のログインを通るのでここには来ない）。塾生版は4〜8けたのまま＝素通り。
+          if(!REG_PIN_RE.test(p)){$('loginMsg').textContent=REG_ERR.bad_number;clearSharedIfMatches(n,p);return;}
+          // 外部版は校舎を持たず、自己登録用の register_public を呼ぶ（戻り値の形は register_player と同じ）
+          r = (TENANT==="public")
+            ? await rpc('register_public',{p_nick:n,p_number:p,p_src:takeSrc()})
+            : await rpc('register_player',{p_nick:n,p_number:p,p_campus:campus});
           if(!r.ok){$('loginMsg').textContent=REG_ERR[r.reason]||"登録できませんでした";clearSharedIfMatches(n,p);return;}
+          clearSrc(); // 登録できたら流入元は役目を終える
           r.week_score=0;
+        }else if(!r.ok&&r.reason==='locked'){
+          // v8.1: 番号の照合に10回続けて失敗したので15分ロック中（両テナント共通）。
+          // 番号自体は合っているかもしれないので、共有ログイン情報は消さない（消すと他教科まで巻き添えになる）。
+          const sec=+r.retry_after_sec||0, min=Math.max(1,Math.ceil(sec/60));
+          $('loginMsg').textContent = sec>0
+            ? "まちがいが続いたので、あと"+min+"分ほど待ってからもう一度ためしてね"
+            : "まちがいが続いたので、15分待ってからもう一度ためしてね";
+          return;
         }else if(!r.ok&&r.reason==='suspended'){
-          $('loginMsg').textContent="このアカウントは 今 止まっているよ。先生に聞いてね";clearSharedIfMatches(n,p);return;
+          $('loginMsg').textContent=(TENANT==="public")?"このアカウントは 今 止まっているよ。問い合わせ先に連絡してね":"このアカウントは 今 止まっているよ。先生に聞いてね";clearSharedIfMatches(n,p);return;
         }else if(!r.ok){
           $('loginMsg').textContent="番号が違うみたい。もう一度確かめてね";clearSharedIfMatches(n,p);return;
         }
@@ -1291,6 +1306,8 @@ $('loginBtn').onclick=async()=>{
     // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
     try{localStorage.setItem(SHARED_LOGIN_KEY,JSON.stringify({sv:1,nick:n,pin:p,campus:state.campus||campus||"",verified:onlineOk,verifiedAt:onlineOk?Date.now():0}));}catch(e){}
     applyUsageLogin(n,srvNoLimit); // 連続使用時間の記録をこの生徒に切り替える（ロック中ならここで休憩画面）
+    seedReviews();    // URL の r= で渡された問題を「1回まちがえた」状態で積む
+    stripUrlParams(); // 使い終わった src / r を URL から消す
     rolloverDay(); refreshBadges(); saveState();
     await fetchAssignments(); // 先生からの課題を取得（オフライン時は空のまま）
     alogFlush(); // 前回アプリを閉じたまま残っていた解答ログを回収する（途中離脱を救う本体。await しない）
@@ -1822,22 +1839,127 @@ $('pin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/
 const SUPABASE_URL = "https://ewvtwcidvqrhozlceypi.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dnR3Y2lkdnFyaG96bGNleXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDYxOTYsImV4cCI6MjA5ODgyMjE5Nn0.bqQWl5mOP659idb-Wwqiwm15ecNIHl2Kt4FBR01gUB4";
 const SUBJECT = "chiri"; // 教科ID（サーバ側でランキング・進捗を教科ごとに分けるためのラベル）
-const SHARED_LOGIN_KEY = "mirubato_login"; // ポータルと共有するログイン情報（同一ドメインの全教科で共有）
+const TENANT = "juku"; // "juku"=塾生版 / "public"=外部版（build_public.py が置換）
+const BRAND = {"name":"ミルバト","sub":"ココロミルの学習アプリ","operator":"","contact":"","regNote":""}; // 1行・JSON形式・build_public.py が丸ごと置換
+const SHARED_LOGIN_KEY = "mirubato_login"; // ポータルと共有するログイン情報（build_public.py が置換）
+const APP_TEXT = {"name":"{B}社会","sub":"地理編（中学受験）","title":"{B}社会｜地理編","footer":"{B}社会・地理編 v3 ・ 進捗はこの端末に保存されます"}; // 教科別の表示文言。{B}=BRAND.name / {S}=BRAND.sub（build_app.py が教科ごとに置換）
+
+/* ===== ブランド文言・テナント（外部版デルバト対応 / 2026-09-06） =====
+   画面に出るブランド文言は全て BRAND と APP_TEXT から描く。HTMLには直接書かない
+   （build_public.py が定数3行を置換するだけで外部版を作れるようにするため）。 */
+function brandText(s){ return String(s==null?"":s).replace(/\{B\}/g,BRAND.name).replace(/\{S\}/g,BRAND.sub||""); }
+function applyBrand(){
+  document.title            = brandText(APP_TEXT.title);
+  $('brandName').textContent= brandText(APP_TEXT.name);
+  $('brandSub').textContent = brandText(APP_TEXT.sub);
+  $('appFooter').textContent= brandText(APP_TEXT.footer);
+  // 運営者・問い合わせ先は値があるときだけ出す（塾生版は空＝要素を出さない）
+  if(BRAND.operator){const d=document.createElement('div');d.textContent=brandText(BRAND.operator);$('appFooter').appendChild(d);}
+  if(BRAND.contact){const d=document.createElement('div');d.textContent=brandText(BRAND.contact);$('appFooter').appendChild(d);}
+  // 登録時の注意書き（番号入力の下）。塾生版は空＝出さない
+  if(BRAND.regNote){
+    const d=document.createElement('div');d.className='hint';d.style.color='var(--orange)';d.style.fontWeight='700';
+    d.textContent=brandText(BRAND.regNote); $('pinField').appendChild(d);
+  }
+}
+// 外部版だけの見た目：校舎欄を出さない・塾前提の文言を外す（塾生版は何もしない）
+function applyTenantUI(){
+  if(TENANT!=="public")return;
+  $('campusField').style.display='none';
+  const tn=$('nickTeacherNote'); if(tn)tn.style.display='none';
+  $('pinLabel').textContent="番号（6〜8けたの数字）";
+  $('pinHint').textContent="はじめての人は じぶんで決めてね（6〜8けた）。他の人には教えないでね";
+  // 塾（先生・校舎・塾内）を前提にした表示文言を中立にする
+  const rd=document.querySelector('#modeRank .mc-desc');
+  if(rd)rd.textContent="週間・月間のポイント対戦";
+  const im=$('qImgMiss');
+  if(im)im.textContent="🖼️ 画像が開けないよ（時間をおいてもう一度ひらいてね）";
+}
+/* v8.1: 番号の桁数。「ログイン」と「新規登録」で分ける。
+   ・ログイン（保存済み資格情報の検証を含む）は両テナントとも従来どおり 4〜8けたを受け付ける。
+     外部版で v8.1 より前に4〜5けたで登録した人を締め出さないため（サーバ側の照合は
+     ハッシュ比較なので桁数に関係なく通る。ここで弾くと本人が入れなくなるだけ）。
+   ・新規登録に進むとき（login_player が not_found を返した後）だけ、外部版は6〜8けたを必須にする。
+     サーバ側 register_public の ^\d{6,8}$ と同じ条件を先に出して、往復を1回減らす。
+   ・塾生版は登録も 4〜8けたのまま（発行番号は6けた。register_player は1文字も変えていない）。 */
+const LOGIN_PIN_RE = /^\d{4,8}$/;
+const REG_PIN_RE   = (TENANT==="public") ? /^\d{6,8}$/ : /^\d{4,8}$/;
+
+/* v8.1: 問題報告の自由入力欄の直下に個人情報の注意を出す（両テナント共通）。
+   プライバシーポリシー §2「名前・学校名・住所などの個人情報は書かないでください」と対応する。 */
+function applyReportPrivacyNote(){
+  const inp=$('repComment'); if(!inp)return;
+  if($('repPrivacyNote'))return;
+  const d=document.createElement('div');
+  d.id='repPrivacyNote';
+  d.style.cssText='margin-top:6px;font-size:12px;line-height:1.5;color:var(--orange);font-weight:700';
+  d.textContent="名前・学校名・住所などの個人情報は書かないでね";
+  inp.insertAdjacentElement('afterend', d);
+}
+
+/* ===== URL パラメータ（src=流入元 / r=復習の種）===== */
+const SRC_KEY = SHARED_LOGIN_KEY + "_src"; // 唯一の新規localStorageキー
+let seedReviewIds = [];                    // r= の中身。ログイン/登録成功後に state.reviews へ積む
+function initUrlParams(){
+  let q; try{ q=new URLSearchParams(location.search); }catch(e){ return; }
+  const raw=q.get('src');
+  // 切り詰めてから検査すると「17字目以降が不正な文字列」を通してしまうので、元の文字列全体を検査して捨てる
+  if(raw!=null&&/^[A-Za-z0-9_-]{1,16}$/.test(String(raw))){
+    try{localStorage.setItem(SRC_KEY,String(raw));}catch(e){}
+  }
+  const r=q.get('r');
+  if(r)seedReviewIds=String(r).split(",").map(s=>s.trim()).filter(Boolean).slice(0,200);
+}
+function takeSrc(){ try{return localStorage.getItem(SRC_KEY)||null;}catch(e){return null;} }
+function clearSrc(){ try{localStorage.removeItem(SRC_KEY);}catch(e){} }
+function stripUrlParams(){
+  try{
+    const u=new URL(location.href);
+    if(!u.searchParams.has('src')&&!u.searchParams.has('r'))return;
+    u.searchParams.delete('src'); u.searchParams.delete('r');
+    history.replaceState(null,"",u.pathname+u.search+u.hash);
+  }catch(e){}
+}
+// r= で渡された問題を「1回まちがえて、いま復習できる」状態にする。
+// お試しページで「まちがえた問題をおぼえておく」と約束するので、登録直後のホームから当日たどり着けること：
+//   ①復習モードの一覧 state.review に載る ②期限ベースの復習 dueCards に当日から入る（due<=now）
+// 新しい状態フィールドは作らず、既存の不正解経路 schedule(id,false) を1回通して due だけ今に寄せる。
+function seedReviews(){
+  if(!state||!seedReviewIds.length)return;
+  // 取り込みでCARDSが差し替わっている端末を考慮し、標準問題(DEFAULT_CARDS)かつ手元(CARDS)にある id だけを対象にする
+  const inCards=new Set(CARDS.map(c=>c.id)), inDefault=new Set(DEFAULT_CARDS.map(c=>c.id));
+  if(!state.review)state.review=[];
+  let n=0;
+  seedReviewIds.forEach(id=>{
+    if(!inCards.has(id)||!inDefault.has(id))return; // 標準外・手元に無い問題idは捨てる
+    if(state.reviews[id])return;                    // 既に記録がある問題は触らない
+    schedule(id,false);                                  // 通常の「1回まちがえた」と同じ状態
+    state.reviews[id].due=Date.now()-1;                  // 翌日ではなく当日から dueCards に入る
+    if(!state.review.includes(id))state.review.push(id); // 復習モードの一覧（正解すると自動で外れる）
+    n++;
+  });
+  seedReviewIds=[];
+  if(n)saveState();
+}
 
 function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
 // ログイン画面のオンライン専用UI（校舎えらび・先生注意）の表示切り替え
 (function initLoginUI(){
   const on=ONLINE();
+  applyBrand();     // ブランド文言を描く（HTMLは空のまま置いてある）
+  initUrlParams();  // URL の src= / r= を先に取り込む
   initUsage(); // 連続使用時間の記録開始＋休憩中ならログイン画面より先にロック
   document.querySelectorAll('.online-only').forEach(el=>{
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
+  applyTenantUI();  // 外部版のみ校舎欄などを外す（online-onlyの表示切替の後に効かせる）
+  applyReportPrivacyNote(); // v8.1: 問題報告欄の個人情報注意（両テナント共通）
   // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
   // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
   try{
     const saved=JSON.parse(localStorage.getItem(SHARED_LOGIN_KEY)||"null");
     const valid=saved&&typeof saved.nick==="string"&&saved.nick.length>=1&&saved.nick.length<=12
-      &&/^\d{4,8}$/.test(saved.pin||"")&&(!saved.sv||saved.sv===1);
+      &&LOGIN_PIN_RE.test(saved.pin||"")&&(!saved.sv||saved.sv===1);   // v8.1: 保存済み資格情報の検証はログインと同じ4〜8けた
     if(saved&&!valid)localStorage.removeItem(SHARED_LOGIN_KEY);
     if(valid&&!state){
       $('nick').value=saved.nick; $('pin').value=saved.pin;
@@ -1860,8 +1982,12 @@ const REG_ERR={
   bad_nick:"ニックネームは1〜12文字で入れてね",
   bad_campus:"校舎を選んでね",
   bad_number:"その番号は使えないみたい。先生にもらった番号を確かめてね",
-  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね"
+  nick_taken:"そのニックネームはもう使われているよ。別の名前にしてね",
+  cap:"いま新しい登録がこんでいるよ。しばらくしてからもう一度ためしてね" // register_public の1日上限（外部版のみ）
 };
+// 外部版は発行番号ではなく本人が決める番号なので、塾前提の文言を差し替える
+// （applyTenantUI から書き換えると const REG_ERR の初期化前＝TDZ になるため、この位置で行う）
+if(TENANT==="public")REG_ERR.bad_number="番号は 6〜8けたの数字にしてね"; // v8.1: 4〜8けた → 6〜8けた
 
 /* 週間ポイント送信：正解のたびに weekPending（ポイント）にためて、まとめて送る（オフラインでも消えない） */
 let flushingScore=null; // 多重送信ロック：ログイン直後と学習完了時の呼び出しが重なっても週間ポイントを二重送信しない
@@ -1900,7 +2026,7 @@ async function syncProgress(){
    進捗(state)には混ぜない：save_progress の 300KB 上限に当たると進捗バックアップごと壊れるため、
    別の localStorage キーにためて log_answers へまとめて送る。
    送れなくても学習は止めない（既存 flushScore と同じ流儀で失敗は握りつぶす）。 */
-const ALOG_ON  = (SUBJECT === "chiri");                 // 段階展開用。build_app.pyがSUBJECTを置換するので他教科は自動でOFF
+const ALOG_ON  = (SUBJECT === "chiri" || TENANT === "public"); // 段階展開用。build_app.pyがSUBJECTを置換するので塾生版の他教科は自動でOFF（外部版は全教科ON）
 const LS_ALOG  = LS_CARDS.replace(/_cards$/, "_alog");  // stateとは別キー（例: chizutan_alog）
 const ALOG_MAX = 1000;                                  // キュー上限。あふれたら古い順に捨てる（ログを守って端末を壊さない）
 const ALOG_BATCH = 50;                                  // 1回の送信件数（サーバ側 log_answers の上限に合わせる）
@@ -2014,7 +2140,7 @@ async function loadRanking(){
   document.querySelector('.rank-me').style.display = rankSubject===SUBJECT ? "" : "none";
   $('myWeekScore').textContent=(state.weekScore||0)+(state.weekPending||0);
   try{
-    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:rankSubject});
+    const rows=await rpc('get_ranking',{p_campus:rankCampus||null,p_period:rankPeriod,p_subject:rankSubject,p_tenant:TENANT});
     if(!rows.length){
       $('rankList').innerHTML='<div class="hint" style="text-align:center;padding:24px">'
         +(isMonth?'今月はまだ誰も記録がないよ。':'今週はまだ誰も記録がないよ。')+'<br>1番乗りのチャンス！</div>';
