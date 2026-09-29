@@ -343,6 +343,14 @@
         <span class="mc-emoji">🏅</span>
         <span class="mc-body"><span class="mc-title">称号モード</span><span class="mc-desc">分野をえらんで、まだマスターしていない問題に挑戦</span></span>
       </button>
+      <button class="mode-card" id="modeShibou" style="display:none">
+        <span class="mc-emoji">🎯</span>
+        <span class="mc-body"><span class="mc-title">志望校でよく出る問題 <span id="shibouCount" class="rev-badge"></span></span><span class="mc-desc" id="shibouDesc"></span></span>
+      </button>
+      <a class="mode-card" id="shibouHint" style="display:none;text-decoration:none;color:inherit" href="../nyushi/schedule/">
+        <span class="mc-emoji">🎯</span>
+        <span class="mc-body"><span class="mc-title">志望校でよく出る問題</span><span class="mc-desc">入試日程DBの併願表に学校を入れると、その学校の過去問によく出る問題を出すよ</span></span>
+      </a>
       <button class="mode-card" id="modeDaily">
         <span class="mc-emoji" id="modeDailyEmoji">📅</span>
         <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
@@ -1373,6 +1381,7 @@ function renderHome(){
   refreshBadges();
   renderHomeBadges();
   renderKadai();
+  renderShibou();
   // ランキングはオンライン時のみ入口を出す
   $('modeRank').style.display=(ONLINE()&&state.online)?"":"none";
   // 今日の30問：クリア済みなら見た目を変える
@@ -1413,6 +1422,7 @@ function renderHomeBadges(){
 }
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
+$('modeShibou').onclick=()=>startQuiz('SHIBOU');
 $('modeReview').onclick=()=>startQuiz('REVIEW');
 $('modeNigate').onclick=()=>startQuiz('NIGATE');
 $('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
@@ -1532,6 +1542,12 @@ function startQuiz(comp){
     // 称号モード：その地方／分野の「まだマスターしていない」問題だけを出す
     pool=shuffle(CARDS.filter(c=>cardInGroup(c,comp)&&!(state.reviews[c.id]&&state.reviews[c.id].mastered))).slice(0,DAILY_GOAL);
     if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
+  }else if(comp==="SHIBOU"){
+    // 志望校モード：併願表に入れた学校の過去問によく出る順。まだ正解したことがない問題を優先し、10問ずつ
+    const all=shibouCards();
+    pool=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).slice(0,DAILY_GOAL);
+    if(pool.length===0)pool=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].mastered)).slice(0,DAILY_GOAL);
+    if(pool.length===0){alert("志望校でよく出る問題は ぜんぶマスター済み！すごい！🎉");return;}
   }else if(comp==="NIGATE"){
     pool=nigateCards().slice(0,DAILY_GOAL);
   }else{
@@ -1996,6 +2012,7 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
   applyTenantUI();  // 外部版のみ校舎欄などを外す（online-onlyの表示切替の後に効かせる）
+  loadShibou(); // 志望校モードのデータ（外部版だけ。届いたらホームを描き直す）
   applyReportPrivacyNote(); // v8.1: 問題報告欄の個人情報注意（両テナント共通）
   // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
   // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
@@ -2019,6 +2036,42 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
    登録（またはログイン）に成功したら mergeGuestInto でゲストの記録を引き継ぎ、ゲストの保存領域は消す。
    PIN に数字以外の "guest" を使うので、実在の利用者（番号は数字だけ）の保存領域とぶつからない。 */
 const GUEST_N="ゲスト", GUEST_P="guest";
+/* 志望校モード（外部版だけ）。志望校＝入試日程DB（/nyushi/）の併願表に入れた学校（同じドメインの localStorage "nyushi_schedule"）。
+   学校ごとの「過去問によく出る問題」は ../shibou.json（build_shibou.py が中受社会DBの過去問データから生成）。
+   形式: { "s0490": { "n": "学校名", "chiri": [id...], "rekishi": [...], "koumin": [...] } }（よく出る順） */
+let SHIBOU=null, SHIBOU_SCHOOLS=[];
+function shibouSchoolIds(){
+  const ids=new Set();
+  try{
+    const p=JSON.parse(localStorage.getItem("nyushi_schedule")||"null");
+    let r=[]; if(Array.isArray(p))r=p; else if(p&&Array.isArray(p.patterns))p.patterns.forEach(x=>{if(Array.isArray(x))r=r.concat(x);});
+    r.forEach(id=>{const m=/^exam\d+_(s\d+)_/.exec(String(id)); if(m)ids.add(m[1]);});
+  }catch(e){}
+  return [...ids];
+}
+async function loadShibou(){
+  if(TENANT!=="public")return;
+  try{const res=await fetch("../shibou.json",{cache:"no-cache"}); if(res.ok)SHIBOU=await res.json();}catch(e){}
+  if(state)renderShibou();
+}
+function shibouCards(){
+  if(!SHIBOU)return [];
+  const score={}, byId={}; CARDS.forEach(c=>byId[c.id]=c);
+  SHIBOU_SCHOOLS.forEach(sid=>{ (SHIBOU[sid][SUBJECT]||[]).forEach((id,i,a)=>{ score[id]=(score[id]||0)+(a.length-i)/a.length+1; }); });
+  return Object.keys(score).filter(id=>byId[id]).sort((a,b)=>score[b]-score[a]).map(id=>byId[id]);
+}
+function renderShibou(){
+  const card=$('modeShibou'), hint=$('shibouHint');
+  if(TENANT!=="public"||!SHIBOU){card.style.display="none";hint.style.display="none";return;}
+  SHIBOU_SCHOOLS=shibouSchoolIds().filter(sid=>SHIBOU[sid]&&(SHIBOU[sid][SUBJECT]||[]).length);
+  const all=shibouCards();
+  if(!all.length){card.style.display="none";hint.style.display="";return;}
+  const left=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).length;
+  const names=SHIBOU_SCHOOLS.map(sid=>SHIBOU[sid].n);
+  $('shibouDesc').textContent=(names.length>3?names.slice(0,3).join("・")+" ほか":names.join("・"))+"の過去問によく出る問題。まだ正解していない問題から10問ずつ";
+  $('shibouCount').textContent=left?("あと"+left+"問"):"クリア";
+  card.style.display=""; hint.style.display="none";
+}
 function startGuest(){
   state=loadState(GUEST_N,GUEST_P)||freshState(GUEST_N,GUEST_P);
   if(!state.badges)state.badges={};
