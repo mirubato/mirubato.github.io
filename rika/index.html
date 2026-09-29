@@ -1534,9 +1534,7 @@ function startQuiz(comp){
     if(pool.length===0){alert("この称号はぜんぶマスター済み！すごい！🎉");return;}
   }else if(comp==="SHIBOU"){
     // 志望校モード：併願表に入れた学校の過去問によく出る順。まだ正解したことがない問題を優先し、10問ずつ
-    const all=shibouCards();
-    pool=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).slice(0,DAILY_GOAL);
-    if(pool.length===0)pool=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].mastered)).slice(0,DAILY_GOAL);
+    pool=shibouPool();
     if(pool.length===0){alert("志望校でよく出る問題は ぜんぶマスター済み！すごい！🎉");return;}
   }else if(comp==="NIGATE"){
     pool=nigateCards().slice(0,DAILY_GOAL);
@@ -2050,16 +2048,41 @@ function shibouCards(){
   SHIBOU_SCHOOLS.forEach(sid=>{ (SHIBOU[sid][SUBJECT]||[]).forEach((id,i,a)=>{ score[id]=(score[id]||0)+(a.length-i)/a.length+1; }); });
   return Object.keys(score).filter(id=>byId[id]).sort((a,b)=>score[b]-score[a]).map(id=>byId[id]);
 }
+/* 10問の組み立て（ユーザー方針 09-30: 過去問に出た知識だけでなく、学校の傾向に合わせる）
+   ①過去問に出た知識 最大4問 → ②その学校で多い問われ方（正誤・理由・統計表・地図・雨温図の形式カード）最大3問
+   → ③よく出る単元（地方・時代・分野）で残りを埋める。どれも「まだ正解していない」問題を優先し、足りなければマスター前の問題 */
+const SHIBOU_FMT={sg:c=>c.id.startsWith("sg-"),ry:c=>c.id.startsWith("ry-"),tokei:c=>c.id.startsWith("tokei-"),
+  chizu:c=>c.id.startsWith("kigo-")||c.id.startsWith("map-"),uonzu:c=>c.id.startsWith("uonzu-")};
+function shibouFmts(){const f=new Set();SHIBOU_SCHOOLS.forEach(sid=>(SHIBOU[sid].f||[]).forEach(k=>{if(SHIBOU_FMT[k])f.add(k);}));return [...f];}
+function shibouUnits(){const u=new Set();SHIBOU_SCHOOLS.forEach(sid=>(((SHIBOU[sid].u||{})[SUBJECT])||[]).forEach(x=>u.add(x)));return u;}
+function shibouPool(){
+  const rv=id=>state.reviews[id]||{};
+  const pick=(list,n,taken)=>{
+    const fresh=list.filter(c=>!taken.has(c.id)&&!rv(c.id).everCorrect), rest=list.filter(c=>!taken.has(c.id)&&rv(c.id).everCorrect&&!rv(c.id).mastered);
+    const out=fresh.concat(shuffle(rest)).slice(0,n); out.forEach(c=>taken.add(c.id)); return out;
+  };
+  const taken=new Set(), pool=[];
+  pool.push(...pick(shibouCards(),4,taken));
+  const fm=shibouFmts();
+  if(fm.length){ const fc=shuffle(CARDS.filter(c=>fm.some(k=>SHIBOU_FMT[k](c)))); pool.push(...pick(fc,3,taken)); }
+  const us=shibouUnits();
+  if(us.size) pool.push(...pick(shuffle(CARDS.filter(c=>us.has(c.region))),DAILY_GOAL-pool.length,taken));
+  if(pool.length<DAILY_GOAL) pool.push(...pick(shibouCards(),DAILY_GOAL-pool.length,taken));
+  return shuffle(pool);
+}
 function renderShibou(){
   const card=$('modeShibou'), hint=$('shibouHint');
   if(TENANT!=="public"||!SHIBOU){card.style.display="none";hint.style.display="none";return;}
-  SHIBOU_SCHOOLS=shibouSchoolIds().filter(sid=>SHIBOU[sid]&&(SHIBOU[sid][SUBJECT]||[]).length);
-  const all=shibouCards();
-  if(!all.length){card.style.display="none";hint.style.display="";return;}
-  const left=all.filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).length;
+  SHIBOU_SCHOOLS=shibouSchoolIds().filter(sid=>SHIBOU[sid]);
+  if(!SHIBOU_SCHOOLS.length){card.style.display="none";hint.style.display="";return;}
   const names=SHIBOU_SCHOOLS.map(sid=>SHIBOU[sid].n);
-  $('shibouDesc').textContent=(names.length>3?names.slice(0,3).join("・")+" ほか":names.join("・"))+"の過去問によく出る問題。まだ正解していない問題から10問ずつ";
-  $('shibouCount').textContent=left?("あと"+left+"問"):"クリア";
+  const tl={}; SHIBOU_SCHOOLS.forEach(sid=>(SHIBOU[sid].f||[]).forEach((k,i)=>{tl[k]=(SHIBOU[sid].t||[])[i];}));
+  const tend=shibouFmts().filter(k=>tl[k]&&CARDS.some(SHIBOU_FMT[k])).map(k=>tl[k]).slice(0,3); // この教科に形式カードがある傾向だけ
+  const us=[...shibouUnits()].slice(0,3);
+  $('shibouDesc').textContent=(names.length>3?names.slice(0,3).join("・")+" ほか":names.join("・"))+"の出題に合わせて10問"
+    +(us.length?"。よく出る："+us.join("・"):"")+(tend.length?"。"+tend.join("・"):"");
+  const left=shibouCards().filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).length;
+  $('shibouCount').textContent=left?("過去問の知識 あと"+left+"問"):"";
   card.style.display=""; hint.style.display="none";
 }
 function startGuest(){
