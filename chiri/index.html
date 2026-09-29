@@ -2123,10 +2123,10 @@ function shibouCards(){
   return Object.keys(score).filter(id=>byId[id]).sort((a,b)=>score[b]-score[a]).map(id=>byId[id]);
 }
 /* 10問の組み立て（ユーザー方針 09-30: 過去問に出た知識だけでなく、学校の傾向に合わせる）
-   ①過去問に出た知識 最大4問 → ②その学校で多い問われ方（正誤・理由・統計表・地図・雨温図の形式カード）最大3問
+   ①過去問に出た知識 最大4問 → ②その学校で多い問われ方（正誤・理由・統計表・地図・雨温図・史料の形式カード）最大3問
    → ③よく出る単元（地方・時代・分野）で残りを埋める。どれも「まだ正解していない」問題を優先し、足りなければマスター前の問題 */
 const SHIBOU_FMT={sg:c=>c.id.startsWith("sg-"),ry:c=>c.id.startsWith("ry-"),tokei:c=>c.id.startsWith("tokei-"),
-  chizu:c=>c.id.startsWith("kigo-")||c.id.startsWith("map-"),uonzu:c=>c.id.startsWith("uonzu-")};
+  chizu:c=>c.id.startsWith("kigo-")||c.id.startsWith("map-"),uonzu:c=>c.id.startsWith("uonzu-"),sr:c=>c.id.startsWith("sr-")};
 function shibouFmts(){const f=new Set();SHIBOU_SCHOOLS.forEach(sid=>(SHIBOU[sid].f||[]).forEach(k=>{if(SHIBOU_FMT[k])f.add(k);}));return [...f];}
 function shibouUnits(){const u=new Set();SHIBOU_SCHOOLS.forEach(sid=>(((SHIBOU[sid].u||{})[SUBJECT])||[]).forEach(x=>u.add(x)));return u;}
 function shibouPool(){

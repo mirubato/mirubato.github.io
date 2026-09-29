@@ -714,6 +714,9 @@ const DEFAULT_CARDS = [
   {"id": "ry-sanshin", "comp": "しくみ編", "pref": "裁判所・三権分立", "cat": "裁判のしくみ", "type": "single", "q": "三審制がとられている理由は？", "a": ["裁判のまちがいを防ぎ、人権を守るため"], "choices": ["裁判のまちがいを防ぎ、人権を守るため", "裁判を早く終わらせるため", "裁判官の数を減らすため", "同じ事件で何度も罰をあたえるため"], "note": "同じ事件について3回まで裁判を受けられる", "region": "政治のしくみ", "badgeCat": "裁判所・三権分立"},
   {"id": "ry-niin", "comp": "しくみ編", "pref": "国会", "cat": "国会のしくみ", "type": "single", "q": "国会が衆議院と参議院の二院制になっている理由は？", "a": ["慎重に話し合い、一つの議院の行きすぎを防ぐため"], "choices": ["議員の給料を節約するため", "法律を早く決めるため", "慎重に話し合い、一つの議院の行きすぎを防ぐため", "天皇の意見を聞くため"], "note": "衆議院の優越は、二院の意見が分かれたときに決めるため", "region": "政治のしくみ", "badgeCat": "国会"},
   {"id": "ry-shohizei", "comp": "しくみ編", "pref": "財政・税", "cat": "税", "type": "single", "q": "消費税が社会保障の財源に向いているとされる理由は？", "a": ["景気に左右されにくく、幅広い世代が負担するから"], "choices": ["所得が多い人ほど多く負担するから", "外国人だけが負担するから", "会社だけが負担するから", "景気に左右されにくく、幅広い世代が負担するから"], "note": "所得税は働く世代が中心。消費税は所得の低い人ほど負担が重く感じられる（逆進性）", "region": "経済・くらし", "badgeCat": "財政・税"},
+  {"id": "sr-kenpo9", "comp": "しくみ編", "pref": "憲法の原則", "cat": "憲法の条文", "type": "single", "q": "「日本国民は…国権の発動たる戦争と、武力による威嚇又は武力の行使は、国際紛争を解決する手段としては、永久にこれを放棄する」これは日本国憲法の第何条？", "a": ["第9条"], "choices": ["第1条", "第14条", "第25条", "第9条"], "note": "平和主義。第2項で戦力をもたないこと・交戦権を認めないことを定める", "region": "憲法・人権", "badgeCat": "憲法の原則"},
+  {"id": "sr-kenpo25", "comp": "しくみ編", "pref": "基本的人権", "cat": "憲法の条文", "type": "single", "q": "「すべて国民は、健康で文化的な最低限度の生活を営む権利を有する」これは日本国憲法の第何条？", "a": ["第25条"], "choices": ["第25条", "第9条", "第14条", "第1条"], "note": "生存権。社会権のひとつ", "region": "憲法・人権", "badgeCat": "基本的人権"},
+  {"id": "sr-kenpo14", "comp": "しくみ編", "pref": "基本的人権", "cat": "憲法の条文", "type": "single", "q": "「すべて国民は、法の下に平等であつて、人種、信条、性別…により…差別されない」これは日本国憲法の第何条？", "a": ["第14条"], "choices": ["第9条", "第14条", "第25条", "第1条"], "note": "法の下の平等。平等権", "region": "憲法・人権", "badgeCat": "基本的人権"},
 ];
 /* ===== 1b. 地方・称号カテゴリの割り当て（CSVに無い既定カード用に自動算出） ===== */
 const PREF_REGION = {
@@ -1905,10 +1908,10 @@ function shibouCards(){
   return Object.keys(score).filter(id=>byId[id]).sort((a,b)=>score[b]-score[a]).map(id=>byId[id]);
 }
 /* 10問の組み立て（ユーザー方針 09-30: 過去問に出た知識だけでなく、学校の傾向に合わせる）
-   ①過去問に出た知識 最大4問 → ②その学校で多い問われ方（正誤・理由・統計表・地図・雨温図の形式カード）最大3問
+   ①過去問に出た知識 最大4問 → ②その学校で多い問われ方（正誤・理由・統計表・地図・雨温図・史料の形式カード）最大3問
    → ③よく出る単元（地方・時代・分野）で残りを埋める。どれも「まだ正解していない」問題を優先し、足りなければマスター前の問題 */
 const SHIBOU_FMT={sg:c=>c.id.startsWith("sg-"),ry:c=>c.id.startsWith("ry-"),tokei:c=>c.id.startsWith("tokei-"),
-  chizu:c=>c.id.startsWith("kigo-")||c.id.startsWith("map-"),uonzu:c=>c.id.startsWith("uonzu-")};
+  chizu:c=>c.id.startsWith("kigo-")||c.id.startsWith("map-"),uonzu:c=>c.id.startsWith("uonzu-"),sr:c=>c.id.startsWith("sr-")};
 function shibouFmts(){const f=new Set();SHIBOU_SCHOOLS.forEach(sid=>(SHIBOU[sid].f||[]).forEach(k=>{if(SHIBOU_FMT[k])f.add(k);}));return [...f];}
 function shibouUnits(){const u=new Set();SHIBOU_SCHOOLS.forEach(sid=>(((SHIBOU[sid].u||{})[SUBJECT])||[]).forEach(x=>u.add(x)));return u;}
 function shibouPool(){
