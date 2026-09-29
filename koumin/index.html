@@ -43,6 +43,8 @@
   .btn:active{transform:translateY(3px);box-shadow:0 0 0 #3c7d52}
   .btn.secondary{background:#fff;color:var(--ink);box-shadow:0 3px 0 var(--line);border:2px solid var(--line)}
   .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+  .guest-note{border:2px solid var(--line);border-radius:14px;background:#fff;padding:12px;font-size:13px;line-height:1.7;display:flex;flex-direction:column;gap:10px}
+  .guest-note .btn{padding:10px;font-size:15px}
   .btn[disabled]{opacity:.5}
   .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
   .greet{font-size:14px;color:var(--ink-soft)}
@@ -318,6 +320,7 @@
       </select></div>
     <button class="btn" id="loginBtn">始める / 続きから</button>
     <div class="hint" id="loginMsg" style="min-height:16px;color:var(--orange)"></div>
+    <button class="btn secondary" id="guestBtn" style="display:none">登録しないで続ける</button>
   </section>
 
   <!-- ホーム -->
@@ -325,6 +328,10 @@
     <div class="topbar">
       <div class="greet">こんにちは<br><b id="hiNick">みかん</b> さん</div>
       <div class="streak"><span class="fire">🔥</span><span id="streakN">0</span>日連続</div>
+    </div>
+    <div class="guest-note" id="guestNote" style="display:none">
+      <div>登録しないで解いているよ。記録はこの端末にだけ残るよ。<br>登録すると、ほかの端末でも続きができて、ランキングにも出られるよ。</div>
+      <button class="btn secondary" id="guestRegBtn">登録する</button>
     </div>
     <div class="collection">
       <div class="collection-head"><h2>称号コレクション</h2><span class="coll-count"><b id="collGot">0</b> / <span id="collTotal">20</span></span></div>
@@ -1171,6 +1178,7 @@ $('loginBtn').onclick=async()=>{
         }
       }catch(e){}
     }
+    if(onlineOk)mergeGuestInto(state);
     $('loginMsg').textContent="";
     // ポータル（教科えらび）と共有するログイン情報を保存 → 他教科は自動ログインになる
     // verified: サーバ認証に成功した場合のみtrue（オフラインログインはfalseで区別）
@@ -1195,7 +1203,8 @@ $('logoutBtn').onclick=()=>{
 
 function renderHome(){
   rolloverDay();
-  $('hiNick').textContent=state.nick;
+  $('hiNick').textContent=state.guest?"ゲスト":state.nick;
+  $('guestNote').style.display=state.guest?"":"none";
   $('streakN').textContent=state.streak;
   refreshBadges();
   renderHomeBadges();
@@ -1736,6 +1745,7 @@ function applyBrand(){
 function applyTenantUI(){
   if(TENANT!=="public")return;
   $('campusField').style.display='none';
+  $('rankTabs').style.display='none'; // ランキングの校舎タブ（外部版の利用者は校舎を持たない）
   const tn=$('nickTeacherNote'); if(tn)tn.style.display='none';
   $('pinLabel').textContent="番号（6〜8けたの数字）";
   $('pinHint').textContent="はじめての人は じぶんで決めてね（6〜8けた）。他の人には教えないでね";
@@ -1836,9 +1846,42 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
       if(saved.campus)$('campusSel').value=saved.campus;
       $('autoSplash').style.display='flex'; // 自動ログインが終わるまでログイン画面を隠す（消すのはログイン処理のfinally）
       setTimeout(()=>$('loginBtn').click(),0);
+    }else if(!valid&&!state&&TENANT==="public"&&ONLINE()){
+      setTimeout(startGuest,0); // 登録なしで全部解ける（登録はホームの「登録する」から）
     }
   }catch(e){}
 })();
+/* 外部版（デルバト）は登録しなくても全部解ける。記録はこの端末の「ゲスト」用の保存領域に残す。
+   ゲストは state.online=false（オフライン利用と同じ扱い）なので、ランキング・進捗バックアップ・解答ログ・課題は動かない。
+   登録（またはログイン）に成功したら mergeGuestInto でゲストの記録を引き継ぎ、ゲストの保存領域は消す。
+   PIN に数字以外の "guest" を使うので、実在の利用者（番号は数字だけ）の保存領域とぶつからない。 */
+const GUEST_N="ゲスト", GUEST_P="guest";
+function startGuest(){
+  state=loadState(GUEST_N,GUEST_P)||freshState(GUEST_N,GUEST_P);
+  if(!state.badges)state.badges={};
+  if(state.weekPending==null)state.weekPending=0;
+  state.guest=true; state.online=false;
+  applyUsageLogin(GUEST_N,null);
+  seedReviews(); stripUrlParams();
+  rolloverDay(); refreshBadges(); saveState();
+  renderHome(); show('home');
+  $('autoSplash').style.display='none';
+}
+function mergeGuestInto(st){
+  if(TENANT!=="public")return;
+  const g=loadState(GUEST_N,GUEST_P); if(!g)return;
+  const empty=!st.reviews||!Object.keys(st.reviews).length;
+  if(empty){
+    ["xp","streak","reviews","doneToday","accCorrect","accTotal","lastDay","streakedToday","badges","review","daily30Date","weekPending"].forEach(k=>{ if(g[k]!=null)st[k]=g[k]; });
+  }else{
+    st.reviews=st.reviews||{};
+    for(const id in (g.reviews||{})) if(!st.reviews[id])st.reviews[id]=g.reviews[id];
+    st.review=Array.from(new Set([...(st.review||[]),...(g.review||[])]));
+  }
+  try{localStorage.removeItem(userKey(GUEST_N,GUEST_P));}catch(e){}
+}
+$('guestBtn').onclick=()=>startGuest();
+$('guestRegBtn').onclick=()=>{ saveState(); state=null; $('guestBtn').style.display=""; show('login'); };
 async function rpc(fn,args){
   const res=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{
     method:"POST",
@@ -2022,7 +2065,7 @@ async function loadRanking(){
       const st=starHtml(r.monthly_wins||0,r.weekly_wins||0);
       return `<div class="rank-row${me?' me':''}">
         <span class="rno">${r.rank<=3?medal[r.rank-1]:r.rank+'位'}</span>
-        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}<br><span class="rcampus">${esc(r.campus)}</span></span>
+        <span class="rnick">${esc(r.nick)}${st?' '+st:''}${me?' <span class="me-tag">君</span>':''}${TENANT==="public"?"":'<br><span class="rcampus">'+esc(r.campus)+'</span>'}</span>
         <span class="rscore">${r.correct_count}点</span></div>`;
     }).join("");
   }catch(e){
