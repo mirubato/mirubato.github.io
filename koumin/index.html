@@ -45,6 +45,11 @@
   .btn.secondary:active{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
   .guest-note{border:2px solid var(--line);border-radius:14px;background:#fff;padding:12px;font-size:13px;line-height:1.7;display:flex;flex-direction:column;gap:10px}
   .guest-note .btn{padding:10px;font-size:15px}
+  .link-btn{background:none;border:none;color:var(--ink-soft);font:inherit;font-size:13px;text-decoration:underline;padding:4px;align-self:flex-end;cursor:pointer}
+  .shibou-filter{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:14px;font-size:16px;font-family:inherit;margin:10px 0}
+  .shibou-list{max-height:52vh;overflow-y:auto;border:2px solid var(--line);border-radius:14px;background:#fff;margin-bottom:12px}
+  .shibou-list label{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:15px}
+  .shibou-list input{width:20px;height:20px}
   .btn[disabled]{opacity:.5}
   .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
   .greet{font-size:14px;color:var(--ink-soft)}
@@ -347,10 +352,11 @@
         <span class="mc-emoji">🎯</span>
         <span class="mc-body"><span class="mc-title">志望校でよく出る問題 <span id="shibouCount" class="rev-badge"></span></span><span class="mc-desc" id="shibouDesc"></span></span>
       </button>
-      <a class="mode-card" id="shibouHint" style="display:none;text-decoration:none;color:inherit" href="../nyushi/schedule/">
+      <button class="mode-card" id="shibouHint" style="display:none">
         <span class="mc-emoji">🎯</span>
-        <span class="mc-body"><span class="mc-title">志望校でよく出る問題</span><span class="mc-desc">入試日程DBの併願表に学校を入れると、その学校の過去問によく出る問題を出すよ</span></span>
-      </a>
+        <span class="mc-body"><span class="mc-title">志望校でよく出る問題</span><span class="mc-desc">志望校をえらぶと、その学校の出題に合わせた問題を出すよ</span></span>
+      </button>
+      <button class="link-btn" id="shibouEdit" style="display:none">志望校を変える</button>
       <button class="mode-card" id="modeDaily">
         <span class="mc-emoji" id="modeDailyEmoji">📅</span>
         <span class="mc-body"><span class="mc-title" id="modeDailyTitle">今日の30問</span><span class="mc-desc" id="modeDailyDesc">全範囲からランダム約30問。毎日やって🔥連続をのばそう</span></span>
@@ -455,6 +461,16 @@
     <div class="pick-grid" id="pickRegion"></div>
     <h3 class="pick-h">🏅 テーマで選ぶ</h3>
     <div class="pick-grid" id="pickCat"></div>
+  </section>
+
+  <!-- 志望校えらび -->
+  <section id="shibouPick" class="screen">
+    <h2 style="margin:8px 0 4px">志望校をえらぶ</h2>
+    <div class="hint" id="shibouPickNote">いくつでもえらべるよ。過去問を集計した学校だけ出ているよ。</div>
+    <input id="shibouFilter" class="shibou-filter" placeholder="学校名でさがす" autocomplete="off">
+    <div id="shibouList" class="shibou-list"></div>
+    <button class="btn" id="shibouSave">これで決定</button>
+    <button class="btn secondary" id="shibouCancel">もどる</button>
   </section>
 
   <!-- ランキング -->
@@ -1275,6 +1291,33 @@ function renderHomeBadges(){
 $('modeBadge').onclick=()=>{renderPick();show('pick');};
 $('modeDaily').onclick=()=>startQuiz('DAILY30');
 $('modeShibou').onclick=()=>startQuiz('SHIBOU');
+/* 志望校えらび（塾生版・外部版とも）。入試日程DBの併願表の学校は、デルバトでは自動で入る（ここで外すことはできない） */
+function openShibouPick(){
+  if(!SHIBOU)return;
+  const picked=new Set(loadPicked());
+  const fromSched=new Set(shibouSchoolIds().filter(sid=>!picked.has(sid)));
+  const list=Object.keys(SHIBOU).map(sid=>({sid,n:SHIBOU[sid].n})).sort((a,b)=>a.n.localeCompare(b.n,"ja"));
+  const host=$('shibouList'); host.innerHTML="";
+  list.forEach(o=>{
+    const lb=document.createElement('label'); lb.dataset.name=o.n;
+    const cb=document.createElement('input'); cb.type="checkbox"; cb.value=o.sid;
+    cb.checked=picked.has(o.sid)||fromSched.has(o.sid); cb.disabled=fromSched.has(o.sid);
+    const tx=document.createElement('span'); tx.textContent=o.n+(fromSched.has(o.sid)?"（併願表）":"");
+    lb.append(cb,tx); host.appendChild(lb);
+  });
+  $('shibouFilter').value="";
+  $('shibouPickNote').textContent="いくつでもえらべるよ。過去問を集計した学校だけ出ているよ。"+(TENANT==="public"?"入試日程DBの併願表に入れた学校は、自動で入るよ。":"");
+  show('shibouPick');
+}
+$('shibouHint').onclick=openShibouPick;
+$('shibouEdit').onclick=openShibouPick;
+$('shibouFilter').oninput=()=>{const q=$('shibouFilter').value.trim();document.querySelectorAll('#shibouList label').forEach(l=>{l.style.display=(!q||l.dataset.name.includes(q))?"":"none";});};
+$('shibouSave').onclick=()=>{
+  const ids=[...document.querySelectorAll('#shibouList input:checked:not(:disabled)')].map(c=>c.value);
+  try{localStorage.setItem(SHIBOU_PICK_KEY,JSON.stringify(ids));}catch(e){}
+  renderHome(); show('home');
+};
+$('shibouCancel').onclick=()=>{show('home');};
 $('modeReview').onclick=()=>startQuiz('REVIEW');
 $('modeNigate').onclick=()=>startQuiz('NIGATE');
 $('modeRank').onclick=()=>{show('ranking');rankSubject=SUBJECT;renderSubjectTabs();renderPeriodTabs();renderRankTabs();loadRanking();};
@@ -1863,7 +1906,7 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
     el.style.display = on ? (el.tagName==='SPAN'?'inline':'block') : 'none';
   });
   applyTenantUI();  // 外部版のみ校舎欄などを外す（online-onlyの表示切替の後に効かせる）
-  loadShibou(); // 志望校モードのデータ（外部版だけ。届いたらホームを描き直す）
+  setTimeout(loadShibou,0); // 志望校モードのデータ（届いたらホームを描き直す）。関数群の定義が終わってから動かす
   applyReportPrivacyNote(); // v8.1: 問題報告欄の個人情報注意（両テナント共通）
   // ポータルでログイン済みなら自動ログイン（1回だけ試行。失敗時は通常のログイン画面が出る）
   // 保存形式を検証してから使う（形式不正・未来バージョンは破棄/無視）
@@ -1891,8 +1934,10 @@ const GUEST_N="ゲスト", GUEST_P="guest";
    学校ごとの「過去問によく出る問題」は ../shibou.json（build_shibou.py が中受社会DBの過去問データから生成）。
    形式: { "s0490": { "n": "学校名", "chiri": [id...], "rekishi": [...], "koumin": [...] } }（よく出る順） */
 let SHIBOU=null, SHIBOU_SCHOOLS=[];
+const SHIBOU_PICK_KEY="mirubato_shibou"; // アプリ内で選んだ志望校（学校id の配列。同じサイトの全教科で共通）
+function loadPicked(){try{const a=JSON.parse(localStorage.getItem(SHIBOU_PICK_KEY)||"[]");return Array.isArray(a)?a.filter(x=>typeof x==="string"):[];}catch(e){return [];}}
 function shibouSchoolIds(){
-  const ids=new Set();
+  const ids=new Set(loadPicked());
   try{
     const p=JSON.parse(localStorage.getItem("nyushi_schedule")||"null");
     let r=[]; if(Array.isArray(p))r=p; else if(p&&Array.isArray(p.patterns))p.patterns.forEach(x=>{if(Array.isArray(x))r=r.concat(x);});
@@ -1900,8 +1945,9 @@ function shibouSchoolIds(){
   }catch(e){}
   return [...ids];
 }
+function shibouSubj(){return ["chiri","rekishi","koumin"].includes(SUBJECT);} // 志望校モードは社会3教科だけ
 async function loadShibou(){
-  if(TENANT!=="public")return;
+  if(!shibouSubj())return;
   try{const res=await fetch("../shibou.json",{cache:"no-cache"}); if(res.ok)SHIBOU=await res.json();}catch(e){}
   if(state)renderShibou();
 }
@@ -1935,8 +1981,9 @@ function shibouPool(){
 }
 function renderShibou(){
   const card=$('modeShibou'), hint=$('shibouHint');
-  if(TENANT!=="public"||!SHIBOU){card.style.display="none";hint.style.display="none";return;}
+  if(!shibouSubj()||!SHIBOU){card.style.display="none";hint.style.display="none";$('shibouEdit').style.display="none";return;}
   SHIBOU_SCHOOLS=shibouSchoolIds().filter(sid=>SHIBOU[sid]);
+  $('shibouEdit').style.display=SHIBOU_SCHOOLS.length?"":"none";
   if(!SHIBOU_SCHOOLS.length){card.style.display="none";hint.style.display="";return;}
   const names=SHIBOU_SCHOOLS.map(sid=>SHIBOU[sid].n);
   const tl={}; SHIBOU_SCHOOLS.forEach(sid=>(SHIBOU[sid].f||[]).forEach((k,i)=>{tl[k]=(SHIBOU[sid].t||[])[i];}));
@@ -2031,7 +2078,7 @@ async function syncProgress(){
    進捗(state)には混ぜない：save_progress の 300KB 上限に当たると進捗バックアップごと壊れるため、
    別の localStorage キーにためて log_answers へまとめて送る。
    送れなくても学習は止めない（既存 flushScore と同じ流儀で失敗は握りつぶす）。 */
-const ALOG_ON  = (SUBJECT === "chiri" || TENANT === "public"); // 段階展開用。build_app.pyがSUBJECTを置換するので塾生版の他教科は自動でOFF（外部版は全教科ON）
+const ALOG_ON  = (["chiri","rekishi","koumin"].includes(SUBJECT) || TENANT === "public"); // 段階展開用。build_app.pyがSUBJECTを置換するので塾生版の他教科は自動でOFF（外部版は全教科ON）
 const LS_ALOG  = LS_CARDS.replace(/_cards$/, "_alog");  // stateとは別キー（例: chizutan_alog）
 const ALOG_MAX = 1000;                                  // キュー上限。あふれたら古い順に捨てる（ログを守って端末を壊さない）
 const ALOG_BATCH = 50;                                  // 1回の送信件数（サーバ側 log_answers の上限に合わせる）
