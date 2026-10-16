@@ -2004,7 +2004,7 @@ function openShibouPick(){
   if(!SHIBOU)return;
   const picked=new Set(loadPicked());
   const fromSched=new Set(shibouSchoolIds().filter(sid=>!picked.has(sid)));
-  const list=Object.keys(SHIBOU).map(sid=>({sid,n:SHIBOU[sid].n})).sort((a,b)=>a.n.localeCompare(b.n,"ja"));
+  const list=Object.keys(SHIBOU).filter(shibouHas).map(sid=>({sid,n:SHIBOU[sid].n})).sort((a,b)=>a.n.localeCompare(b.n,"ja"));
   const host=$('shibouList'); host.innerHTML="";
   list.forEach(o=>{
     const lb=document.createElement('label'); lb.dataset.name=o.n;
@@ -2021,7 +2021,8 @@ $('shibouHint').onclick=openShibouPick;
 $('shibouEdit').onclick=openShibouPick;
 $('shibouFilter').oninput=()=>{const q=$('shibouFilter').value.trim();document.querySelectorAll('#shibouList label').forEach(l=>{l.style.display=(!q||l.dataset.name.includes(q))?"":"none";});};
 $('shibouSave').onclick=()=>{
-  const ids=[...document.querySelectorAll('#shibouList input:checked:not(:disabled)')].map(c=>c.value);
+  const ids=[...document.querySelectorAll('#shibouList input:checked:not(:disabled)')].map(c=>c.value)
+    .concat(SHIBOU?loadPicked().filter(sid=>!shibouHas(sid)):[]); // 一覧に出ない学校（他教科だけの学校）の選択は残す
   try{localStorage.setItem(SHIBOU_PICK_KEY,JSON.stringify(ids));}catch(e){}
   renderHome(); show('home');
 };
@@ -2638,9 +2639,10 @@ function ONLINE(){return !!(SUPABASE_URL&&SUPABASE_ANON_KEY);}
    登録（またはログイン）に成功したら mergeGuestInto でゲストの記録を引き継ぎ、ゲストの保存領域は消す。
    PIN に数字以外の "guest" を使うので、実在の利用者（番号は数字だけ）の保存領域とぶつからない。 */
 const GUEST_N="ゲスト", GUEST_P="guest";
-/* 志望校モード（外部版だけ）。志望校＝入試日程DB（/nyushi/）の併願表に入れた学校（同じドメインの localStorage "nyushi_schedule"）。
-   学校ごとの「過去問によく出る問題」は ../shibou.json（build_shibou.py が中受社会DBの過去問データから生成）。
-   形式: { "s0490": { "n": "学校名", "chiri": [id...], "rekishi": [...], "koumin": [...] } }（よく出る順） */
+/* 志望校モード。志望校＝アプリ内で選んだ学校＋入試日程DB（/nyushi/）の併願表に入れた学校（同じドメインの localStorage "nyushi_schedule"）。
+   学校ごとの「過去問によく出る問題」は ../shibou.json（build_shibou.py が中受社会DB・中受理科DBの過去問データから生成）。
+   形式: { "s0490": { "n": "学校名", "chiri": [id...], "rekishi": [...], "koumin": [...], "rika": [...], "u": {教科: [単元...]} } }（よく出る順）
+   理科（2026-10-16〜）: u.rika はテーマ（カードの badgeCat）。社会は地方・時代・分野（カードの region） */
 let SHIBOU=null, SHIBOU_SCHOOLS=[];
 const SHIBOU_PICK_KEY="mirubato_shibou"; // アプリ内で選んだ志望校（学校id の配列。同じサイトの全教科で共通）
 function loadPicked(){try{const a=JSON.parse(localStorage.getItem(SHIBOU_PICK_KEY)||"[]");return Array.isArray(a)?a.filter(x=>typeof x==="string"):[];}catch(e){return [];}}
@@ -2653,7 +2655,13 @@ function shibouSchoolIds(){
   }catch(e){}
   return [...ids];
 }
-function shibouSubj(){return ["chiri","rekishi","koumin"].includes(SUBJECT);} // 志望校モードは社会3教科だけ
+function shibouSubj(){return ["chiri","rekishi","koumin","rika"].includes(SUBJECT);} // 志望校モードは社会3教科と理科
+const SHIBOU_GROUP=SUBJECT==="rika"?["rika"]:["chiri","rekishi","koumin"];
+function shibouHas(sid){ // この教科（社会は3教科まとめて）のデータがある学校だけ選べる。理科だけの学校は社会に、社会だけの学校は理科に出さない
+  const e=SHIBOU[sid]; if(!e)return false;
+  return SHIBOU_GROUP.some(s=>(e[s]||[]).length||((e.u||{})[s]||[]).length)||(SUBJECT!=="rika"&&(e.f||[]).length>0);
+}
+function shibouUnitOf(c){return SUBJECT==="rika"?c.badgeCat:c.region;}
 async function loadShibou(){
   if(!shibouSubj())return;
   try{const res=await fetch("../shibou.json",{cache:"no-cache"}); if(res.ok)SHIBOU=await res.json();}catch(e){}
@@ -2683,14 +2691,14 @@ function shibouPool(){
   const fm=shibouFmts();
   if(fm.length){ const fc=shuffle(CARDS.filter(c=>fm.some(k=>SHIBOU_FMT[k](c)))); pool.push(...pick(fc,3,taken)); }
   const us=shibouUnits();
-  if(us.size) pool.push(...pick(shuffle(CARDS.filter(c=>us.has(c.region))),DAILY_GOAL-pool.length,taken));
+  if(us.size) pool.push(...pick(shuffle(CARDS.filter(c=>us.has(shibouUnitOf(c)))),DAILY_GOAL-pool.length,taken));
   if(pool.length<DAILY_GOAL) pool.push(...pick(shibouCards(),DAILY_GOAL-pool.length,taken));
   return shuffle(pool);
 }
 function renderShibou(){
   const card=$('modeShibou'), hint=$('shibouHint');
   if(!shibouSubj()||!SHIBOU){card.style.display="none";hint.style.display="none";$('shibouEdit').style.display="none";return;}
-  SHIBOU_SCHOOLS=shibouSchoolIds().filter(sid=>SHIBOU[sid]);
+  SHIBOU_SCHOOLS=shibouSchoolIds().filter(shibouHas);
   $('shibouEdit').style.display=SHIBOU_SCHOOLS.length?"":"none";
   if(!SHIBOU_SCHOOLS.length){card.style.display="none";hint.style.display="";return;}
   const names=SHIBOU_SCHOOLS.map(sid=>SHIBOU[sid].n);
@@ -2698,7 +2706,7 @@ function renderShibou(){
   const tend=shibouFmts().filter(k=>tl[k]&&CARDS.some(SHIBOU_FMT[k])).map(k=>tl[k]).slice(0,3); // この教科に形式カードがある傾向だけ
   const us=[...shibouUnits()].slice(0,3);
   $('shibouDesc').textContent=(names.length>3?names.slice(0,3).join("・")+" ほか":names.join("・"))+"の出題に合わせて10問"
-    +(us.length?"。よく出る："+us.join("・"):"")+(tend.length?"。"+tend.join("・"):"");
+    +(us.length?"。よく出る："+us.join(us.some(x=>x.includes("・"))?"、":"・"):"")+(tend.length?"。"+tend.join("・"):"");
   const left=shibouCards().filter(c=>!(state.reviews[c.id]&&state.reviews[c.id].everCorrect)).length;
   $('shibouCount').textContent=left?("過去問の知識 あと"+left+"問"):"";
   card.style.display=""; hint.style.display="none";
