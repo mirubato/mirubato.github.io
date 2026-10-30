@@ -2270,7 +2270,7 @@ function renderQuestion(){
   alogShownAt=Date.now(); // 解答ログ用：この問題を見せた時刻（答え合わせとの差が解答時間）
   // multi・画像つき・今日の30問は常に4択（30問は毎日のルーティンなのでテンポ優先）
   // 並べ替えステージは答えが短い(6文字以内・記号なし)ときだけ。「貧富の差はほとんどなかった」のような文の答えは常に4択
-  const tileable = (a=>a.length<=6 && !/[ 、。・()（）]/.test(a))(stripYomi(c.a[0])) && !/次のうち|どちら/.test(c.q); // 比較選択型は選択肢が本体なので常に4択
+  const tileable = (a=>a.length<=6 && !/[ 、。・()（）＝]/.test(a))(stripYomi(c.a[0])) && !/次のうち|どちら/.test(c.q); // 比較選択型は選択肢が本体なので常に4択
   stage = (c.type==="multi"||c.image||session.comp==="DAILY30"||!tileable) ? 0 : stageOf(state.reviews[c.id]);
   $('qProg').style.width=(session.idx/session.total*100)+"%";
   $('qCount').textContent=(session.idx+1)+"/"+session.total;
@@ -2668,9 +2668,37 @@ function initUrlParams(){
   // 切り詰めてから検査すると「17字目以降が不正な文字列」を通してしまうので、元の文字列全体を検査して捨てる
   if(raw!=null&&/^[A-Za-z0-9_-]{1,16}$/.test(String(raw))){
     try{localStorage.setItem(SRC_KEY,String(raw));}catch(e){}
+  }else if(TENANT==="public"&&!takeSrc()){
+    // ?src= が無い訪問（外部版のみ）: リンク元から流入元の記号を作って、最初の1回だけ保存する。
+    // 2026-10-26: 登録11人中9人が src なしで入口が分からなかったため。?src= 付きの導線（pdf/print/try/x）は従来どおり上書きで優先。
+    const s=srcFromReferrer(); if(s){try{localStorage.setItem(SRC_KEY,s);}catch(e){}}
   }
   const r=q.get('r');
   if(r)seedReviewIds=String(r).split(",").map(s=>s.trim()).filter(Boolean).slice(0,200);
+}
+/* リンク元（document.referrer）から流入元の短い記号を作る（外部版のみ。URL やホスト名そのものは記録しない）。
+   自サイト内: home / nyushi / print / try / site。検索・SNS: google / yahoo / bing / duckduckgo / x / instagram / line / facebook / youtube / note / threads / tiktok。
+   リンク元なし（直接入力・ブックマーク・アプリ内ブラウザ）: direct。それ以外のサイト: other。すべて register_public の条件（英数と _ - で16字以内）に収まる。 */
+function srcFromReferrer(){
+  let ref=""; try{ref=String(document.referrer||"");}catch(e){}
+  if(!ref)return "direct"; // 「リンク元を取得できなかった」の意味（直接入力・ブックマークのほか no-referrer も含む）
+  let u; try{u=new URL(ref);}catch(e){return "other";}
+  const h=u.hostname.toLowerCase().replace(/^www\./,"");
+  const mine=location.hostname.toLowerCase().replace(/^www\./,"");
+  if(h===mine){
+    const p=u.pathname;
+    if(p.indexOf("/nyushi/")===0)return "nyushi";
+    if(p.indexOf("/print/")===0)return "print";
+    if(p.indexOf("/try/")===0)return "try";
+    if(p==="/"||p==="/index.html")return "home";
+    return "site";
+  }
+  // ドメインは末尾まで一致させる（google.com.evil.example を google にしない。Codex 指摘 2026-10-27）。サブドメインは許す。
+  const KNOWN=[[/(^|\.)google\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,"google"],[/(^|\.)yahoo\.(com|co\.jp)$/,"yahoo"],[/(^|\.)bing\.com$/,"bing"],[/(^|\.)duckduckgo\.com$/,"duckduckgo"],
+    [/^t\.co$|(^|\.)(x\.com|twitter\.com)$/,"x"],[/(^|\.)instagram\.com$/,"instagram"],[/(^|\.)line\.me$/,"line"],[/(^|\.)facebook\.com$/,"facebook"],
+    [/(^|\.)youtube\.com$/,"youtube"],[/(^|\.)note\.com$/,"note"],[/(^|\.)threads\.(net|com)$/,"threads"],[/(^|\.)tiktok\.com$/,"tiktok"]];
+  for(const [re,v] of KNOWN){ if(re.test(h))return v; }
+  return "other";
 }
 function takeSrc(){ try{return localStorage.getItem(SRC_KEY)||null;}catch(e){return null;} }
 function clearSrc(){ try{localStorage.removeItem(SRC_KEY);}catch(e){} }
